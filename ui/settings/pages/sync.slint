@@ -25,9 +25,9 @@ export component SyncPage inherits VerticalLayout {
     callback webdav-download();
     callback webdav-upload();
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
     SettingsSection {
@@ -35,7 +35,7 @@ export component SyncPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "会话同步";
         title-en: "SESSION SYNC";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingSwitch {
             label: root.lang-en ? "Sync file uploads" : "文件上传同步";
             desc: root.lang-en
@@ -64,7 +64,7 @@ export component SyncPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "WEBDAV";
         title-en: "WEBDAV";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingSwitch {
             label: root.lang-en ? "Enable WebDAV sync" : "启用 WebDAV 同步";
             desc: root.lang-en
@@ -112,7 +112,7 @@ export component SyncPage inherits VerticalLayout {
 
         }
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Theme.sp-8;
             alignment: end;
             GhostButton {
                 text: root.lang-en ? "Save" : "保存";

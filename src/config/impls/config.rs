@@ -2023,7 +2023,7 @@ impl ConfigStore {
         if self.cache.appearance.ui_scale == 0 {
             100
         } else {
-            self.cache.appearance.ui_scale
+            self.cache.appearance.ui_scale.clamp(80, 200)
         }
     }
 

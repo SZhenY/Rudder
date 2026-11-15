@@ -7,6 +7,7 @@
 import { SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
+import { Theme } from "../../theme.slint";
 
 export component LayoutPage inherits VerticalLayout {
     in-out property <bool> show-cmd-bar;
@@ -20,9 +21,9 @@ export component LayoutPage inherits VerticalLayout {
     callback set-collapse-sidebar-default(bool);
     callback set-quick-commands-as-sidebar(bool);
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
     SettingsSection {
@@ -30,7 +31,7 @@ export component LayoutPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "侧栏";
         title-en: "SIDEBARS";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingSwitch {
             label: root.lang-en ? "Collapse the navigation by default" : "默认收起左侧导航";
             checked <=> root.collapse-sidebar-default;
@@ -59,7 +60,7 @@ export component LayoutPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "命令栏";
         title-en: "COMMAND BAR";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         // 终端底部那条输入条（快捷命令 + 命令历史）。此前**只有**右上角工具栏那个代码
         // 图标能切换它，设置里没有入口 —— 用户把它关掉后就再也找不回来了。
         //

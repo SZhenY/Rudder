@@ -4,3 +4,4 @@ mod imp;
 mod panes;
 
 pub(crate) use imp::{Dir, Layout, LogicalRect, TerminalWheelHit};
+pub(crate) use panes::min_pane;

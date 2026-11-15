@@ -192,7 +192,7 @@ export component InterfacePanel inherits Rectangle {
     callback remove-output-highlight-rule(int);
     callback set-output-highlight-rule-enabled(int, bool);
     callback set-ui-scale(int);
-    callback set-panel-font(int);   // settings-panel font scale, percent
+    callback set-ui-font-px(int);   // UI base font size, px
     callback set-renderer-mode(string);
     callback set-sftp-follow-cd(bool);
     callback set-collapse-sidebar-default(bool);
@@ -257,7 +257,7 @@ export component InterfacePanel inherits Rectangle {
     HorizontalLayout {
         // --- Left nav ------------------------------------------------------
         Rectangle {
-            width: 168px;
+            width: Theme.settings-nav-w;
             // Transparent so the whole dialog is one frosted layer (the card's
             // bg-panel); a 1px divider keeps the nav/content separation (items 6/7).
             background: transparent;
@@ -274,11 +274,12 @@ export component InterfacePanel inherits Rectangle {
             //   y = 10 + i × 32               → 行高 30 + 间距 2
             //   宽 = 168 − 10×2 = 148，与右缘那条 1px 分隔线不重叠
             Rectangle {
-                x: 10px;
-                y: 10px + root.nav-index(root.nav-page) * 32px;
-                width: 148px;
-                height: 30px;
-                border-radius: 6px;
+                x: 10px * Theme.ui-scale;
+                y: 10px * Theme.ui-scale
+                    + root.nav-index(root.nav-page) * (Theme.row-h-lg + 2px * Theme.ui-scale);
+                width: Theme.settings-nav-w - 20px * Theme.ui-scale;
+                height: Theme.row-h-lg;
+                border-radius: 6px * Theme.ui-scale;
                 border-width: 1px;
                 border-color: Theme.accent-ring;
                 background: Theme.state-selected;
@@ -290,8 +291,8 @@ export component InterfacePanel inherits Rectangle {
                 }
             }
             VerticalLayout {
-                padding: 10px;
-                spacing: 2px;
+                padding: Theme.sp-10;
+                spacing: Theme.sp-2;
                 alignment: start;
                 NavItem {
                     icon: "\u{E8B9}"; label: root.lang-en ? "Terminal" : "终端";
@@ -458,7 +459,7 @@ export component InterfacePanel inherits Rectangle {
                             set-animations-enabled(a0) => { root.set-animations-enabled(a0); }
                             set-hide-special-partitions(a0) => { root.set-hide-special-partitions(a0); }
                             set-mount-filter(a0) => { root.set-mount-filter(a0); }
-                            set-panel-font(a0) => { root.set-panel-font(a0); }
+                            set-ui-font-px(a0) => { root.set-ui-font-px(a0); }
                             set-renderer-mode(a0) => { root.set-renderer-mode(a0); }
                             set-ui-font(a0) => { root.set-ui-font(a0); }
                             upload-ui-font() => { root.upload-ui-font(); }

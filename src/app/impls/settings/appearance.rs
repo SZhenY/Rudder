@@ -447,7 +447,7 @@ pub(crate) fn reset(
         persist(store, |s| {
             s.set_ui_font_family(d.appearance.ui_font_family.clone());
             s.set_ui_scale(d.appearance.ui_scale);
-            s.set_panel_font(d.appearance.panel_font);
+            s.set_ui_font_px(13);
             s.set_renderer_mode(d.appearance.renderer_mode.clone());
             s.set_wallpaper(d.appearance.wallpaper.clone());
             s.set_wallpaper_overlay(d.appearance.wallpaper_overlay);
@@ -474,7 +474,7 @@ pub(crate) fn reset(
     w.global::<Theme>().set_ui_font_family(resolve_ui_font_family());
     w.set_ui_font_index(fonts.ui_index(&ui_stored));
     w.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0);
-    w.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0);
+    w.global::<Theme>().set_ui_font_px(s.ui_font_px() as f32);
     w.set_renderer_mode(s.renderer_mode_choice().into());
     w.set_aggressive_memory_reclaim(s.aggressive_memory_reclaim());
     w.global::<Theme>().set_panel_alpha(s.wallpaper_overlay());
@@ -518,9 +518,20 @@ fn clamp_ui_scale(percent: i32) -> u32 {
     (percent.max(0) as u32).clamp(80, 200)
 }
 
-/// 面板字号的百分比：同上，范围 80–160。
-fn clamp_panel_font(percent: i32) -> u32 {
-    (percent.max(0) as u32).clamp(80, 160)
+/// 界面基准字号（px）：负数先归零，再夹到 10–20。
+fn clamp_ui_font_px(px: i32) -> u32 {
+    (px.max(0) as u32).clamp(10, 20)
+}
+
+/// 缩放或字号变化后刷新三个独立窗口：它们各有一份 `Theme` 副本。
+fn refresh_sub_windows(main: &AppWindow) {
+    crate::app::settings_window::resync_if_open(main);
+    if let Some(p) = super::super::sub_windows::proc_weak().upgrade() {
+        sync_proc_theme(main, &p);
+    }
+    if let Some(sy) = super::super::sub_windows::system_info_weak().upgrade() {
+        crate::app::resource_ui::sync_system_info_theme(main, &sy);
+    }
 }
 
 #[cfg(test)]
@@ -542,12 +553,13 @@ mod tests {
     }
 
     #[test]
-    fn panel_font_clamps_below_and_above() {
-        assert_eq!(clamp_panel_font(i32::MIN), 80);
-        assert_eq!(clamp_panel_font(0), 80);
-        assert_eq!(clamp_panel_font(160), 160);
-        assert_eq!(clamp_panel_font(161), 160);
-        assert_eq!(clamp_panel_font(i32::MAX), 160);
+    fn ui_font_px_clamps_below_and_above() {
+        assert_eq!(clamp_ui_font_px(i32::MIN), 10);
+        assert_eq!(clamp_ui_font_px(0), 10);
+        assert_eq!(clamp_ui_font_px(13), 13);
+        assert_eq!(clamp_ui_font_px(20), 20);
+        assert_eq!(clamp_ui_font_px(21), 20);
+        assert_eq!(clamp_ui_font_px(i32::MAX), 20);
     }
 
     /// 主题色输入的归一化：`""` / 预设 id / `#RRGGBB`；`#RGB` 展开并大写；其余非法。

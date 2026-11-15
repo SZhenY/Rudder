@@ -141,8 +141,8 @@ height: parent.height;
 background: #000000aa;
 TouchArea { clicked => { batch-import-open = false; } }   // backdrop closes
 Rectangle {
-    width: 540px;
-    height: 440px;
+    width: 540px * Theme.ui-zoom;
+    height: 440px * Theme.ui-zoom;
     x: (parent.width - self.width) / 2;
     y: (parent.height - self.height) / 2;
     background: Theme.bg-panel;
@@ -154,8 +154,8 @@ Rectangle {
     TouchArea {}   // swallow clicks inside the card
 
     VerticalLayout {
-        padding: 20px;
-        spacing: 10px;
+        padding: Theme.sp-20;
+        spacing: Theme.sp-10;
         Text {
             text: lang-en ? "Batch import connections" : "批量导入连接";
             color: Theme.text-primary;
@@ -180,12 +180,12 @@ Rectangle {
             background: Theme.bg-root;
             clip: true;
             Flickable {
-                content-height: max(self.height, bi-input.preferred-height + 16px);
+                content-height: max(self.height, bi-input.preferred-height + 16px * Theme.ui-scale);
                 bi-input := TextInput {
                     input-method-hints: Theme.plain-input-hints;
-                    x: 10px;
-                    y: 8px;
-                    width: parent.width - 20px;
+                    x: 10px * Theme.ui-scale;
+                    y: 8px * Theme.ui-scale;
+                    width: parent.width - 20px * Theme.ui-scale;
                     text <=> batch-import-text;
                     color: Theme.text-primary;
                     font-family: Theme.font-mono;
@@ -195,8 +195,8 @@ Rectangle {
                 }
             }
             if batch-import-text == "" : Text {
-                x: 10px;
-                y: 8px;
+                x: 10px * Theme.ui-scale;
+                y: 8px * Theme.ui-scale;
                 text: "192.168.1.108|22|root|pass@123|服务器1";
                 color: Theme.text-muted;
                 font-family: Theme.font-mono;
@@ -226,7 +226,7 @@ height: parent.height;
 background: #000000aa;
 TouchArea { clicked => { root.cred-reject(); } }
 Rectangle {
-    width: 360px;
+    width: 360px * Theme.ui-zoom;
     height: cred-card.preferred-height;
     x: (parent.width - self.width) / 2;
     y: (parent.height - self.height) / 2;
@@ -238,8 +238,8 @@ Rectangle {
     drop-shadow-color: Theme.shadow-raised-color;
     TouchArea {}   // swallow clicks inside the card
     cred-card := VerticalLayout {
-        padding: 20px;
-        spacing: 12px;
+        padding: Theme.sp-20;
+        spacing: Theme.sp-12;
         Text {
             text: @tr("Login");
             color: Theme.text-primary;
@@ -293,7 +293,7 @@ height: parent.height;
 background: #000000aa;
 TouchArea { clicked => { root.mfa-cancel(); } }
 Rectangle {
-    width: 360px;
+    width: 360px * Theme.ui-zoom;
     height: mfa-card.preferred-height;
     x: (parent.width - self.width) / 2;
     y: (parent.height - self.height) / 2;
@@ -305,8 +305,8 @@ Rectangle {
     drop-shadow-color: Theme.shadow-raised-color;
     TouchArea {}   // swallow clicks inside the card
     mfa-card := VerticalLayout {
-        padding: 20px;
-        spacing: 12px;
+        padding: Theme.sp-20;
+        spacing: Theme.sp-12;
         Text {
             text: lang-en ? "Two-factor verification" : "双重验证 (MFA)";
             color: Theme.text-primary;

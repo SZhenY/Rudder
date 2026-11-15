@@ -26,7 +26,7 @@ export struct ProcRow {
 component ProcMenuItem inherits Rectangle {
     in property <string> label;
     callback clicked();
-    height: 30px;
+    height: Theme.control-h;
     border-radius: Theme.radius-sm;
     background: menu-touch.has-hover ? Theme.state-hover : transparent;
     animate background {
@@ -43,7 +43,7 @@ component ProcMenuItem inherits Rectangle {
         color: Theme.danger;
         font-size: Theme.fs-sm;
         vertical-alignment: center;
-        x: 10px;
+        x: 10px * Theme.ui-scale;
     }
 }
 
@@ -51,8 +51,8 @@ component ProcDangerButton inherits Rectangle {
     in property <string> text;
     in property <bool> enabled: true;
     callback clicked();
-    height: 30px;
-    min-width: 90px;
+    height: Theme.control-h;
+    min-width: 90px * Theme.ui-zoom;
     border-radius: Theme.radius-sm;
     background: !root.enabled ? Theme.bg-hover
         : danger-touch.pressed ? #c44a4a
@@ -130,10 +130,10 @@ export component ProcWindow inherits Window {
         }
     }
 
-    min-width: 420px;
-    min-height: 280px;
-    preferred-width: 640px;
-    preferred-height: 520px;
+    min-width: 420px * Theme.ui-zoom;
+    min-height: 280px * Theme.ui-zoom;
+    preferred-width: 640px * Theme.ui-zoom;
+    preferred-height: 520px * Theme.ui-zoom;
     // Opaque base; the wallpaper Image covers it and the panels frost over the
     // image (mirrors AppWindow) so this window matches the immersive look.
     background: Theme.window-base;
@@ -162,7 +162,7 @@ export component ProcWindow inherits Window {
         if root.custom-titlebar : WindowTitleBar {
             title: @tr("Processes") + (root.host != "" ? "  ·  " + root.host : "");
             bg: Theme.bg-elevated;
-            icon-size: 16px;
+            icon-size: 16px * Theme.ui-scale;
             close() => { root.request-close(); }
             drag() => { root.win-drag(); }
         }
@@ -180,25 +180,25 @@ export component ProcWindow inherits Window {
         // 纯留白、不带 TouchArea：该区域的窗口拖拽仍交给系统标题栏；子窗口没有 zoom 回调，
         // 所以也不接双击。
         if !root.custom-titlebar : Rectangle {
-            height: 25px;
+            height: 25px * Theme.ui-scale;
             background: Theme.bg-panel;
         }
 
         // --- Table ----------------------------------------------------------
         VerticalLayout {
-            padding: 12px;
-            spacing: 8px;
+            padding: Theme.sp-12;
+            spacing: Theme.sp-8;
 
             // Column header.
             HorizontalLayout {
-                padding-left: 6px;
-                padding-right: 6px;
-                spacing: 6px;
-                Text { text: "PID"; width: 56px; color: Theme.text-muted; font-size: Theme.fs-xs; }
-                Text { text: @tr("User"); width: 84px; color: Theme.text-muted; font-size: Theme.fs-xs; }
-                Text { text: "CPU%"; width: 52px; color: Theme.text-muted; font-size: Theme.fs-xs;
+                padding-left: Theme.sp-6;
+                padding-right: Theme.sp-6;
+                spacing: Theme.sp-6;
+                Text { text: "PID"; width: 56px * Theme.ui-zoom; color: Theme.text-muted; font-size: Theme.fs-xs; }
+                Text { text: @tr("User"); width: 84px * Theme.ui-zoom; color: Theme.text-muted; font-size: Theme.fs-xs; }
+                Text { text: "CPU%"; width: 52px * Theme.ui-zoom; color: Theme.text-muted; font-size: Theme.fs-xs;
                        horizontal-alignment: right; }
-                Text { text: "MEM%"; width: 52px; color: Theme.text-muted; font-size: Theme.fs-xs;
+                Text { text: "MEM%"; width: 52px * Theme.ui-zoom; color: Theme.text-muted; font-size: Theme.fs-xs;
                        horizontal-alignment: right; }
                 Text { text: @tr("Command"); horizontal-stretch: 1; color: Theme.text-muted; font-size: Theme.fs-xs; }
             }
@@ -222,7 +222,7 @@ export component ProcWindow inherits Window {
                 content-height: max(self.height, proc-col.preferred-height);
                 proc-col := VerticalLayout {
                     alignment: start;
-                    spacing: 1px;
+                    spacing: 1px * Theme.ui-scale;
 
                     if root.proc-list.length == 0 : Text {
                         text: @tr("No processes");
@@ -231,8 +231,8 @@ export component ProcWindow inherits Window {
                     }
 
                     for p in root.proc-list : Rectangle {
-                        height: 20px;
-                        border-radius: 2px;
+                        height: 20px * Theme.ui-zoom;
+                        border-radius: 2px * Theme.ui-zoom;
                         clip: true;
 
                         TouchArea {
@@ -262,11 +262,11 @@ export component ProcWindow inherits Window {
                                       : Theme.accent.with-alpha(0.20);
                         }
                         HorizontalLayout {
-                            padding-left: 6px;
-                            padding-right: 6px;
-                            spacing: 6px;
+                            padding-left: Theme.sp-6;
+                            padding-right: Theme.sp-6;
+                            spacing: Theme.sp-6;
                             Rectangle {
-                                width: 56px;
+                                width: 56px * Theme.ui-zoom;
                                 pid-touch := TouchArea {
                                     mouse-cursor: pointer;
                                     clicked => {
@@ -278,12 +278,12 @@ export component ProcWindow inherits Window {
                                 Text { text: p.pid; color: pid-touch.has-hover ? Theme.accent : Theme.text-secondary;
                                        font-size: Theme.fs-xs; vertical-alignment: center; }
                             }
-                            Text { text: p.user; width: 84px; color: Theme.text-secondary;
+                            Text { text: p.user; width: 84px * Theme.ui-zoom; color: Theme.text-secondary;
                                    font-size: Theme.fs-xs; vertical-alignment: center; overflow: elide; }
-                            Text { text: p.cpu; width: 52px; color: Theme.text-primary;
+                            Text { text: p.cpu; width: 52px * Theme.ui-zoom; color: Theme.text-primary;
                                    font-size: Theme.fs-xs; vertical-alignment: center;
                                    horizontal-alignment: right; }
-                            Text { text: p.mem; width: 52px; color: Theme.text-secondary;
+                            Text { text: p.mem; width: 52px * Theme.ui-zoom; color: Theme.text-secondary;
                                    font-size: Theme.fs-xs; vertical-alignment: center;
                                    horizontal-alignment: right; }
                             Text { text: p.command; horizontal-stretch: 1; color: Theme.text-muted;
@@ -296,19 +296,19 @@ export component ProcWindow inherits Window {
     }
 
     proc-menu := PopupWindow {
-        x: min(root.menu-x, root.width - self.width - 8px);
-        y: min(root.menu-y, root.height - self.height - 8px);
-        width: 150px;
-        height: 42px;
+        x: min(root.menu-x, root.width - self.width - 8px * Theme.ui-scale);
+        y: min(root.menu-y, root.height - self.height - 8px * Theme.ui-scale);
+        width: 150px * Theme.ui-zoom;
+        height: 42px * Theme.ui-zoom;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.border-strong;
-            drop-shadow-blur: 10px;
+            drop-shadow-blur: 10px * Theme.ui-scale;
             drop-shadow-color: #00000070;
             VerticalLayout {
-                padding: 6px;
+                padding: Theme.sp-6;
                 ProcMenuItem {
                     label: @tr("Terminate process");
                     clicked => {
@@ -334,7 +334,7 @@ export component ProcWindow inherits Window {
             }
         }
         Rectangle {
-            width: 420px;
+            width: 420px * Theme.ui-zoom;
             height: terminate-card.preferred-height;
             x: (parent.width - self.width) / 2;
             y: (parent.height - self.height) / 2;
@@ -347,8 +347,8 @@ export component ProcWindow inherits Window {
             TouchArea { }
 
             terminate-card := VerticalLayout {
-                padding: 20px;
-                spacing: 12px;
+                padding: Theme.sp-20;
+                spacing: Theme.sp-12;
                 Text {
                     text: @tr("Terminate process");
                     color: Theme.text-primary;
@@ -399,7 +399,7 @@ export component ProcWindow inherits Window {
                 }
                 HorizontalLayout {
                     alignment: end;
-                    spacing: 8px;
+                    spacing: Theme.sp-8;
                     GhostButton {
                         text: @tr("Cancel");
                         clicked => {
@@ -427,8 +427,8 @@ export component ProcWindow inherits Window {
 
     // --- Bottom-right resize grip (frameless platforms) --------------------
     if root.custom-titlebar : Rectangle {
-        width: 16px;
-        height: 16px;
+        width: 16px * Theme.ui-zoom;
+        height: 16px * Theme.ui-zoom;
         x: root.width - self.width;
         y: root.height - self.height;
         TouchArea {
@@ -440,11 +440,11 @@ export component ProcWindow inherits Window {
             }
         }
         // Classic dotted resize grip (a diagonal of 2px dots, bottom-right).
-        Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px;
+        Rectangle { x: parent.width - 5px * Theme.ui-scale;  y: parent.height - 5px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale;
                     background: Theme.text-muted; }
-        Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px;
+        Rectangle { x: parent.width - 9px * Theme.ui-scale;  y: parent.height - 5px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale;
                     background: Theme.text-muted; }
-        Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px;
+        Rectangle { x: parent.width - 5px * Theme.ui-scale;  y: parent.height - 9px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale;
                     background: Theme.text-muted; }
     }
 }

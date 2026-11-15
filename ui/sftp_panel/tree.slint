@@ -15,15 +15,15 @@ export component SftpTree inherits VerticalLayout {
     in property <string> current-path: "/";
     in property <[SftpTreeNode]> tree-nodes: [];
     callback tree-expand(string);
-        width: 160px;
+        width: 160px * Theme.ui-zoom;
         spacing: 0;
 
         // Tree header
         Rectangle {
-            height: 20px;
+            height: 20px * Theme.ui-zoom;
             background: Theme.bg-root;
             Text {
-                x: 8px;
+                x: 8px * Theme.ui-scale;
                 text: @tr("Directory tree");
                 color: Theme.text-muted;
                 font-size: Theme.fs-xs;
@@ -41,7 +41,7 @@ export component SftpTree inherits VerticalLayout {
                 spacing: 0;
 
                 for node[i] in root.tree-nodes : Rectangle {
-                    height: 22px;
+                    height: Theme.control-h-xs;
                     background: node-ta.has-hover
                         ? Theme.state-hover
                         : (node.path == root.current-path
@@ -58,17 +58,17 @@ export component SftpTree inherits VerticalLayout {
                         padding-top: 1px;
                         // 树深度缩进：原来靠首个子元素 `Rectangle { width: depth * 12px }`
                         // 占位（该布局 spacing 为 0，故 padding-left 与之逐字等价）
-                        padding-left: node.depth * 12px;
+                        padding-left: node.depth * 12px * Theme.ui-scale;
 
 
                         // Expand/collapse arrow
                         Text {
-                            width: 14px;
+                            width: 14px * Theme.ui-scale;
                             text: node.has-children
                                 ? (node.expanded ? "▼" : "▶")
                                 : " ";
                             color: Theme.text-muted;
-                            font-size: 9px;
+                            font-size: 9px * Theme.ui-zoom;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }

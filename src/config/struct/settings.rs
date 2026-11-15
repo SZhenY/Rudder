@@ -101,7 +101,9 @@ pub struct AppearanceSettings {
     pub ui_font_family: String,
     /// 全局界面缩放百分比（0 = 100）。
     pub ui_scale: u32,
-    /// 设置面板字号百分比（0 = 100）。
+    /// 界面基准字号（px，0 = 未设置 → 由旧 panel_font 迁移或取 13）。
+    pub ui_font_px: u32,
+    /// 旧「设置面板字号」百分比，仅用于迁移到 ui_font_px（0 = 100）。
     pub panel_font: u32,
     /// 沉浸式壁纸 id：""=无 / builtin:light / builtin:dark / 自定义文件路径。
     pub wallpaper: String,
@@ -129,6 +131,7 @@ impl Default for AppearanceSettings {
             renderer_mode: String::new(),
             ui_font_family: String::new(),
             ui_scale: 100,
+            ui_font_px: 0,
             panel_font: 100,
             wallpaper: "builtin:dark".to_string(),
             wallpaper_overlay: DEFAULT_WALLPAPER_OVERLAY,

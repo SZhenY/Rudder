@@ -6,8 +6,8 @@ import { ScrollView } from "std-widgets.slint";
 component DangerButton inherits Rectangle {
     in property <string> text;
     callback clicked();
-    height: 30px;
-    min-width: 80px;
+    height: Theme.control-h;
+    min-width: 80px * Theme.ui-scale;
     border-radius: Theme.radius-sm;
     background: Theme.danger;
     // 真 3 态（原来是嵌套三目）。**列表靠前者优先**（lower_states.rs:51 逆序折叠）：
@@ -22,8 +22,8 @@ component DangerButton inherits Rectangle {
         enabled: AnimationSettings.enabled;
     }
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: Theme.sp-14;
+        padding-right: Theme.sp-14;
         alignment: center;
         Text {
             text: root.text;
@@ -107,11 +107,11 @@ export component ConfirmDialog inherits Rectangle {
     }
 
     Rectangle {
-        width: root.large-detail ? min(parent.width - 40px, 1160px) : 380px;
-        height: root.large-detail ? min(parent.height - 40px, 760px) : card.preferred-height;
+        width: root.large-detail ? min(parent.width - 40px * Theme.ui-scale, 1160px * Theme.ui-scale) : 380px * Theme.ui-scale;
+        height: root.large-detail ? min(parent.height - 40px * Theme.ui-scale, 760px * Theme.ui-scale) : card.preferred-height;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2
-            + (root.is-open && !root.covered ? 0px : 12px);
+            + (root.is-open && !root.covered ? 0px : 12px * Theme.ui-scale);
         animate y {
             duration: (root.is-open && !root.covered) ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
             easing: (root.is-open && !root.covered) ? AnimationSettings.s-default() : AnimationSettings.e-exit();
@@ -128,11 +128,11 @@ export component ConfirmDialog inherits Rectangle {
         TouchArea { width: 100%; height: 100%; }
 
         card := VerticalLayout {
-            padding: 20px;
-            spacing: 12px;
+            padding: Theme.sp-20;
+            spacing: Theme.sp-12;
 
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 Text {
                     text: "⚠";
                     color: Theme.danger;
@@ -167,7 +167,7 @@ export component ConfirmDialog inherits Rectangle {
 
             if root.detail != "" && root.large-detail : Rectangle {
                 vertical-stretch: 1;
-                min-height: 220px;
+                min-height: 220px * Theme.ui-scale;
                 background: Theme.bg-root;
                 border-width: 1px;
                 border-color: Theme.border-subtle;
@@ -177,15 +177,15 @@ export component ConfirmDialog inherits Rectangle {
                 detail-scroll := ScrollView {
                     x: 1px;
                     y: 1px;
-                    width: parent.width - 2px;
-                    height: parent.height - 2px;
+                    width: parent.width - 2px * Theme.ui-scale;
+                    height: parent.height - 2px * Theme.ui-scale;
                     content-width: self.visible-width;
-                    content-height: max(self.visible-height, detail-text.preferred-height + 16px);
+                    content-height: max(self.visible-height, detail-text.preferred-height + 16px * Theme.ui-scale);
 
                     detail-text := Text {
-                        x: 8px;
-                        y: 8px;
-                        width: max(1px, detail-scroll.visible-width - 16px);
+                        x: 8px * Theme.ui-scale;
+                        y: 8px * Theme.ui-scale;
+                        width: max(1px, detail-scroll.visible-width - 16px * Theme.ui-scale);
                         text: root.detail;
                         color: Theme.text-primary;
                         font-family: Theme.font-mono;
@@ -198,7 +198,7 @@ export component ConfirmDialog inherits Rectangle {
 
             HorizontalLayout {
                 alignment: end;
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 GhostButton {
                     text: @tr("Cancel");
                     clicked => { root.cancel(); }

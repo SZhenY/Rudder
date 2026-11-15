@@ -12,7 +12,7 @@ export component IconButton inherits Rectangle {
     // bundled MaterialIcons-Regular.ttf). Defaults to the UI font; leave empty
     // for plain ASCII glyphs like "+" / "×".
     in property <string> font-family: "";
-    in property <length> size: 28px;
+    in property <length> size: Theme.icon-btn-lg;
     // 图标字号。默认 Theme.fs-md 与旧实现一致；各处按需传 Theme.fs-sm 或 18px。
     in property <length> glyph-size: Theme.fs-md;
     in property <brush> fg: Theme.text-secondary;
@@ -84,15 +84,15 @@ export component IconButton inherits Rectangle {
     // tooltip 气泡（移植自 IconBtn）。此前 `tooltip` 是**声明了但从未渲染**的死属性 ——
     // tabs.slint 的 5 个用法都没传它，所以补上渲染对它们零影响。
     if touch.has-hover && root.tooltip != "" : Rectangle {
-        y: parent.height + 5px;
+        y: parent.height + 5px * Theme.ui-scale;
         x: parent.width - self.width;   // 右边缘与图标对齐
-        width: tip-txt.preferred-width + 16px;
-        height: 22px;
+        width: tip-txt.preferred-width + 16px * Theme.ui-scale;
+        height: 22px * Theme.ui-scale;
         background: Theme.bg-elevated;
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.border-strong;
-        drop-shadow-blur: 8px;
+        drop-shadow-blur: 8px * Theme.ui-scale;
         drop-shadow-color: #00000070;
         tip-txt := Text {
             text: root.tooltip;
@@ -112,8 +112,8 @@ export component PrimaryButton inherits Rectangle {
     in property <bool> disabled: false;
     callback clicked();
 
-    height: 30px;
-    min-width: 80px;
+    height: Theme.control-h;
+    min-width: 80px * Theme.ui-scale;
     border-radius: Theme.radius-sm;
     background: Theme.accent;
     // 原为 4 态嵌套三目。**列表靠前者优先**（编译器把 states 逆序折叠成条件，
@@ -130,8 +130,8 @@ export component PrimaryButton inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: Theme.sp-14;
+        padding-right: Theme.sp-14;
         alignment: center;
         Text {
             text: root.text;
@@ -156,8 +156,8 @@ export component GhostButton inherits Rectangle {
     in property <bool> disabled: false;
     callback clicked();
 
-    height: 30px;
-    min-width: 80px;
+    height: Theme.control-h;
+    min-width: 80px * Theme.ui-scale;
     border-radius: Theme.radius-sm;
     border-width: 1px;
     border-color: Theme.border-subtle;
@@ -177,8 +177,8 @@ export component GhostButton inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 14px;
-        padding-right: 14px;
+        padding-left: Theme.sp-14;
+        padding-right: Theme.sp-14;
         alignment: center;
         Text {
             text: root.text;
@@ -206,7 +206,7 @@ export component LabeledInput inherits VerticalLayout {
     in property <brush> idle-border: Theme.border-subtle;
     callback accepted();   // Enter pressed in the field
     callback canceled();   // Esc pressed in the field (#140-3)
-    spacing: 4px;
+    spacing: Theme.sp-4;
     property <bool> focus-pending: false;
     public function focus-input() { input.focus(); }
 
@@ -227,7 +227,7 @@ export component LabeledInput inherits VerticalLayout {
     FieldLabel { text: label; }
 
     Rectangle {
-        height: 32px;
+        height: 32px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: input.has-focus ? Theme.accent : root.idle-border;
@@ -235,9 +235,9 @@ export component LabeledInput inherits VerticalLayout {
 
         input := TextInput {
             input-method-hints: Theme.plain-input-hints;
-            x: 10px;
+            x: 10px * Theme.ui-scale;
             y: 0px;
-            width: parent.width - 20px;
+            width: parent.width - 20px * Theme.ui-scale;
             height: parent.height;
             text <=> root.value;
             color: Theme.text-primary;
@@ -258,7 +258,7 @@ export component LabeledInput inherits VerticalLayout {
 
         // Lightweight placeholder — shown when value is empty.
         if value == "" : Text {
-            x: 10px;
+            x: 10px * Theme.ui-scale;
             y: 0px;
             height: parent.height;
             text: placeholder;
@@ -315,10 +315,10 @@ export component ToolStrip inherits Rectangle {
     }
     // Tool icon, hugging the strip's near corner.
     Rectangle {
-        width: 30px;
-        height: 30px;
+        width: 30px * Theme.ui-scale;
+        height: 30px * Theme.ui-scale;
         x: (parent.width - self.width) / 2;
-        y: 4px;
+        y: 4px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
           background: root.enabled && ta.has-hover ? Theme.state-hover : transparent;
           animate background {
@@ -329,7 +329,7 @@ export component ToolStrip inherits Rectangle {
           IconText {
               centered: true;
               text: root.glyph;
-              font-size: 18px;
+              font-size: 18px * Theme.ui-zoom;
               color: !root.enabled ? Theme.text-muted.with-alpha(0.45)
                   : ta.has-hover ? Theme.text-primary : Theme.text-secondary;
             width: parent.width;
@@ -345,10 +345,10 @@ export component ToolStrip inherits Rectangle {
           }
       }
     if root.show-second : Rectangle {
-        width: 30px;
-        height: 30px;
+        width: 30px * Theme.ui-scale;
+        height: 30px * Theme.ui-scale;
         x: (parent.width - self.width) / 2;
-        y: 38px;
+        y: 38px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
         background: ta2.has-hover ? Theme.state-hover : transparent;
         animate background {
@@ -359,7 +359,7 @@ export component ToolStrip inherits Rectangle {
         IconText {
             centered: true;
             text: root.second-glyph;
-            font-size: 18px;
+            font-size: 18px * Theme.ui-zoom;
             color: ta2.has-hover ? Theme.text-primary : Theme.text-secondary;
             width: parent.width;
             height: parent.height;
@@ -370,10 +370,10 @@ export component ToolStrip inherits Rectangle {
         }
     }
     if root.show-third : Rectangle {
-        width: 30px;
-        height: 30px;
+        width: 30px * Theme.ui-scale;
+        height: 30px * Theme.ui-scale;
         x: (parent.width - self.width) / 2;
-        y: 72px;
+        y: 72px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
         background: ta3.has-hover ? Theme.state-hover : transparent;
         animate background {
@@ -384,7 +384,7 @@ export component ToolStrip inherits Rectangle {
         IconText {
             centered: true;
             text: root.third-glyph;
-            font-size: 18px;
+            font-size: 18px * Theme.ui-zoom;
             color: ta3.has-hover ? Theme.text-primary : Theme.text-secondary;
             width: parent.width;
             height: parent.height;

@@ -5,9 +5,9 @@ export component CursorStyleButton inherits Rectangle {
     in property <string> cursor-kind;
     in property <bool> selected;
     callback clicked();
-    width: 74px;
-    height: 30px;
-    border-radius: 6px;
+    width: 74px * Theme.ui-scale;
+    height: 30px * Theme.ui-scale;
+    border-radius: 6px * Theme.ui-scale;
     border-width: 1px;
     border-color: root.selected ? Theme.state-selected-border
         : (cursor-ta.has-hover ? Theme.border-strong : Theme.border-subtle);
@@ -28,24 +28,24 @@ export component CursorStyleButton inherits Rectangle {
         clicked => { root.clicked(); }
     }
     HorizontalLayout {
-        padding-left: 7px;
-        padding-right: 7px;
-        spacing: 6px;
+        padding-left: 7px * Theme.ui-scale;
+        padding-right: 7px * Theme.ui-scale;
+        spacing: Theme.sp-6;
         alignment: center;
         Rectangle {
-            width: 14px;
+            width: 14px * Theme.ui-scale;
             height: 100%;
             background: transparent;
             Rectangle {
                 y: (parent.height - self.height) / 2;
-                width: 14px;
-                height: 18px;
+                width: 14px * Theme.ui-scale;
+                height: 18px * Theme.ui-scale;
                 background: Theme.term-bg;
                 Rectangle {
-                    x: 2px;
-                    y: root.cursor-kind == "underline" ? parent.height - 3px : 2px;
-                    width: root.cursor-kind == "bar" ? 2px : 10px;
-                    height: root.cursor-kind == "underline" ? 2px : 14px;
+                    x: 2px * Theme.ui-scale;
+                    y: root.cursor-kind == "underline" ? parent.height - 3px * Theme.ui-scale : 2px * Theme.ui-scale;
+                    width: root.cursor-kind == "bar" ? 2px * Theme.ui-scale : 10px * Theme.ui-scale;
+                    height: root.cursor-kind == "underline" ? 2px * Theme.ui-scale : 14px * Theme.ui-scale;
                     background: Theme.term-fg;
                 }
             }
@@ -64,10 +64,10 @@ export component CursorPaletteSwatch inherits Rectangle {
     in property <color> swatch-color;
     in property <bool> selected;
     callback chosen(string);
-    width: 26px;
-    height: 26px;
-    border-radius: 5px;
-    border-width: root.selected ? 2px : 1px;
+    width: 26px * Theme.ui-scale;
+    height: 26px * Theme.ui-scale;
+    border-radius: 5px * Theme.ui-scale;
+    border-width: root.selected ? 2px * Theme.ui-scale : 1px;
     border-color: root.selected ? Theme.state-selected-border : Theme.border-strong;
     background: root.swatch-color;
     animate border-color {
@@ -141,18 +141,18 @@ export component CursorColorInput inherits Rectangle {
     init => { root.sync-from-color(); }
     changed preview-color => { root.sync-from-color(); }
 
-    width: 160px;
-    height: 30px;
-    border-radius: 6px;
+    width: 160px * Theme.ui-scale;
+    height: 30px * Theme.ui-scale;
+    border-radius: 6px * Theme.ui-scale;
     border-width: 1px;
     border-color: root.valid ? Theme.border-subtle : #e05252;
     background: Theme.bg-elevated;
     Rectangle {
-        x: 7px;
-        y: 6px;
-        width: 18px;
-        height: 18px;
-        border-radius: 4px;
+        x: 7px * Theme.ui-scale;
+        y: 6px * Theme.ui-scale;
+        width: 18px * Theme.ui-scale;
+        height: 18px * Theme.ui-scale;
+        border-radius: 4px * Theme.ui-scale;
         border-width: 1px;
         border-color: Theme.border-strong;
         background: root.preview-color;
@@ -163,8 +163,8 @@ export component CursorColorInput inherits Rectangle {
     }
     TextInput {
         input-method-hints: Theme.plain-input-hints;
-        x: 34px;
-        width: parent.width - 41px;
+        x: 34px * Theme.ui-scale;
+        width: parent.width - 41px * Theme.ui-scale;
         height: parent.height;
         text <=> root.value;
         color: Theme.text-primary;
@@ -176,30 +176,30 @@ export component CursorColorInput inherits Rectangle {
     }
     color-picker := PopupWindow {
         x: parent.width - self.width;
-        y: parent.height + 4px;
-        width: 248px;
-        height: 400px;
+        y: parent.height + 4px * Theme.ui-scale;
+        width: 248px * Theme.ui-scale;
+        height: 400px * Theme.ui-scale;
         // ⚠ 默认策略是 `CloseOnClick` = **点任何地方都关**（Slint 里 `CloseOnClickOutside`
         // 才是"点弹层外面才关"，见 i-slint-core/window.rs:990-997）—— 于是调色盘里点一下就
         // 被关掉、根本选不中颜色。这里显式改成"点外面才关"，与用户的直觉一致。
         close-policy: close-on-click-outside;
         Rectangle {
             background: Theme.bg-panel;
-            border-radius: 8px;
+            border-radius: 8px * Theme.ui-scale;
             border-width: 1px;
             border-color: Theme.border-strong;
             drop-shadow-blur: Theme.shadow-popup-blur;
             drop-shadow-color: Theme.shadow-popup-color;
             VerticalLayout {
-                padding: 10px;
-                spacing: 9px;
+                padding: Theme.sp-10;
+                spacing: 9px * Theme.ui-scale;
 
                 // ── 饱和度（横）/ 明度（纵）方块 ──────────────────────────
                 // 底色 = 当前色相拉满，再横向叠"白 → 该色相"；纵向叠"透明 → 黑"。
                 sv-square := Rectangle {
-                    height: 150px;
+                    height: 150px * Theme.ui-scale;
                     width: 100%;
-                    border-radius: 6px;
+                    border-radius: 6px * Theme.ui-scale;
                     clip: true;
                     background: @linear-gradient(90deg, #ffffff 0%, hsv(root.hue, 1.0, 1.0) 100%);
                     Rectangle {
@@ -226,13 +226,13 @@ export component CursorColorInput inherits Rectangle {
                     Rectangle {
                         x: root.sat * (parent.width - self.width);
                         y: (1.0 - root.val) * (parent.height - self.height);
-                        width: 14px;
-                        height: 14px;
-                        border-radius: 7px;
-                        border-width: 2px;
+                        width: 14px * Theme.ui-scale;
+                        height: 14px * Theme.ui-scale;
+                        border-radius: 7px * Theme.ui-scale;
+                        border-width: 2px * Theme.ui-scale;
                         border-color: #ffffff;
                         background: transparent;
-                        drop-shadow-blur: 3px;
+                        drop-shadow-blur: 3px * Theme.ui-scale;
                         drop-shadow-color: #000000a0;
                     }
                 }
@@ -242,17 +242,17 @@ export component CursorColorInput inherits Rectangle {
                 // 伸展子项（`horizontal-stretch` 失效），色相条会被压成 0 宽而"消失"。
                 // 行高由色相条自己（34px）与右侧预览（34px）决定，本来就不需要居中。
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-10;
                     Rectangle {
-                        height: 34px;
+                        height: 34px * Theme.ui-scale;
                         // ⚠️ 布局里也**不能**写 `width: 100%`：那表示"占满整个布局宽度"，
                         // 右侧的圆形预览会被挤出面板（`horizontal-stretch` 才会给它让位）。
                         horizontal-stretch: 1;
                         Rectangle {
-                            y: 11px;
-                            height: 12px;
+                            y: 11px * Theme.ui-scale;
+                            height: 12px * Theme.ui-scale;
                             width: 100%;
-                            border-radius: 6px;
+                            border-radius: 6px * Theme.ui-scale;
                             background: @linear-gradient(90deg, #ff0000 0%, #ffff00 16.7%, #00ff00 33.3%, #00ffff 50%, #0000ff 66.7%, #ff00ff 83.3%, #ff0000 100%);
                         }
                         hue-ta := TouchArea {
@@ -272,20 +272,20 @@ export component CursorColorInput inherits Rectangle {
                         Rectangle {
                             x: (root.hue / 360.0) * (parent.width - self.width);
                             y: (parent.height - self.height) / 2;
-                            width: 16px;
-                            height: 16px;
-                            border-radius: 8px;
-                            border-width: 2px;
+                            width: 16px * Theme.ui-scale;
+                            height: 16px * Theme.ui-scale;
+                            border-radius: 8px * Theme.ui-scale;
+                            border-width: 2px * Theme.ui-scale;
                             border-color: #ffffff;
                             background: transparent;
-                            drop-shadow-blur: 3px;
+                            drop-shadow-blur: 3px * Theme.ui-scale;
                             drop-shadow-color: #000000a0;
                         }
                     }
                     Rectangle {
-                        width: 34px;
-                        height: 34px;
-                        border-radius: 17px;
+                        width: 34px * Theme.ui-scale;
+                        height: 34px * Theme.ui-scale;
+                        border-radius: 17px * Theme.ui-scale;
                         border-width: 1px;
                         border-color: Theme.border-strong;
                         background: root.live-color();
@@ -295,7 +295,7 @@ export component CursorColorInput inherits Rectangle {
                 // ── HEX 输入 ─────────────────────────────────────────────
                 // 同上：不要 `alignment: center`，否则下面的输入框会被压成 0 宽。
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-10;
                     Text {
                         text: "HEX";
                         color: Theme.text-secondary;
@@ -305,15 +305,15 @@ export component CursorColorInput inherits Rectangle {
                     Rectangle {
                         // 同上：让输入框吃掉剩余宽度，而不是"占满布局"。
                         horizontal-stretch: 1;
-                        height: 30px;
-                        border-radius: 6px;
+                        height: 30px * Theme.ui-scale;
+                        border-radius: 6px * Theme.ui-scale;
                         border-width: 1px;
                         border-color: root.valid ? Theme.border-subtle : #e05252;
                         background: Theme.bg-elevated;
                         TextInput {
                             input-method-hints: Theme.plain-input-hints;
-                            x: 8px;
-                            width: parent.width - 16px;
+                            x: 8px * Theme.ui-scale;
+                            width: parent.width - 16px * Theme.ui-scale;
                             height: parent.height;
                             text: root.value;
                             color: Theme.text-primary;
@@ -326,7 +326,7 @@ export component CursorColorInput inherits Rectangle {
                     }
                 }
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     CursorPaletteSwatch { hex: "#D4D4D4"; swatch-color: #D4D4D4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#FFFFFF"; swatch-color: #FFFFFF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#FF5252"; swatch-color: #FF5252; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
@@ -336,7 +336,7 @@ export component CursorColorInput inherits Rectangle {
                     CursorPaletteSwatch { hex: "#9CCC65"; swatch-color: #9CCC65; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                 }
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     CursorPaletteSwatch { hex: "#00E676"; swatch-color: #00E676; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#00E5FF"; swatch-color: #00E5FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#40C4FF"; swatch-color: #40C4FF; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
@@ -346,7 +346,7 @@ export component CursorColorInput inherits Rectangle {
                     CursorPaletteSwatch { hex: "#26A69A"; swatch-color: #26A69A; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                 }
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     CursorPaletteSwatch { hex: "#F48FB1"; swatch-color: #F48FB1; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#FF8A65"; swatch-color: #FF8A65; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#FFF176"; swatch-color: #FFF176; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
@@ -356,7 +356,7 @@ export component CursorColorInput inherits Rectangle {
                     CursorPaletteSwatch { hex: "#8D6E63"; swatch-color: #8D6E63; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                 }
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     CursorPaletteSwatch { hex: "#B39DDB"; swatch-color: #B39DDB; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#CE93D8"; swatch-color: #CE93D8; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }
                     CursorPaletteSwatch { hex: "#BCAAA4"; swatch-color: #BCAAA4; selected: root.value == self.hex; chosen(v) => { if root.apply-color(v) { root.value = v; root.valid = true; color-picker.close(); } } }

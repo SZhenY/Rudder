@@ -68,23 +68,23 @@ export component OverviewPanel inherits Rectangle {
     // 列宽自适应：面板固定在右侧、宽度可调。窄到文件名开始省略时依次丢掉
     // Size / Modified 列；`show-tree` 为 true 表示宽布局，所有列都显示。
     // 预留宽度：复选框 + 内边距 + 间距 36px，Size 列 76px，Modified 列 120px。
-    property <length> list-w: root.show-tree ? root.width - 161px : root.width;
-    property <length> name-min: 180px;     // narrower than this → start dropping columns
-    property <bool> show-size-col: root.show-tree || (root.list-w - 36px - 76px - 120px > root.name-min);
-    property <bool> show-modified-col: root.show-tree || (root.list-w - 36px - 120px > root.name-min);
+    property <length> list-w: root.show-tree ? root.width - 161px * Theme.ui-scale : root.width;
+    property <length> name-min: 180px * Theme.ui-scale;     // narrower than this → start dropping columns
+    property <bool> show-size-col: root.show-tree || (root.list-w - 36px * Theme.ui-scale - 76px * Theme.ui-scale - 120px * Theme.ui-scale > root.name-min);
+    property <bool> show-modified-col: root.show-tree || (root.list-w - 36px * Theme.ui-scale - 120px * Theme.ui-scale > root.name-min);
     // 「类型 / 权限」两列（上游 ed7f231）：只在真的有余量时出现 —— 右侧面板本来就窄，
     // 宁可不显示也不要挤掉文件名（这两列是参考信息，不是操作必需）。预留：Type 56px +
     // Permissions 92px（含 spacing）。
     property <bool> show-fileinfo-cols: root.show-tree
         || (root.show-size-col && root.show-modified-col
-            && root.list-w - 36px - 76px - 120px - 56px - 92px > root.name-min);
+            && root.list-w - 36px * Theme.ui-scale - 76px * Theme.ui-scale - 120px * Theme.ui-scale - 56px * Theme.ui-scale - 92px * Theme.ui-scale > root.name-min);
     property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
     in property <int> selected-count;      // number of checked entries (#100)
     in-out property <string> panel-mode: "overview";
     // The full toolbar needs roughly 480px once a useful path field is included.
     // Below that, switch deliberately to a two-row compact layout instead of
     // allowing fixed-size controls to squeeze the path and each other (#285).
-    property <bool> narrow-toolbar: !root.show-tree && root.width < 480px;
+    property <bool> narrow-toolbar: !root.show-tree && root.width < 480px * Theme.ui-scale;
 
     // --- Callbacks ---------------------------------------------------------
     callback toggle-collapsed();    // minimise / restore the panel
@@ -253,17 +253,17 @@ export component OverviewPanel inherits Rectangle {
         // --- Status bar (full width) --------------------------------------
         // 状态页与隧道页没有文件操作可报，整条让给内容区（用 if 而非 visible，避免布局仍留 18px）。
         if root.panel-mode == "sftp" : Rectangle {
-            height: 18px;
+            height: 18px * Theme.ui-zoom;
             background: Theme.bg-panel-alt;
             Text {
-                x: 8px;
+                x: 8px * Theme.ui-scale;
                 text: root.status;
                 color: Theme.text-muted;
                 font-size: Theme.fs-xs;
                 vertical-alignment: center;
                 height: parent.height;
                 overflow: elide;
-                width: parent.width - 16px;
+                width: parent.width - 16px * Theme.ui-scale;
             }
         }
     }

@@ -91,15 +91,15 @@ export component SessionForm inherits VerticalLayout {
         };
     }
 
-    padding: 20px;
-    spacing: 12px;
+    padding: Theme.sp-20;
+    spacing: Theme.sp-12;
 
 // Connection type selector (always shown).
 VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Connection type"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption {
             label: "SSH";
             active: root.draft-kind == "ssh";
@@ -157,7 +157,7 @@ LabeledInput {
 
 // ── SSH / Telnet share host + port ──────────────────────────────
 if root.draft-kind != "serial" : HorizontalLayout {
-    spacing: 10px;
+    spacing: Theme.sp-10;
     LabeledInput {
         input-background: Theme.bg-elevated;
         idle-border: Theme.border-strong;
@@ -193,10 +193,10 @@ if root.draft-kind == "ssh" : LabeledInput {
 }
 
 if root.draft-kind == "ssh" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Authentication"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption {
             label: @tr("Password");
             active: root.draft-auth == "password";
@@ -227,10 +227,10 @@ if root.draft-kind == "ssh" && (root.draft-auth == "password" || root.draft-auth
 if root.draft-kind == "ssh" && root.draft-auth == "keyboard-interactive" : HelpText { text: @tr("Server prompts are shown during login; MFA / OTP prompts will ask again."); }
 
 if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Private key"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption {
             label: @tr("Private key file");
             active: !root.draft-key-inline-mode;
@@ -243,11 +243,11 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
         }
     }
     if !root.draft-key-inline-mode : VerticalLayout {
-        spacing: 4px;
+        spacing: Theme.sp-4;
     HorizontalLayout {
-        spacing: 8px;
+        spacing: Theme.sp-8;
         Rectangle {
-            height: 32px;
+            height: 32px * Theme.ui-scale;
             horizontal-stretch: 1;
             border-radius: Theme.radius-sm;
             border-width: 1px;
@@ -255,8 +255,8 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
             background: Theme.bg-elevated;
             keyin := TextInput {
                 input-method-hints: Theme.plain-input-hints;
-                x: 10px; y: 0px;
-                width: parent.width - 20px;
+                x: 10px * Theme.ui-scale; y: 0px;
+                width: parent.width - 20px * Theme.ui-scale;
                 height: parent.height;
                 text <=> root.draft-key-path;
                 color: Theme.text-primary;
@@ -266,7 +266,7 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
                 single-line: true;
             }
             if root.draft-key-path == "" : Text {
-                x: 10px; y: 0px;
+                x: 10px * Theme.ui-scale; y: 0px;
                 height: parent.height;
                 text: "/home/you/.ssh/id_ed25519";
                 color: Theme.text-muted;
@@ -275,7 +275,7 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
             }
         }
         Rectangle {
-            width: 64px; height: 32px;
+            width: 64px * Theme.ui-scale; height: 32px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             border-width: 1px;
             border-color: Theme.border-subtle;
@@ -305,9 +305,9 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
     }
     }
     if root.draft-key-inline-mode : VerticalLayout {
-        spacing: 4px;
+        spacing: Theme.sp-4;
         Rectangle {
-            height: 118px;
+            height: 118px * Theme.ui-scale;
             horizontal-stretch: 1;
             border-radius: Theme.radius-sm;
             border-width: 1px;
@@ -315,10 +315,10 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
             background: Theme.bg-elevated;
             keytext := TextInput {
                 input-method-hints: Theme.plain-input-hints;
-                x: 10px;
-                y: 8px;
-                width: parent.width - 20px;
-                height: parent.height - 16px;
+                x: 10px * Theme.ui-scale;
+                y: 8px * Theme.ui-scale;
+                width: parent.width - 20px * Theme.ui-scale;
+                height: parent.height - 16px * Theme.ui-scale;
                 text <=> root.draft-key-inline;
                 color: Theme.text-primary;
                 font-family: Theme.font-mono;
@@ -328,9 +328,9 @@ if root.draft-kind == "ssh" && root.draft-auth == "key" : VerticalLayout {
                 line-height-factor: 1.3;
             }
             if root.draft-key-inline == "" : Text {
-                x: 10px;
-                y: 8px;
-                width: parent.width - 20px;
+                x: 10px * Theme.ui-scale;
+                y: 8px * Theme.ui-scale;
+                width: parent.width - 20px * Theme.ui-scale;
                 text: "-----BEGIN OPENSSH PRIVATE KEY-----";
                 color: Theme.text-muted;
                 font-family: Theme.font-mono;
@@ -377,10 +377,10 @@ if root.draft-kind == "serial" : LabeledInput {
 }
 
 if root.draft-kind == "serial" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Data bits / Stop bits / Parity"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption { label: "7"; active: root.draft-data-bits == "7"; clicked => { root.draft-data-bits = "7"; } }
         SegOption { label: "8"; active: root.draft-data-bits == "8"; clicked => { root.draft-data-bits = "8"; } }
         // 分组留白（原为空 `Rectangle` 占位）：三组位宽的间隔 6+8+6=20px → 6+12=18px（−2px）
@@ -400,10 +400,10 @@ if root.draft-kind == "serial" : VerticalLayout {
 }
 
 if root.draft-kind == "serial" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Flow control"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption { label: @tr("None"); active: root.draft-flow == "none"; clicked => { root.draft-flow = "none"; } }
         SegOption { label: @tr("Hardware"); active: root.draft-flow == "hardware"; clicked => { root.draft-flow = "hardware"; } }
         SegOption { label: @tr("Software"); active: root.draft-flow == "software"; clicked => { root.draft-flow = "software"; } }
@@ -412,10 +412,10 @@ if root.draft-kind == "serial" : VerticalLayout {
 
 // ── Terminal character encoding (SSH only) (#338) ───────────────
 if root.draft-kind == "ssh" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Terminal character encoding"); }
     ComboBox {
-        height: 32px;
+        height: 32px * Theme.ui-scale;
         model: [@tr("UTF-8"), @tr("GBK"), @tr("Big5"), @tr("Shift_JIS"), @tr("EUC-KR"), @tr("Windows-1252")];
         current-value: root.draft-encoding;
         selected(value) => { root.draft-encoding = value; }
@@ -433,13 +433,13 @@ if root.draft-kind == "ssh" : VerticalLayout {
 
 // ── Advanced (collapsed by default): proxy + port forwarding ────
 if root.draft-kind != "serial" : Rectangle {
-    height: 26px;
+    height: 26px * Theme.ui-scale;
     adv-ta := TouchArea {
         mouse-cursor: pointer;
         clicked => { root.show-advanced = !root.show-advanced; }
     }
     HorizontalLayout {
-        spacing: 4px;
+        spacing: Theme.sp-4;
         Text {
             text: @tr("Advanced (encoding, proxy, tunnels)");
             color: adv-ta.has-hover ? Theme.text-primary : Theme.text-secondary;
@@ -459,16 +459,16 @@ if root.draft-kind != "serial" : Rectangle {
 
 // ── Optional outbound proxy (SSH / Telnet only) ─────────────────
 if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     FieldLabel { text: @tr("Proxy (optional)"); }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption { label: @tr("None"); active: root.draft-proxy-type == "none"; clicked => { root.draft-proxy-type = "none"; } }
         SegOption { label: "SOCKS5"; active: root.draft-proxy-type == "socks5"; clicked => { root.draft-proxy-type = "socks5"; } }
         SegOption { label: "HTTP"; active: root.draft-proxy-type == "http"; clicked => { root.draft-proxy-type = "http"; } }
     }
     if root.draft-proxy-type != "none" : VerticalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         LabeledInput {
             input-background: Theme.bg-elevated;
             idle-border: Theme.border-strong;
@@ -477,7 +477,7 @@ if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
             value <=> root.draft-proxy-hostport;
         }
         HorizontalLayout {
-            spacing: 10px;
+            spacing: Theme.sp-10;
             LabeledInput {
                 input-background: Theme.bg-elevated;
                 idle-border: Theme.border-strong;
@@ -508,7 +508,7 @@ if root.show-advanced && root.draft-kind != "serial" : VerticalLayout {
 
 // ── SSH jump host / bastion (SSH only) (#211) ───────────────────
 if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-    spacing: 4px;
+    spacing: Theme.sp-4;
     JumpCombo {
         label: @tr("Jump host (optional)");
         choices: root.jump-choices;
@@ -523,23 +523,23 @@ if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
 
 // ── Port forwarding / tunnels (SSH only) (#56) ──────────────────
 if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-    spacing: 6px;
+    spacing: Theme.sp-6;
 
     // Shell-integration toggle (#140): the cwd-follow hook + resource
     // monitor assume a POSIX shell; on a Windows pwsh/cmd server the
     // injected hook breaks the shell, so let the user turn it off.
     HorizontalLayout {
-        spacing: 8px;
+        spacing: Theme.sp-8;
         Rectangle {
-            width: 18px; height: 18px; y: 1px;
-            border-radius: 4px;
+            width: 18px * Theme.ui-scale; height: 18px * Theme.ui-scale; y: 1px;
+            border-radius: 4px * Theme.ui-scale;
             border-width: 1px;
             border-color: root.draft-disable-shell-integration ? Theme.accent : Theme.border-strong;
             background: root.draft-disable-shell-integration ? Theme.accent : transparent;
             IconText {
                 centered: true;
                 text: root.draft-disable-shell-integration ? "\u{E5CA}" : "";
-color: white; font-size: 14px;
+color: white; font-size: 14px * Theme.ui-zoom;
                 width: 100%; height: 100%;
 
             }
@@ -588,7 +588,7 @@ color: white; font-size: 14px;
 
 // ── Expect/send login triggers (SSH only) (#212) ───────────────
 if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
-    spacing: 6px;
+    spacing: Theme.sp-6;
     Text { text: @tr("Login triggers"); color: Theme.text-secondary; font-size: Theme.fs-sm; }
     for trigger[i] in root.triggers : TriggerRow {
         trigger: trigger;
@@ -607,7 +607,7 @@ if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
 }
 
 HorizontalLayout {
-    spacing: 8px;
+    spacing: Theme.sp-8;
     GhostButton {
         text: @tr("Test connection");
         clicked => {

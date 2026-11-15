@@ -68,9 +68,9 @@ export component AiPage inherits VerticalLayout {
     callback set-mcp-audit-retention(string) -> bool;
     callback open-mcp-log-dir();
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
 
@@ -79,7 +79,7 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "AI 访问";
         title-en: "AI ACCESS";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         SettingSwitch {
             label: root.lang-en ? "Enable MCP server" : "启用 MCP 服务";
@@ -108,8 +108,8 @@ export component AiPage inherits VerticalLayout {
                 ? "Listens on 127.0.0.1 by default. Override to 1024–65535 if 8765 is taken."
                 : "默认只监听 127.0.0.1。8765 被占用时可改成 1024–65535。";
             Rectangle {
-                width: 110px;
-                height: 30px;
+                width: 110px * Theme.ui-scale;
+                height: 30px * Theme.ui-scale;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: root.mcp-port-valid ? Theme.border-subtle : Theme.danger;
@@ -126,8 +126,8 @@ export component AiPage inherits VerticalLayout {
                 input := TextInput {
                     input-method-hints: Theme.plain-input-hints;
                     enabled: root.mcp-enabled;
-                    x: 8px;
-                    width: parent.width - 16px;
+                    x: 8px * Theme.ui-scale;
+                    width: parent.width - 16px * Theme.ui-scale;
                     height: parent.height;
                     vertical-alignment: center;
                     color: root.mcp-enabled ? Theme.text-primary : Theme.text-muted;
@@ -143,7 +143,7 @@ export component AiPage inherits VerticalLayout {
             desc: root.mcp-status-error == "" ? "" : root.mcp-status-error;
             VerticalLayout {
                 alignment: center;
-                spacing: 3px;
+                spacing: Theme.sp-3;
                 Text {
                     text: root.mcp-status;
                     color: root.mcp-status-error == "" ? Theme.text-secondary : Theme.danger;
@@ -168,7 +168,7 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "令牌与客户端配置";
         title-en: "TOKEN & CLIENT CONFIG";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         SettingRow {
             label: root.lang-en ? "Bearer token" : "Bearer 令牌";
@@ -182,9 +182,9 @@ export component AiPage inherits VerticalLayout {
 
         // 令牌区：通栏两行 —— 令牌一行（等宽、必要时折行），按钮另起一行右对齐。
         VerticalLayout {
-            padding-top: 2px;
-            padding-bottom: 9px;
-            spacing: 8px;
+            padding-top: Theme.sp-2;
+            padding-bottom: 9px * Theme.ui-scale;
+            spacing: Theme.sp-8;
 
             Text {
                 text: root.mcp-token-visible ? root.mcp-token-plain : root.mcp-token-masked;
@@ -198,7 +198,7 @@ export component AiPage inherits VerticalLayout {
 
             HorizontalLayout {
                 alignment: end;
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 // 服务关着时令牌没有校验对象，四个按钮一律置灰 —— 「复制配置」也不再
                 // 例外：配置框本身已经隐藏，复制一份看不见的内容没有意义。
                 GhostButton {
@@ -251,15 +251,15 @@ export component AiPage inherits VerticalLayout {
 
         // 服务关着时没有可粘贴的配置：整块不参与布局（`visible:false` 仍占位）。
         if root.mcp-enabled : VerticalLayout {
-            padding-top: 9px;
-            padding-bottom: 9px;
+            padding-top: 9px * Theme.ui-scale;
+            padding-bottom: 9px * Theme.ui-scale;
             spacing: 0;
 
             Rectangle {
                 // 固定高度而不是按内容撑开：`TextInput` 的 preferred-height 在
                 // 未约束宽度时不等于换行后的高度，绑上去会算错。224 × 0.8：11 行片段
                 // 在默认字号下约占 141–152px，余 11–22px；字号放大时截断而不外溢。
-                height: 179px;
+                height: 179px * Theme.ui-scale;
                 clip: true;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -270,10 +270,10 @@ export component AiPage inherits VerticalLayout {
                     read-only: true;
                     single-line: false;
                     wrap: word-wrap;
-                    x: 10px;
-                    y: 8px;
-                    width: parent.width - 20px;
-                    height: parent.height - 16px;
+                    x: 10px * Theme.ui-scale;
+                    y: 8px * Theme.ui-scale;
+                    width: parent.width - 20px * Theme.ui-scale;
+                    height: parent.height - 16px * Theme.ui-scale;
                     font-family: Theme.font-mono;
                     font-size: 11px * Theme.panel-font;
                     color: Theme.text-primary;
@@ -282,9 +282,9 @@ export component AiPage inherits VerticalLayout {
 
                 // 启用但令牌被外部清空时的兜底：给一句说明，而不是一个空框。
                 if root.mcp-json == "" : Text {
-                    x: 12px;
-                    y: 12px;
-                    width: parent.width - 24px;
+                    x: 12px * Theme.ui-scale;
+                    y: 12px * Theme.ui-scale;
+                    width: parent.width - 24px * Theme.ui-scale;
                     text: root.lang-en
                         ? "Turn the MCP server on first: the snippet appears once a token exists."
                         : "先启用 MCP 服务：生成令牌后这里才会出现配置。";
@@ -297,8 +297,8 @@ export component AiPage inherits VerticalLayout {
 
         // 关服务时只留一句话：代码框整块换掉，不留空框也不留边框。
         if !root.mcp-enabled : VerticalLayout {
-            padding-top: 9px;
-            padding-bottom: 9px;
+            padding-top: 9px * Theme.ui-scale;
+            padding-bottom: 9px * Theme.ui-scale;
             spacing: 0;
 
             Text {
@@ -320,14 +320,14 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "客户端";
         title-en: "CLIENTS";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         if root.mcp-clients.length == 0 : Text {
             text: root.lang-en ? "No client connected." : "当前没有客户端连接。";
             color: Theme.text-muted;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
-            height: 36px;
+            height: 36px * Theme.ui-scale;
         }
 
         // 折叠必须用 `if` 而不是 `visible`：Slint 的 visible:false 只是不绘制，
@@ -340,11 +340,11 @@ export component AiPage inherits VerticalLayout {
                 clicked => { root.toggle-mcp-client-expanded(row.session-id); }
 
                 HorizontalLayout {
-                    padding-left: 4px;
-                    padding-right: 4px;
-                    padding-top: 8px;
-                    padding-bottom: 4px;
-                    spacing: 8px;
+                    padding-left: Theme.sp-4;
+                    padding-right: Theme.sp-4;
+                    padding-top: Theme.sp-8;
+                    padding-bottom: Theme.sp-4;
+                    spacing: Theme.sp-8;
 
                     IconText {
                         text: row.expanded ? "\u{E5CF}" : "\u{E5CC}";
@@ -358,7 +358,7 @@ export component AiPage inherits VerticalLayout {
                         // 所有 horizontal-stretch 失效，整块会缩成首选宽度并居中。
                         horizontal-stretch: 1;
                         min-width: 0;
-                        spacing: 2px;
+                        spacing: Theme.sp-2;
                         Text {
                             text: row.client;
                             font-size: 13px * Theme.panel-font;
@@ -374,7 +374,7 @@ export component AiPage inherits VerticalLayout {
                         }
                     }
                     HorizontalLayout {
-                        spacing: 6px;
+                        spacing: Theme.sp-6;
                         // 竖排包一层做交叉轴居中：22px 的开关在横排里会被固定高度钉在顶部，
                         // 与旁边可拉伸的 Text 差约 6px。横排的 alignment 是主轴对齐，管不到这里。
                         VerticalLayout {
@@ -410,9 +410,9 @@ export component AiPage inherits VerticalLayout {
                 spacing: 0;
 
                 if row.risk != "" : VerticalLayout {
-                    spacing: 2px;
-                    padding-top: 8px;
-                    padding-bottom: 2px;
+                    spacing: Theme.sp-2;
+                    padding-top: Theme.sp-8;
+                    padding-bottom: Theme.sp-2;
                     Text {
                         text: row.risk;
                         font-size: 12px * Theme.panel-font;
@@ -432,7 +432,7 @@ export component AiPage inherits VerticalLayout {
                     font-size: 11px * Theme.panel-font;
                     font-weight: 700;
                     color: Theme.text-muted;
-                    height: 24px;
+                    height: 24px * Theme.ui-scale;
                     vertical-alignment: bottom;
                 }
 
@@ -456,7 +456,7 @@ export component AiPage inherits VerticalLayout {
             show-divider: false;
             Rectangle {
                 width: 100%;
-                height: 108px;
+                height: 108px * Theme.ui-scale;
                 background: Theme.bg-root;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -466,29 +466,29 @@ export component AiPage inherits VerticalLayout {
                     height: 100%;
                     content-width: self.width;
                     VerticalLayout {
-                        padding: 6px;
-                        spacing: 2px;
+                        padding: Theme.sp-6;
+                        spacing: Theme.sp-2;
                         if root.mcp-recent-closes.length == 0 : Text {
                             text: root.lang-en ? "No session has ended yet." : "还没有会话结束的记录。";
                             color: Theme.text-muted;
                             font-size: Theme.fs-xs;
-                            height: 20px;
+                            height: 20px * Theme.ui-scale;
                         }
                         for item in root.mcp-recent-closes : HorizontalLayout {
-                            height: 20px;
-                            spacing: 8px;
+                            height: 20px * Theme.ui-scale;
+                            spacing: Theme.sp-8;
                             Text {
                                 text: item.at;
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-xs;
-                                width: 56px;
+                                width: 56px * Theme.ui-scale;
                                 vertical-alignment: center;
                             }
                             Text {
                                 text: item.session;
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-xs;
-                                width: 62px;
+                                width: 62px * Theme.ui-scale;
                                 vertical-alignment: center;
                             }
                             Text {
@@ -526,7 +526,7 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "已记住的客户端";
         title-en: "REMEMBERED CLIENTS";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         if root.mcp-grants.length == 0 : Text {
             text: root.lang-en
@@ -535,13 +535,13 @@ export component AiPage inherits VerticalLayout {
             color: Theme.text-muted;
             font-size: 11px * Theme.panel-font;
             wrap: word-wrap;
-            height: 40px;
+            height: 40px * Theme.ui-scale;
             vertical-alignment: center;
         }
 
         for grant in root.mcp-grants : HorizontalLayout {
-            height: 34px;
-            spacing: 10px;
+            height: 34px * Theme.ui-scale;
+            spacing: Theme.sp-10;
 
             VerticalLayout {
                 horizontal-stretch: 1;
@@ -587,7 +587,7 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "网络（高级）";
         title-en: "NETWORK (ADVANCED)";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         SettingSwitch {
             label: root.lang-en ? "Also listen on LAN interfaces" : "同时监听局域网网口";
@@ -604,8 +604,8 @@ export component AiPage inherits VerticalLayout {
         // 能不能改由下面的 `interactive` 决定。
         if root.mcp-lan-enabled : VerticalLayout {
             for iface in root.mcp-ifaces : HorizontalLayout {
-                height: 30px;
-                spacing: 10px;
+                height: 30px * Theme.ui-scale;
+                spacing: Theme.sp-10;
                 Text {
                     text: iface.name + "   " + iface.addr;
                     color: Theme.text-secondary;
@@ -635,7 +635,7 @@ export component AiPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "审计日志";
         title-en: "AUDIT LOG";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
 
         SettingSwitch {
             label: root.lang-en ? "Record tool calls" : "记录工具调用";
@@ -654,8 +654,8 @@ export component AiPage inherits VerticalLayout {
                 : "0 = 永久保留。换天时删除超过该天数的 audit-YYYY-MM-DD.ndjson。";
             show-divider: !root.mcp-audit-degraded;
             Rectangle {
-                width: 110px;
-                height: 30px;
+                width: 110px * Theme.ui-scale;
+                height: 30px * Theme.ui-scale;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: root.mcp-audit-retention-valid ? Theme.border-subtle : Theme.danger;
@@ -672,8 +672,8 @@ export component AiPage inherits VerticalLayout {
                 TextInput {
                     input-method-hints: Theme.plain-input-hints;
                     enabled: root.mcp-audit-enabled;
-                    x: 8px;
-                    width: parent.width - 16px;
+                    x: 8px * Theme.ui-scale;
+                    width: parent.width - 16px * Theme.ui-scale;
                     height: parent.height;
                     vertical-alignment: center;
                     color: root.mcp-audit-enabled ? Theme.text-primary : Theme.text-muted;
@@ -699,7 +699,7 @@ export component AiPage inherits VerticalLayout {
             show-divider: true;
             Rectangle {
                 width: 100%;
-                height: 132px;
+                height: 132px * Theme.ui-scale;
                 background: Theme.bg-root;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -709,22 +709,22 @@ export component AiPage inherits VerticalLayout {
                     height: 100%;
                     content-width: self.width;
                     VerticalLayout {
-                        padding: 6px;
-                        spacing: 2px;
+                        padding: Theme.sp-6;
+                        spacing: Theme.sp-2;
                         if root.mcp-recent-calls.length == 0 : Text {
                             text: root.lang-en ? "No calls yet." : "还没有调用记录。";
                             color: Theme.text-muted;
                             font-size: Theme.fs-xs;
-                            height: 20px;
+                            height: 20px * Theme.ui-scale;
                         }
                         for call in root.mcp-recent-calls : HorizontalLayout {
-                            height: 20px;
-                            spacing: 8px;
+                            height: 20px * Theme.ui-scale;
+                            spacing: Theme.sp-8;
                             Text {
                                 text: call.at;
                                 color: Theme.text-muted;
                                 font-size: Theme.fs-xs;
-                                width: 56px;
+                                width: 56px * Theme.ui-scale;
                                 vertical-alignment: center;
                             }
                             Text {

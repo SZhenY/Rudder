@@ -16,16 +16,16 @@ import { ModalCard } from "components/surfaces.slint";
 component ShortcutRow inherits Rectangle {
     in property <string> keys;
     in property <string> desc;
-    height: 28px;
+    height: 28px * Theme.ui-zoom;
     HorizontalLayout {
-        spacing: 10px;
+        spacing: Theme.sp-10;
         Rectangle {
-            width: 116px;
+            width: 116px * Theme.ui-zoom;
             Rectangle {
                 x: 0;
                 y: (parent.height - self.height) / 2;
-                width: min(parent.width, kt.preferred-width + 16px);
-                height: 20px;
+                width: min(parent.width, kt.preferred-width + 16px * Theme.ui-scale);
+                height: 20px * Theme.ui-zoom;
                 background: Theme.bg-root;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
@@ -62,10 +62,10 @@ export component ShortcutsDialog inherits ModalCard {
     callback close-requested();
 
     visible: shortcuts-open;
-    card-width: 424px;
-    card-height: 432px;
+    card-width: 424px * Theme.ui-zoom;
+    card-height: 432px * Theme.ui-zoom;
     radius: Theme.radius-md;
-    spacing: 5px;
+    spacing: Theme.sp-5;
     dismissed() => { root.close-requested(); }
 
     HorizontalLayout {
@@ -87,7 +87,7 @@ export component ShortcutsDialog inherits ModalCard {
     ScrollView {
         vertical-stretch: 1;
         VerticalLayout {
-            spacing: 5px;
+            spacing: Theme.sp-5;
 
     Text { text: lang-en ? "Tabs" : "标签页";
            color: Theme.text-muted; font-size: Theme.fs-xs; }

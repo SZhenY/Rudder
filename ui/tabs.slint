@@ -28,15 +28,15 @@ component SingleTab inherits Rectangle {
     property <bool> pressing;
     out property <bool> dragging;
 
-    height: 30px;
+    height: Theme.tab-h;
     // 宽度跟着**内容**走：内部 HorizontalLayout 的 preferred-width（圆点 + 标题实测宽
     // + 关闭按钮 + 内外边距），范围用 min/max 夹住。旧写法 `64px + 标题字数 * 7px`
     // 是按"每个字符 7px"估算的 —— 中文、粗体、大写字母一律偏，换字体更完全不跟随。
-    min-width: 100px;
-    max-width: 320px;
+    min-width: 100px * Theme.ui-scale;
+    max-width: 320px * Theme.ui-scale;
     horizontal-stretch: 0;
     border-radius: Theme.radius-sm;
-    border-width: active ? 2px : 0px;
+    border-width: active ? 2px * Theme.ui-scale : 0px;
     border-color: active ? Theme.accent : transparent;
     background: dragging ? Theme.state-press
         : (active ? Theme.tab-active-bg
@@ -74,21 +74,21 @@ component SingleTab inherits Rectangle {
             if (root.pressing) {
                 // A drag begins once the cursor drifts horizontally OR leaves the
                 // tab vertically; both count as a reorder gesture.
-                if (abs(self.mouse-x - root.grab-offset) > 5px
-                        || self.mouse-y < -6px || self.mouse-y > root.height + 6px) {
+                if (abs(self.mouse-x - root.grab-offset) > 5px * Theme.ui-scale
+                        || self.mouse-y < -6px * Theme.ui-scale || self.mouse-y > root.height + 6px * Theme.ui-scale) {
                     root.dragging = true;
                 }
                 // Reorder within the strip only while the cursor stays on the strip
                 // row; leaving the row keeps the grab but stops reordering.
                 // One slot = the tab's own width + the 2px strip spacing; re-anchor
                 // grab-offset after each hop so the drift resets (no oscillation).
-                if (self.mouse-y > -10px && self.mouse-y < root.height + 10px) {
-                    if (self.mouse-x - root.grab-offset > (root.width + 2px) / 2) {
+                if (self.mouse-y > -10px * Theme.ui-scale && self.mouse-y < root.height + 10px * Theme.ui-scale) {
+                    if (self.mouse-x - root.grab-offset > (root.width + 2px * Theme.ui-scale) / 2) {
                         root.reorder(1);
-                        root.grab-offset = self.mouse-x - (root.width + 2px);
-                    } else if (self.mouse-x - root.grab-offset < -(root.width + 2px) / 2) {
+                        root.grab-offset = self.mouse-x - (root.width + 2px * Theme.ui-scale);
+                    } else if (self.mouse-x - root.grab-offset < -(root.width + 2px * Theme.ui-scale) / 2) {
                         root.reorder(-1);
-                        root.grab-offset = self.mouse-x + (root.width + 2px);
+                        root.grab-offset = self.mouse-x + (root.width + 2px * Theme.ui-scale);
                     }
                 }
             }
@@ -102,16 +102,16 @@ component SingleTab inherits Rectangle {
         // 不写 width：让布局按内容给出首选宽度，标签的 min/max-width 再夹范围。
         // （旧写法 `parent.width - 28px` 是给关闭按钮预留的绝对定位槽位，
         // 写死 width 也就阻断了 preferred-width 向上传播。）
-        padding-left: 10px;
-        padding-right: 6px;
-        spacing: 8px;
+        padding-left: Theme.sp-10;
+        padding-right: Theme.sp-6;
+        spacing: Theme.sp-8;
         alignment: start;
 
         // Status indicator
         Rectangle {
-            width: 8px; height: 8px;
+            width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
             y: (parent.height - self.height) / 2;
-            border-radius: 4px;
+            border-radius: 4px * Theme.ui-scale;
             background: info.kind == "welcome" ? Theme.text-muted
                 : (info.connected ? Theme.success : Theme.warning);
         }
@@ -131,7 +131,7 @@ component SingleTab inherits Rectangle {
         // `horizontal-stretch: 1` 会把多余空间吃掉，因此它仍然贴在最右侧。
         if info.kind != "welcome" : IconButton {
             glyph: "×";
-            size: 20px;
+            size: Theme.icon-btn;
             y: (parent.height - self.height) / 2;
             clicked => { root.closed(); }
         }
@@ -144,7 +144,7 @@ component TabMenuItem inherits Rectangle {
     in property <string> label;
     in property <bool> enabled: true;
     callback clicked();
-    height: 28px;
+    height: Theme.row-h;
     border-radius: Theme.radius-sm;
     background: enabled && ta.has-hover ? Theme.state-hover : transparent;
     animate background {
@@ -153,8 +153,8 @@ component TabMenuItem inherits Rectangle {
         enabled: AnimationSettings.enabled;
     }
     HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
+        padding-left: Theme.sp-10;
+        padding-right: Theme.sp-10;
         Text {
             text: label;
             color: enabled ? Theme.text-primary : Theme.text-muted;
@@ -197,26 +197,26 @@ export component TabBar inherits Rectangle {
     property <length> menu-y;
     property <string> menu-target;
 
-    height: 36px;
+    height: Theme.tabbar-h;
     background: Theme.bg-panel-alt;
 
     // True only when the tabs are wider than the available strip width (#122).
     // 判据从 TabBar 自身宽度算（而非 flick.width），避免"显示箭头 → 影响布局 →
     // 又改变判据"的回环。右侧的预留量原本是一个 94px 魔数（旧注释：64 给两个箭头
     // + 30 给"所有标签"按钮），现在按**真实元素**拆开写，改尺寸时会自动跟随。
-    property <length> arrows-w: 2 * 26px;          // 两个箭头覆盖层
-    property <length> right-chrome-w: 8px + 28px + 4px;  // 分隔 8 + 所有标签按钮 28 + 两个 spacing
+    property <length> arrows-w: 2 * 26px * Theme.ui-scale;          // 两个箭头覆盖层
+    property <length> right-chrome-w: 8px * Theme.ui-scale + 28px * Theme.ui-scale + 4px * Theme.ui-scale;  // 分隔 8 + 所有标签按钮 28 + 两个 spacing
     property <bool> tab-overflow:
         strip.preferred-width > root.width - root.reserve-right
-            - (2 * 3px) - root.right-chrome-w - root.arrows-w;
+            - (2 * 3px * Theme.ui-scale) - root.right-chrome-w - root.arrows-w;
 
     HorizontalLayout {
-        padding: 3px;
+        padding: Theme.sp-3;
         // 右侧为窗口右上角的工具栏图标预留（#122）：末尾那块
         // `Rectangle { width: root.reserve-right; }` 占位删掉时会连带删掉
         // 它前面那份 spacing(2px)，故这里补回。
-        padding-right: 3px + 2px + root.reserve-right;
-        spacing: 2px;
+        padding-right: Theme.sp-3 + 2px * Theme.ui-scale + root.reserve-right;
+        spacing: Theme.sp-2;
 
         // Horizontally-scrollable strip: when the tabs overflow the available
         // width they stay reachable by the arrows or by dragging / trackpad (#122).
@@ -225,7 +225,7 @@ export component TabBar inherits Rectangle {
             content-height: self.height;
             content-width: max(self.width, strip.preferred-width);
             strip := HorizontalLayout {
-                spacing: 2px;
+                spacing: Theme.sp-2;
                 alignment: start;
                 for tab[i] in tabs : SingleTab {
                     info: tab;
@@ -242,7 +242,7 @@ export component TabBar inherits Rectangle {
                 }
                 if root.show-new-tab : IconButton {
                     glyph: "+";
-                    size: 28px;
+                    size: 28px * Theme.ui-scale;
                     y: (parent.height - self.height) / 2;
                     clicked => { root.new-tab(); }
                 }
@@ -255,26 +255,26 @@ export component TabBar inherits Rectangle {
     // change the layout that `tab-overflow` reads (avoids a binding loop). Shown
     // only on overflow, masking the edge tab beneath them (#122).
     if root.tab-overflow : Rectangle {
-        x: 3px;
+        x: 3px * Theme.ui-scale;
         y: (parent.height - self.height) / 2;
-        width: 26px; height: 26px;
+        width: 26px * Theme.ui-scale; height: 26px * Theme.ui-scale;
         background: Theme.bg-panel-alt;
         IconButton {
-            glyph: "<"; size: 24px;
-            clicked => { flick.content-x = min(0px, flick.content-x + 120px); }
+            glyph: "<"; size: 24px * Theme.ui-scale;
+            clicked => { flick.content-x = min(0px, flick.content-x + 120px * Theme.ui-scale); }
         }
     }
     if root.tab-overflow : Rectangle {
         // 贴在标签条右端、即"所有标签"按钮的左侧（旧写法是 `- 59px` 魔数）。
         // 覆盖层不参与布局，读布局算出的 x 不会造成回环。
-        x: parent.width - self.width - 4px;
+        x: parent.width - self.width - 4px * Theme.ui-scale;
         y: (parent.height - self.height) / 2;
-        width: 26px; height: 26px;
+        width: 26px * Theme.ui-scale; height: 26px * Theme.ui-scale;
         background: Theme.bg-panel-alt;
         IconButton {
-            glyph: ">"; size: 24px;
+            glyph: ">"; size: 24px * Theme.ui-scale;
             clicked => {
-                flick.content-x = max(flick.width - flick.content-width, flick.content-x - 120px);
+                flick.content-x = max(flick.width - flick.content-width, flick.content-x - 120px * Theme.ui-scale);
             }
         }
     }
@@ -284,8 +284,8 @@ export component TabBar inherits Rectangle {
     tab-menu := PopupWindow {
         x: root.menu-x;
         y: root.menu-y;
-        width: 140px;
-        height: 7 * 29px + 13px;
+        width: 140px * Theme.ui-scale;
+        height: 7 * 29px * Theme.ui-scale + 13px * Theme.ui-scale;
         Rectangle {
             background: Theme.bg-panel;
             border-radius: Theme.radius-sm;
@@ -294,7 +294,7 @@ export component TabBar inherits Rectangle {
             drop-shadow-blur: Theme.shadow-popup-blur;
             drop-shadow-color: Theme.shadow-popup-color;
             VerticalLayout {
-                padding: 4px;
+                padding: Theme.sp-4;
                 spacing: 1px;
                 TabMenuItem {
                     label: @tr("Duplicate connection");

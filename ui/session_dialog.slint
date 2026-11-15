@@ -85,11 +85,11 @@ export component SessionDialog inherits Rectangle {
     }
 
     Rectangle {
-        width: 440px;
+        width: 440px * Theme.ui-scale;
         // Height follows the content, but never exceeds the window — past that
         // the body scrolls (the dialog grows with the advanced section / many
         // port forwards) (#56).
-        height: min(form.preferred-height + 53px, parent.height - 40px);
+        height: min(form.preferred-height + 53px * Theme.ui-scale, parent.height - 40px * Theme.ui-scale);
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;
         background: Theme.bg-panel;
@@ -109,14 +109,14 @@ export component SessionDialog inherits Rectangle {
 
         Rectangle {
             width: 100%;
-            height: 52px;
+            height: 52px * Theme.ui-scale;
             background: Theme.bg-panel-alt;
             border-radius: Theme.radius-lg;
 
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 10px;
-                spacing: 10px;
+                padding-left: Theme.sp-20;
+                padding-right: Theme.sp-10;
+                spacing: Theme.sp-10;
 
                 Text {
                     text: is-editing ? @tr("Edit session") : @tr("New session");
@@ -129,8 +129,8 @@ export component SessionDialog inherits Rectangle {
                 }
 
                 CloseButton {
-                    size: 32px;
-                    glyph-size: 18px;
+                    size: 32px * Theme.ui-scale;
+                    glyph-size: 18px * Theme.ui-scale;
                     y: (parent.height - self.height) / 2;
                     clicked => { root.cancel(); }
                 }

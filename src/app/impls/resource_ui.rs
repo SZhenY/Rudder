@@ -357,6 +357,7 @@ pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     let t = main.global::<Theme>();
     proc.set_dark_mode(t.get_dark());
     proc.set_ui_scale(t.get_ui_scale());
+    proc.global::<Theme>().set_ui_font_px(t.get_ui_font_px());
     proc.set_ui_font_family(t.get_ui_font_family());
     // Mirror the immersive wallpaper so the detached window shares the frosted
     // backdrop instead of a flat panel.
@@ -371,6 +372,7 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
     let t = main.global::<Theme>();
     sys.set_dark_mode(t.get_dark());
     sys.set_ui_scale(t.get_ui_scale());
+    sys.global::<Theme>().set_ui_font_px(t.get_ui_font_px());
     sys.set_ui_font_family(t.get_ui_font_family());
     sys.set_wallpaper_img(t.get_wallpaper());
     sys.set_wallpaper_active(t.get_wallpaper_active());

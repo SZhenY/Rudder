@@ -174,20 +174,21 @@ export global Theme {
     // it's false, so an idle background window doesn't repaint (#127).
     in-out property <bool> window-focused: true;
 
-    // Global UI scale (#100/#117/#118). Rust sets this from the saved setting;
-    // all font sizes and spacing/radii below multiply by it, so the whole UI
-    // grows/shrinks live (the terminal font has its own size setting).
+    // 界面基准字号（px，10–20，默认 13）；终端字号另有 term-font-size。
+    in-out property <length> ui-font-px: 13px;
+    // 界面总倍率（0.8–2.0）：等比放大字号、间距、圆角与控件高度。
     in-out property <float> ui-scale: 1.0;
-    // Settings-panel font scale (#v0.5). The settings card + its text multiply by
-    // this so the panel (which is exempt from ui-scale) can still be enlarged.
-    in-out property <float> panel-font: 1.0;
+    /// 字号与总缩放的合成倍率：文字驱动的固定盒子（弹层卡片、输入框）乘它。
+    out property <float> ui-zoom: (root.ui-font-px / 13px) * root.ui-scale;
+    // 设置面板仍写 `Npx * Theme.panel-font`，靠这一条同时跟上字号与总倍率。
+    out property <float> panel-font: root.ui-zoom;
 
     // --- Typography --------------------------------------------------------
-    out property <length> fs-xs: 11px * root.ui-scale;
-    out property <length> fs-sm: 12px * root.ui-scale;
-    out property <length> fs-md: 13px * root.ui-scale;
-    out property <length> fs-lg: 15px * root.ui-scale;
-    out property <length> fs-xl: 18px * root.ui-scale;
+    out property <length> fs-xs: root.ui-font-px * (11.0 / 13.0) * root.ui-scale;
+    out property <length> fs-sm: root.ui-font-px * (12.0 / 13.0) * root.ui-scale;
+    out property <length> fs-md: root.ui-font-px * root.ui-scale;
+    out property <length> fs-lg: root.ui-font-px * (15.0 / 13.0) * root.ui-scale;
+    out property <length> fs-xl: root.ui-font-px * (18.0 / 13.0) * root.ui-scale;
 
     // Embedded monospace for IP / command / log text.
     out property <string> font-mono: "JetBrains Mono";
@@ -215,13 +216,27 @@ export global Theme {
 
     // --- Geometry ----------------------------------------------------------
     // macOS 惯例更圆润；其他平台保持紧凑（统一视觉语言内的参数适配）
+    out property <length> radius-xs: 3px * root.ui-scale;
     out property <length> radius-sm: (is-mac ? 5px : 4px) * root.ui-scale;
     out property <length> radius-md: (is-mac ? 8px : 6px) * root.ui-scale;
     out property <length> radius-lg: (is-mac ? 13px : 10px) * root.ui-scale;
 
     /// 自绘标题栏高度。主窗口与三个子窗口共用；右上工具条与三个弹层的垂直偏移
-    /// 都由它推导，改这一处即可（不乘 `ui-scale`：图标与窗口按钮都是固定像素）。
-    out property <length> titlebar-height: 30px;
+    /// 都由它推导，改这一处即可。
+    out property <length> titlebar-height: max(30px * root.ui-scale, root.fs-sm + 14px * root.ui-scale);
+
+    // --- 控件尺寸：承载文字的容器 >= 文字 + 上下内边距 ---------------------
+    out property <length> control-h:    max(30px * root.ui-scale, root.fs-md + 14px * root.ui-scale);
+    out property <length> control-h-sm: max(26px * root.ui-scale, root.fs-sm + 12px * root.ui-scale);
+    out property <length> bar-h:        max(34px * root.ui-scale, root.fs-md + 18px * root.ui-scale);
+    out property <length> control-h-xs: max(22px * root.ui-scale, root.fs-xs + 8px * root.ui-scale);
+    out property <length> toolbar-h-narrow: 62px * root.ui-scale;
+    out property <length> row-h:        max(28px * root.ui-scale, root.fs-md + 10px * root.ui-scale);
+    out property <length> row-h-lg:     max(30px * root.ui-scale, root.fs-md + 12px * root.ui-scale);
+    out property <length> tab-h:        max(30px * root.ui-scale, root.fs-sm + 16px * root.ui-scale);
+    out property <length> tabbar-h:     max(36px * root.ui-scale, root.tab-h + 6px * root.ui-scale);
+    out property <length> icon-btn:     max(20px * root.ui-scale, root.fs-md + 6px * root.ui-scale);
+    out property <length> icon-btn-lg:  max(28px * root.ui-scale, root.fs-md + 10px * root.ui-scale);
     // 卡片阴影：macOS 更柔和（blur 更大、alpha 更低）
     out property <length> card-shadow-blur: is-mac ? 28px : 24px;
     out property <brush> card-shadow-color: is-mac ? #00000060 : #00000080;
@@ -242,10 +257,35 @@ export global Theme {
     out property <length> shadow-float-blur: 16px;           // 悬浮小面板
     out property <brush>  shadow-float-color: #00000070;
 
-    out property <length> gap-xs: 4px * root.ui-scale;
-    out property <length> gap-sm: 8px * root.ui-scale;
-    out property <length> gap-md: 12px * root.ui-scale;
-    out property <length> gap-lg: 16px * root.ui-scale;
+    // --- 间距档位 ---------------------------------------------------------
+    // 缩放改造后散落着 `Npx * ui-scale`，改倍率要翻 60 多个文件。这里按 4px 基准
+    // 收敛成固定档位：只收高频且语义明确的数值，任意宽度不造令牌。
+    out property <length> sp-2:  2px  * root.ui-scale;
+    out property <length> sp-3:  3px  * root.ui-scale;
+    out property <length> sp-4:  4px  * root.ui-scale;
+    out property <length> sp-5:  5px  * root.ui-scale;
+    out property <length> sp-6:  6px  * root.ui-scale;
+    out property <length> sp-8:  8px  * root.ui-scale;
+    out property <length> sp-10: 10px * root.ui-scale;
+    out property <length> sp-12: 12px * root.ui-scale;
+    out property <length> sp-14: 14px * root.ui-scale;
+    out property <length> sp-16: 16px * root.ui-scale;
+    out property <length> sp-20: 20px * root.ui-scale;
+    out property <length> sp-24: 24px * root.ui-scale;
+
+    out property <length> gap-xs: root.sp-4;
+    out property <length> gap-sm: root.sp-8;
+    out property <length> gap-md: root.sp-12;
+    out property <length> gap-lg: root.sp-16;
+
+    // --- 固定容器宽度（随总倍率）------------------------------------------
+    out property <length> nav-w: 200px * root.ui-scale;
+    out property <length> overview-strip-w: 36px * root.ui-scale;
+    out property <length> overview-min-w: 255px * root.ui-scale;
+    out property <length> nav-w-collapsed: 54px * root.ui-scale;
+    out property <length> settings-nav-w: 168px * root.ui-scale;
+    out property <length> overview-w: 380px * root.ui-scale;
+    out property <length> quick-w: 260px * root.ui-scale;
 
     /// 平台输入法提示（Slint 1.18 新增的 `input-method-hints`）：**不要**自动大写、
     /// 不要自动纠错、不要自动补全。

@@ -47,9 +47,9 @@ export component AboutDialog inherits Rectangle {
     Rectangle {
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2
-            + (about-open ? 0px : 12px);       // 进入上浮 / 退出下坠
-        width: 540px;
-        height: min(440px, parent.height - 40px);
+            + (about-open ? 0px : 12px * Theme.ui-scale);       // 进入上浮 / 退出下坠
+        width: 540px * Theme.ui-zoom;
+        height: min(440px * Theme.ui-zoom, parent.height - 40px * Theme.ui-scale);
         background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
@@ -67,42 +67,42 @@ export component AboutDialog inherits Rectangle {
 
         // Close (×) button
         CloseButton {
-            x: parent.width - 30px; y: 8px;
+            x: parent.width - 30px * Theme.ui-scale; y: 8px * Theme.ui-scale;
             glyph-size: Theme.fs-sm;
             clicked => { root.close-requested(); }
         }
 
         VerticalLayout {
-            padding: 24px;
-            padding-bottom: 16px;
+            padding: Theme.sp-24;
+            padding-bottom: Theme.sp-16;
             spacing: 0px;
 
             // --- Top row: logo + info ---
             HorizontalLayout {
-                spacing: 20px;
+                spacing: Theme.sp-20;
                 VerticalLayout {
                     alignment: center;
                     Image {
                         source: @image-url("../assets/icon.png");
-                        width: 76px; height: 76px;
+                        width: 76px * Theme.ui-zoom; height: 76px * Theme.ui-zoom;
                     }
                 }
                 VerticalLayout {
-                    spacing: 7px;
+                    spacing: 7px * Theme.ui-scale;
                     horizontal-stretch: 1;
                     HorizontalLayout {
-                        alignment: start; spacing: 8px;
+                        alignment: start; spacing: Theme.sp-8;
                         Text {
                             text: "Rudder";
                             color: Theme.text-primary;
-                            font-size: 22px; font-weight: 700;
+                            font-size: 22px * Theme.ui-zoom; font-weight: 700;
                             vertical-alignment: center;
                         }
                         Rectangle {                       // 版本 pill 徽章
                             border-radius: Theme.radius-sm;
                             background: Theme.bg-panel-alt;
                             HorizontalLayout {
-                                padding-left: 7px; padding-right: 7px;
+                                padding-left: 7px * Theme.ui-scale; padding-right: 7px * Theme.ui-scale;
                                 Text {
                                     text: "v" + app-version;
                                     color: Theme.text-secondary;
@@ -121,11 +121,11 @@ export component AboutDialog inherits Rectangle {
                     Text {
                         text: @tr("Forked from yituorou/meatshell");
                         color: Theme.text-muted;
-                        font-size: 11px;
+                        font-size: 11px * Theme.ui-zoom;
                         vertical-alignment: center;
                     }
                     HorizontalLayout {
-                        alignment: start; spacing: 6px;
+                        alignment: start; spacing: Theme.sp-6;
                         Text {
                             text: @tr("Open source");
                             color: Theme.text-muted;
@@ -141,7 +141,7 @@ export component AboutDialog inherits Rectangle {
                                 enabled: AnimationSettings.enabled;
                             }
                             HorizontalLayout {
-                                padding-left: 4px; padding-right: 4px;
+                                padding-left: Theme.sp-4; padding-right: Theme.sp-4;
                                 Text {
                                     text: "github.com/SZhenY/Rudder";
                                     color: Theme.accent;
@@ -176,7 +176,7 @@ export component AboutDialog inherits Rectangle {
                 vertical-stretch: 1;
                 min-height: 0px;
                 for lib[i] in about-libs : Rectangle {
-                    min-height: 26px;      // 依赖行距：不再密集
+                    min-height: 26px * Theme.ui-zoom;      // 依赖行距：不再密集
                     Text {
                         text: lib;
                         color: Theme.text-muted;

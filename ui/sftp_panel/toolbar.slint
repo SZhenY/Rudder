@@ -12,8 +12,8 @@ component PanelTab inherits Rectangle {
     in property <string> label;
     callback activate();
 
-    width: root.narrow ? 28px : root.tab-width;
-    height: 22px;
+    width: root.narrow ? 28px * Theme.ui-scale : root.tab-width;
+    height: Theme.control-h-xs;
     border-radius: Theme.radius-sm;
     background: root.panel-mode == root.mode ? Theme.accent : (tab-ta.has-hover ? Theme.state-hover : transparent);
     animate background {
@@ -53,25 +53,25 @@ export component SftpToolbar inherits Rectangle {
         path-input.text = root.current-path;
         compact-path-input.text = root.current-path;
     }
-    height: root.narrow-toolbar && root.panel-mode == "sftp" ? 62px : 34px;
+    height: root.narrow-toolbar && root.panel-mode == "sftp" ? Theme.toolbar-h-narrow : Theme.bar-h;
     background: Theme.bg-panel-alt;
 
     VerticalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
 
         HorizontalLayout {
-        height: 34px;
-        padding-left: 6px;
-        padding-right: 6px;
-        padding-top: 6px;
-        padding-bottom: 6px;
-        spacing: 4px;
+        height: Theme.bar-h;
+        padding-left: Theme.sp-6;
+        padding-right: Theme.sp-6;
+        padding-top: Theme.sp-6;
+        padding-bottom: Theme.sp-6;
+        spacing: Theme.sp-4;
 
         PanelTab {
             mode: "overview";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 64px;
+            tab-width: 64px * Theme.ui-scale;
             glyph: "\u{E871}";
             label: @tr("Overview");
             activate() => { root.panel-mode = "overview"; }
@@ -80,7 +80,7 @@ export component SftpToolbar inherits Rectangle {
             mode: "sftp";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 48px;
+            tab-width: 48px * Theme.ui-scale;
             glyph: "\u{E2C7}";
             label: "SFTP";
             activate() => { root.panel-mode = "sftp"; }
@@ -89,7 +89,7 @@ export component SftpToolbar inherits Rectangle {
             mode: "tunnels";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 58px;
+            tab-width: 58px * Theme.ui-scale;
             glyph: "\u{E0B6}";
             label: @tr("Tunnels");
             activate() => { root.panel-mode = "tunnels"; }
@@ -103,15 +103,15 @@ export component SftpToolbar inherits Rectangle {
         Rectangle {
             visible: root.panel-mode == "sftp" && !root.narrow-toolbar;
             horizontal-stretch: 1;
-            height: 22px;
+            height: Theme.control-h-xs;
             border-radius: Theme.radius-sm;
             background: Theme.bg-root;
             border-width: 1px;
             border-color: path-input.has-focus ? Theme.accent : Theme.border-subtle;
             path-input := TextInput {
                 input-method-hints: Theme.plain-input-hints;
-                x: 6px;
-                width: parent.width - 12px;
+                x: 6px * Theme.ui-scale;
+                width: parent.width - 12px * Theme.ui-scale;
                 height: parent.height;
                 text: root.current-path;
                 color: Theme.text-primary;
@@ -129,7 +129,7 @@ export component SftpToolbar inherits Rectangle {
         // 这三个按钮会在窄模式下白占 3×24 + 3×4 = 84px，把最右的收起按钮挤出面板
         // （255px 时第一行最少要 276px）。功能都在 ⋮ 菜单里，销毁无损失。
         if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: copy-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -153,7 +153,7 @@ export component SftpToolbar inherits Rectangle {
 
         // Paste a path from the clipboard and jump straight to it.
         if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: pj-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -180,7 +180,7 @@ export component SftpToolbar inherits Rectangle {
         // it in the ⋮ menu forces an extra click on every step up.
         Rectangle {
             visible: root.panel-mode == "sftp";
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: up-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -200,7 +200,7 @@ export component SftpToolbar inherits Rectangle {
         // SFTP upload handles both — only the local picker differs.
         Rectangle {
             visible: root.panel-mode == "sftp";
-            width: root.narrow-toolbar ? 24px : 52px; height: 22px;
+            width: root.narrow-toolbar ? 24px * Theme.ui-scale : 52px * Theme.ui-scale; height: Theme.control-h-xs;
             border-radius: Theme.radius-sm;
             background: ul-ta.has-hover ? Theme.accent-hover : Theme.accent;
             animate background {
@@ -215,9 +215,9 @@ export component SftpToolbar inherits Rectangle {
             Text { text: root.narrow-toolbar ? "↑" : @tr("Upload"); color: #ffffff; font-size: Theme.fs-sm;
                    horizontal-alignment: center; vertical-alignment: center; }
             ul-menu := PopupWindow {
-                x: 0; y: parent.height + 2px;
-                width: 124px;
-                height: 2 * 27px + 8px;
+                x: 0; y: parent.height + 2px * Theme.ui-scale;
+                width: 124px * Theme.ui-scale;
+                height: (2 * 27px * Theme.ui-scale + 8px * Theme.ui-scale) * Theme.ui-scale;
                 Rectangle {
                     background: Theme.bg-panel;
                     border-radius: Theme.radius-sm;
@@ -226,8 +226,8 @@ export component SftpToolbar inherits Rectangle {
                     drop-shadow-blur: Theme.shadow-popup-blur;
                     drop-shadow-color: Theme.shadow-popup-color;
                     VerticalLayout {
-                        padding: 4px;
-                        spacing: 1px;
+                        padding: Theme.sp-4;
+                        spacing: 1px * Theme.ui-scale;
                         SftpMenuItem {
                             label: @tr("Upload file");
                             clicked => { root.upload-clicked(root.current-path, false); }
@@ -244,8 +244,8 @@ export component SftpToolbar inherits Rectangle {
         // Secondary path actions move into an overflow menu in compact
         // mode so they never compete with the path field for width.
         if root.narrow-toolbar && root.panel-mode == "sftp" : Rectangle {
-            width: 24px;
-            height: 22px;
+            width: 24px * Theme.ui-scale;
+            height: Theme.control-h-xs;
             border-radius: Theme.radius-sm;
             background: compact-more-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -265,9 +265,9 @@ export component SftpToolbar inherits Rectangle {
             }
             compact-more-menu := PopupWindow {
                 x: parent.width - self.width;
-                y: parent.height + 2px;
-                width: 142px;
-                height: 4 * 27px + 8px;
+                y: parent.height + 2px * Theme.ui-scale;
+                width: 142px * Theme.ui-scale;
+                height: (4 * 27px * Theme.ui-scale + 8px * Theme.ui-scale) * Theme.ui-scale;
                 Rectangle {
                     background: Theme.bg-panel;
                     border-radius: Theme.radius-sm;
@@ -276,8 +276,8 @@ export component SftpToolbar inherits Rectangle {
                     drop-shadow-blur: Theme.shadow-popup-blur;
                     drop-shadow-color: Theme.shadow-popup-color;
                     VerticalLayout {
-                        padding: 4px;
-                        spacing: 1px;
+                        padding: Theme.sp-4;
+                        spacing: 1px * Theme.ui-scale;
                         SftpMenuItem {
                             label: @tr("Up one level");
                             clicked => { root.navigate(".."); }
@@ -315,7 +315,7 @@ export component SftpToolbar inherits Rectangle {
             vertical-alignment: center;
         }
         if root.panel-mode == "sftp" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: dls-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -329,7 +329,7 @@ export component SftpToolbar inherits Rectangle {
                    font-size: Theme.fs-md;}
         }
         if root.panel-mode == "sftp" && root.selected-count > 0 && !root.narrow-toolbar : Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: dels-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
             animate background {
@@ -344,7 +344,7 @@ export component SftpToolbar inherits Rectangle {
         }
 
         if root.panel-mode == "sftp" && !root.narrow-toolbar : Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: ref-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -364,7 +364,7 @@ export component SftpToolbar inherits Rectangle {
 
         // Minimise / restore the SFTP panel (#41).
         Rectangle {
-            width: 24px; height: 22px;
+            width: 24px * Theme.ui-scale; height: 22px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: min-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -388,20 +388,20 @@ export component SftpToolbar inherits Rectangle {
         // 用 layout spacing 留固定间距，不受首行对齐 / 内边距影响。
         HorizontalLayout {
             visible: root.narrow-toolbar && root.panel-mode == "sftp";
-            height: self.visible ? 22px : 0px;
-            padding-left: 6px;
-            padding-right: 6px;
+            height: self.visible ? Theme.control-h-xs : 0px;
+            padding-left: Theme.sp-6;
+            padding-right: Theme.sp-6;
             Rectangle {
                 horizontal-stretch: 1;
-                height: 22px;
+                height: Theme.control-h-xs;
                 border-radius: Theme.radius-sm;
                 background: Theme.bg-root;
                 border-width: 1px;
                 border-color: compact-path-input.has-focus ? Theme.accent : Theme.border-subtle;
                 compact-path-input := TextInput {
                     input-method-hints: Theme.plain-input-hints;
-                    x: 6px;
-                    width: parent.width - 12px;
+                    x: 6px * Theme.ui-scale;
+                    width: parent.width - 12px * Theme.ui-scale;
                     height: parent.height;
                     text: root.current-path;
                     color: Theme.text-primary;

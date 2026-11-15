@@ -17,12 +17,12 @@ component HostRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
 
-    height: 18px;
-    spacing: 6px;
+    height: 18px * Theme.ui-scale;
+    spacing: Theme.sp-6;
 
     Text {
         text: root.label;
-        width: 52px;
+        width: 52px * Theme.ui-scale;
         color: Theme.text-muted;
         font-size: Theme.fs-xs;
         vertical-alignment: center;
@@ -40,9 +40,8 @@ component HostRow inherits HorizontalLayout {
 
 export component OverviewView inherits Rectangle {
     // 卡片高度常量：后续手动调整改这里即可。
-    property <length> cpu-chart-h: 120px;
-    property <length> net-chart-h: 100px;
-    property <length> disk-min-h: 120px;
+    property <length> cpu-chart-h: 150px * Theme.ui-scale;
+    property <length> net-chart-h: 150px * Theme.ui-scale;
 
     in property <string> connection-state: @tr("Not connected");
     in property <string> conn-host;
@@ -86,22 +85,26 @@ export component OverviewView inherits Rectangle {
         content-width: self.visible-width;
 
         VerticalLayout {
-            padding: 8px;
-            spacing: 6px;
+            padding: Theme.sp-8;
+            spacing: Theme.sp-6;
+            // 富余高度留在卡片列表末尾，不灌进卡片内部。
+            alignment: start;
 
             // --- 主机头卡 -------------------------------------------------
             if root.host-name != "" : Rectangle {
+                vertical-stretch: 0;
                 border-radius: Theme.radius-md;
                 background: Theme.bg-elevated;
                 border-width: 1px;
                 border-color: Theme.border-subtle;
 
                 VerticalLayout {
-                    padding: 10px;
-                    spacing: 3px;
+                    padding: Theme.sp-10;
+                    spacing: Theme.sp-3;
+                    alignment: start;
 
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Theme.sp-8;
                         IconText {
                             text: "\u{EB8E}";   // terminal
                             color: Theme.accent;
@@ -133,7 +136,7 @@ export component OverviewView inherits Rectangle {
                 title-icon: "\u{E30C}";
 
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-10;
                     VerticalLayout {
                         horizontal-stretch: 1;
                         StatRow {
@@ -154,7 +157,7 @@ export component OverviewView inherits Rectangle {
                     }
                 }
                 HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-10;
                     VerticalLayout {
                         horizontal-stretch: 1;
                         StatRow {
@@ -211,7 +214,6 @@ export component OverviewView inherits Rectangle {
             OverviewCard {
                 title: @tr("Disk");
                 title-icon: "\u{E1DB}";
-                min-height: root.disk-min-h;
 
                 DiskBlock {
                     disks: root.disks;

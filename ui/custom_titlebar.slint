@@ -8,6 +8,7 @@ import "fonts/JetBrainsMono-Italic.ttf";
 import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { WindowTitleBar } from "components/window_shell.slint";
+import { Theme } from "theme.slint";
 
 export component FramelessTitleBar inherits WindowTitleBar {
     // ── 状态（窗口 / 父布局透传）─────────────────────────────────────
@@ -21,10 +22,10 @@ export component FramelessTitleBar inherits WindowTitleBar {
     callback win-minimize();
 
         title: "Rudder";
-        icon-size: 18px;
+        icon-size: 18px * Theme.ui-scale;
         show-min-max: true;
         maximized: window-maximized;
-        armed-drag: true;      // 拖过 6px 才交给系统，双击最大化才派发得到
+        armed-drag: true;      // 拖过 6px * Theme.ui-scale 才交给系统，双击最大化才派发得到
         drag() => { root.win-drag(); }
         minimize() => { root.win-minimize(); }
         maximize-toggle() => { root.win-maximize-toggle(); }

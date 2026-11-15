@@ -52,17 +52,28 @@ pub(crate) fn wire_tab_panes(window: &AppWindow, ctx: &AppContext) {
         let splitters_model = splitters_model.clone();
         window.on_splitter_drag(move |split_id: i32, pos: f32, _vertical: bool| {
             {
+                let scale = weak
+                    .upgrade()
+                    .map(|w| w.global::<crate::ui::Theme>().get_ui_scale().max(0.8))
+                    .unwrap_or(1.0);
                 let mut lay = layout.borrow_mut();
                 let (cw, ch) = content_size.get();
                 let extent = {
-                    let (_, splits) = lay.flatten(0.0, 0.0, cw.max(1.0), ch.max(1.0));
+                    let (_, splits) =
+                        lay.flatten_scaled(0.0, 0.0, cw.max(1.0), ch.max(1.0), scale);
                     splits
                         .iter()
                         .find(|s| s.split_id == split_id as u64)
                         .map(|s| (s.axis_start, s.axis_len))
                 };
                 if let Some((start, len)) = extent {
-                    lay.set_ratio(split_id as u64, start, len, pos);
+                    lay.set_ratio_min(
+                        split_id as u64,
+                        start,
+                        len,
+                        pos,
+                        crate::layout::min_pane(scale),
+                    );
                 }
             }
             if let Some(w) = weak.upgrade() {

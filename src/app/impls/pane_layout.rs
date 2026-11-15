@@ -95,8 +95,9 @@ pub(crate) fn refresh_panes(
     let snapshot = (*layout.borrow()).clone();
     let layout = &snapshot;
 
+    let ui_scale = window.global::<crate::ui::Theme>().get_ui_scale().max(0.8);
     let (cw, ch) = (content.0.max(1.0), content.1.max(1.0));
-    let (panes, splits) = layout.flatten(0.0, 0.0, cw, ch);
+    let (panes, splits) = layout.flatten_scaled(0.0, 0.0, cw, ch, ui_scale);
 
     let pane_infos: Vec<PaneInfo> = panes
         .iter()
@@ -124,7 +125,7 @@ pub(crate) fn refresh_panes(
                 h: p.h,
                 active_id: p.active.clone().into(),
                 focused: p.focused,
-                reserve_right: if top_right { 160.0 } else { 0.0 },
+                reserve_right: if top_right { 160.0 * ui_scale } else { 0.0 },
                 tabs: ModelRc::from(Rc::new(VecModel::from(tabs))),
             }
         })

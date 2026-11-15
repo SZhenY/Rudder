@@ -13,7 +13,7 @@ component WinBtn inherits Rectangle {
     in property <bool> danger: false;
     callback clicked();
 
-    width: 46px;
+    width: 46px * Theme.ui-scale;
     background: transparent;
     states [
         lit when ta.has-hover : {
@@ -34,7 +34,7 @@ component WinBtn inherits Rectangle {
         centered: true;
         text: root.icon;
         color: (root.danger && ta.has-hover) ? white : Theme.text-secondary;
-        font-size: 16px;
+        font-size: 16px * Theme.ui-scale;
     }
 }
 
@@ -54,7 +54,7 @@ export component WindowTitleBar inherits Rectangle {
     in property <string> title;
     in property <length> bar-height: Theme.titlebar-height;
     in property <brush> bg: Theme.bg-panel;
-    in property <length> icon-size: 18px;
+    in property <length> icon-size: 18px * Theme.ui-scale;
     in property <bool> show-min-max: false;
     in property <bool> maximized: false;   // 决定最大化按钮的图标（还原 / 最大化）
     /// true = 按住后位移超过 6px 才把移动交给系统（保住双击最大化）；子窗口设 false（按下即拖）。
@@ -95,8 +95,8 @@ export component WindowTitleBar inherits Rectangle {
         }
         moved => {
             if (root.armed-drag && self.pressed && drag-armed
-                && (abs(self.mouse-x - press-x) > 6px
-                    || abs(self.mouse-y - press-y) > 6px)) {
+                && (abs(self.mouse-x - press-x) > 6px * Theme.ui-scale
+                    || abs(self.mouse-y - press-y) > 6px * Theme.ui-scale)) {
                 drag-armed = false;
                 root.drag();
             }
@@ -110,15 +110,15 @@ export component WindowTitleBar inherits Rectangle {
     }
 
     HorizontalLayout {
-        padding-left: 12px;
-        spacing: 8px;
+        padding-left: Theme.sp-12;
+        spacing: Theme.sp-8;
         // 垂直居中包装，让图标与窗口名对齐（#119）。
         VerticalLayout {
             alignment: center;
             Image {
                 source: @image-url("../../assets/icon.png");
-                width: root.icon-size;
-                height: root.icon-size;
+                width: root.icon-size * Theme.ui-scale;
+                height: root.icon-size * Theme.ui-scale;
             }
         }
         VerticalLayout {

@@ -20,17 +20,17 @@ export component WslPage inherits VerticalLayout {
     callback pick-wsl-directory();
     callback remove-wsl-profile(string);
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
-    spacing: 8px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
+    spacing: Theme.sp-8;
     alignment: start;
     SettingsSection {
         section-id: "wsl.wsl";
         lang-en: root.lang-en;
         title-zh: "WSL";
         title-en: "WSL";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         Text {
             text: root.lang-en
                 ? "Add multiple WSL launch entries. A blank distribution uses the Windows default; ~ opens the selected Linux user's home directory."
@@ -51,7 +51,7 @@ export component WslPage inherits VerticalLayout {
             value <=> root.wsl-new-distribution;
         }
         HorizontalLayout {
-            spacing: 8px;
+            spacing: Theme.sp-8;
             LabeledInput {
                 horizontal-stretch: 1;
                 label: root.lang-en ? "Startup directory" : "启动目录";
@@ -80,7 +80,7 @@ export component WslPage inherits VerticalLayout {
         }
         Divider {}
         for profile in root.wsl-profiles : Rectangle {
-            height: 54px;
+            height: 54px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: Theme.bg-elevated;
             HorizontalLayout {
@@ -89,7 +89,7 @@ export component WslPage inherits VerticalLayout {
                 y: 0;
                 width: parent.width;
                 height: parent.height;
-                padding-left: 10px; padding-right: 8px; spacing: 8px;
+                padding-left: Theme.sp-10; padding-right: Theme.sp-8; spacing: Theme.sp-8;
                 VerticalLayout {
                     horizontal-stretch: 1; alignment: center;
                     Text { text: profile.name; color: Theme.text-primary; font-size: 13px * Theme.panel-font; }

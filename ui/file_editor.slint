@@ -60,8 +60,8 @@ export component FileEditor inherits Rectangle {
 
     // ── 块内私有状态（窗口从不访问）：随块搬进来并标 `private`，不进公共面 ──
     private property <bool> editor-focus-pending: false;
-    private property <length> ed-w: 760px;
-    private property <length> ed-h: 560px;
+    private property <length> ed-w: 760px * Theme.ui-scale;
+    private property <length> ed-h: 560px * Theme.ui-scale;
     private property <length> ed-x: (root.width - ed-w) / 2;
     private property <length> ed-y: (root.height - ed-h) / 2;
     private property <bool> ed-dragging;
@@ -114,7 +114,7 @@ export component FileEditor inherits Rectangle {
             VerticalLayout {
                 // Title bar — drag to move; the buttons stay on top.
                 Rectangle {
-                    height: 40px;
+                    height: 40px * Theme.ui-scale;
                     background: Theme.bg-panel-alt;
                     TouchArea {
                         mouse-cursor: move;
@@ -135,23 +135,23 @@ export component FileEditor inherits Rectangle {
                                 // 一旦被拖出窗口就再也点不到，本次会话内无法拖回（上游 eafd513）。
                                 ed-x = clamp(
                                     ed-base-x + (self.absolute-position.x + self.mouse-x - ed-grab-x),
-                                    -(ed-w - 120px),
-                                    root.width - 120px);
+                                    -(ed-w - 120px * Theme.ui-scale),
+                                    root.width - 120px * Theme.ui-scale);
                                 ed-y = clamp(
                                     ed-base-y + (self.absolute-position.y + self.mouse-y - ed-grab-y),
                                     0px,
-                                    root.height - 40px);
+                                    root.height - 40px * Theme.ui-scale);
                             }
                         }
                     }
                     HorizontalLayout {
-                        padding-left: 14px;
-                        padding-right: 8px;
+                        padding-left: Theme.sp-14;
+                        padding-right: Theme.sp-8;
                         // Centre the 28px buttons inside the 40px bar so the
                         // Save button isn't glued to the top edge (#70).
-                        padding-top: 6px;
-                        padding-bottom: 6px;
-                        spacing: 8px;
+                        padding-top: Theme.sp-6;
+                        padding-bottom: Theme.sp-6;
+                        spacing: Theme.sp-8;
                         Label {
                             text: editor-name
                                 + (editor-readonly
@@ -168,12 +168,12 @@ export component FileEditor inherits Rectangle {
                             text: editor-status;
                             color: Theme.danger;
                             font-size: Theme.fs-sm;
-                            width: 180px;
+                            width: 180px * Theme.ui-scale;
                             vertical-alignment: center;
                             overflow: elide;
                         }
                         if !editor-readonly : Rectangle {
-                            width: 76px; height: 28px;
+                            width: 76px * Theme.ui-scale; height: 28px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: ed-save-ta.has-hover ? Theme.accent-hover : Theme.accent;
                             animate background {
@@ -189,7 +189,7 @@ export component FileEditor inherits Rectangle {
                                    horizontal-alignment: center; vertical-alignment: center; }
                         }
                         CloseButton {
-                            size: 28px;
+                            size: 28px * Theme.ui-scale;
                             clicked => { root.close-editor(); }
                         }
                     }
@@ -199,11 +199,11 @@ export component FileEditor inherits Rectangle {
                 // Lightweight find/replace bar (#287). Replacement is
                 // explicit; closing the editor never writes the file.
                 Rectangle {
-                    height: 38px;
+                    height: 38px * Theme.ui-scale;
                     background: Theme.bg-elevated;
                     HorizontalLayout {
-                        padding-left: 8px; padding-right: 8px;
-                        padding-top: 5px; padding-bottom: 5px; spacing: 6px;
+                        padding-left: Theme.sp-8; padding-right: Theme.sp-8;
+                        padding-top: Theme.sp-5; padding-bottom: Theme.sp-5; spacing: Theme.sp-6;
                         Text { text: @tr("Find"); color: Theme.text-muted; vertical-alignment: center; }
                         TextInput {
                             input-method-hints: Theme.plain-input-hints;
@@ -217,14 +217,14 @@ export component FileEditor inherits Rectangle {
                             }
                         }
                         Text {
-                            width: 42px;
+                            width: 42px * Theme.ui-scale;
                             text: editor-find-query == "" ? "" : editor-match-count;
                             color: Theme.text-muted;
                             vertical-alignment: center;
                             horizontal-alignment: center;
                         }
                         Rectangle {
-                            width: 28px;
+                            width: 28px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: find-prev-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
                             animate background {
@@ -246,7 +246,7 @@ export component FileEditor inherits Rectangle {
                             Text { text: "↑"; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
                         }
                         Rectangle {
-                            width: 28px;
+                            width: 28px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: find-next-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
                             animate background {
@@ -275,7 +275,7 @@ export component FileEditor inherits Rectangle {
                             text <=> editor-replace-text;
                         }
                         Rectangle {
-                            width: 88px;
+                            width: 88px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: replace-all-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
                             animate background {
@@ -312,13 +312,13 @@ export component FileEditor inherits Rectangle {
                     HorizontalLayout {
                         spacing: 0;
                         Rectangle {
-                            width: 48px;
+                            width: 48px * Theme.ui-scale;
                             background: Theme.bg-panel-alt;
                             clip: true;
                             Label {
                                 x: 0;
-                                y: ed-scroll.content-y + 8px;
-                                width: parent.width - 6px;
+                                y: ed-scroll.content-y + 8px * Theme.ui-scale;
+                                width: parent.width - 6px * Theme.ui-scale;
                                 text: editor-line-numbers;
                                 horizontal-alignment: right;
                                 font-size: Theme.fs-md;
@@ -332,13 +332,13 @@ export component FileEditor inherits Rectangle {
                             horizontal-stretch: 1;
                             clip: true;
                             ed-scroll := ScrollView {
-                                content-width: max(self.visible-width, edit-input.preferred-width + 16px);
-                                content-height: max(self.visible-height, edit-input.preferred-height + 16px);
+                                content-width: max(self.visible-width, edit-input.preferred-width + 16px * Theme.ui-scale);
+                                content-height: max(self.visible-height, edit-input.preferred-height + 16px * Theme.ui-scale);
                                 edit-input := TextInput {
                                     input-method-hints: Theme.plain-input-hints;
-                                    x: 8px;
-                                    y: 8px;
-                                    width: max(parent.visible-width - 16px, self.preferred-width);
+                                    x: 8px * Theme.ui-scale;
+                                    y: 8px * Theme.ui-scale;
+                                    width: max(parent.visible-width - 16px * Theme.ui-scale, self.preferred-width);
                                     height: self.preferred-height;
                                     text <=> editor-content;
                                     read-only: editor-readonly;
@@ -360,10 +360,10 @@ export component FileEditor inherits Rectangle {
 
             // Bottom-right resize grip (#70).
             Rectangle {
-                x: parent.width - 18px;
-                y: parent.height - 18px;
-                width: 18px;
-                height: 18px;
+                x: parent.width - 18px * Theme.ui-scale;
+                y: parent.height - 18px * Theme.ui-scale;
+                width: 18px * Theme.ui-scale;
+                height: 18px * Theme.ui-scale;
                 ed-resize-ta := TouchArea {
                     mouse-cursor: nwse-resize;
                     pointer-event(e) => {
@@ -379,18 +379,18 @@ export component FileEditor inherits Rectangle {
                     }
                     moved => {
                         if (ed-resizing) {
-                            ed-w = max(420px, ed-base-w + (self.absolute-position.x + self.mouse-x - ed-grab-x));
-                            ed-h = max(280px, ed-base-h + (self.absolute-position.y + self.mouse-y - ed-grab-y));
+                            ed-w = max(420px * Theme.ui-scale, ed-base-w + (self.absolute-position.x + self.mouse-x - ed-grab-x));
+                            ed-h = max(280px * Theme.ui-scale, ed-base-h + (self.absolute-position.y + self.mouse-y - ed-grab-y));
                         }
                     }
                 }
                 // 原来是一个 "◢" 字形 —— 部分系统 / 字体下会画成豆腐块（上游 0be0b43）。
                 // 换成三条阶梯矩形，任何字体下都成立，右下角观感不变。
                 Rectangle {
-                    x: parent.width - 6px;
-                    y: parent.height - 3px;
-                    width: 3px;
-                    height: 3px;
+                    x: parent.width - 6px * Theme.ui-scale;
+                    y: parent.height - 3px * Theme.ui-scale;
+                    width: 3px * Theme.ui-scale;
+                    height: 3px * Theme.ui-scale;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
                     animate background {
                         duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -399,10 +399,10 @@ export component FileEditor inherits Rectangle {
                     }
                 }
                 Rectangle {
-                    x: parent.width - 11px;
-                    y: parent.height - 7px;
-                    width: 3px;
-                    height: 7px;
+                    x: parent.width - 11px * Theme.ui-scale;
+                    y: parent.height - 7px * Theme.ui-scale;
+                    width: 3px * Theme.ui-scale;
+                    height: 7px * Theme.ui-scale;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
                     animate background {
                         duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -411,10 +411,10 @@ export component FileEditor inherits Rectangle {
                     }
                 }
                 Rectangle {
-                    x: parent.width - 16px;
-                    y: parent.height - 11px;
-                    width: 3px;
-                    height: 11px;
+                    x: parent.width - 16px * Theme.ui-scale;
+                    y: parent.height - 11px * Theme.ui-scale;
+                    width: 3px * Theme.ui-scale;
+                    height: 11px * Theme.ui-scale;
                     background: ed-resize-ta.has-hover ? Theme.text-secondary : Theme.text-muted;
                     animate background {
                         duration: ed-resize-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();

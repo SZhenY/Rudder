@@ -17,21 +17,21 @@ export component PlaceholderPage inherits Rectangle {
         width: 100%;
         height: 100%;
         alignment: center;
-        spacing: 8px;
+        spacing: Theme.sp-8;
 
         // 固定宽度的图标块不会在交叉轴上自动居中，外面套一层布局来做。
         HorizontalLayout {
-            height: 56px;
+            height: 56px * Theme.ui-scale;
             alignment: center;
             Rectangle {
-                width: 56px;
-                height: 56px;
+                width: 56px * Theme.ui-scale;
+                height: 56px * Theme.ui-scale;
                 border-radius: Theme.radius-md;
                 background: Theme.bg-elevated;
                 IconText {
                     text: root.glyph;
                     color: Theme.accent;
-                    font-size: 28px;
+                    font-size: 28px * Theme.ui-zoom;
                     centered: true;
                     width: parent.width;
                     height: parent.height;

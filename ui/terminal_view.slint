@@ -127,8 +127,8 @@ export component TerminalView inherits Rectangle {
     // Per-session now (#v0.5): the AppWindow stores these in each TerminalState
     // and writes back via the set-* callbacks, so each tab/pane keeps its own SFTP
     // size + collapse state (resizing/collapsing one no longer affects the others).
-    in property <length> overview-panel-height: 220px;
-    in property <length> overview-panel-width: 380px;     // 右侧面板宽度
+    in property <length> overview-panel-height: 220px * Theme.ui-scale;
+    in property <length> overview-panel-width: 380px * Theme.ui-scale;     // 右侧面板宽度
     in property <bool>   overview-collapsed: false;       // SFTP panel minimised (toolbar only)
 
     // 折叠进度：0 = 展开，1 = 收起。**与左侧导航、快捷面板同一组令牌、同一套结构** ——
@@ -136,7 +136,7 @@ export component TerminalView inherits Rectangle {
     property <float> overview-progress: root.overview-collapsed ? 1 : 0;
     animate overview-progress {
         duration: AnimationSettings.collapse-duration(
-            root.overview-collapsed, max(255px, root.overview-panel-width) - 36px);
+            root.overview-collapsed, max(Theme.overview-min-w, root.overview-panel-width) - Theme.overview-strip-w);
         easing: AnimationSettings.collapse-easing();
         enabled: AnimationSettings.enabled;
     }
@@ -349,7 +349,7 @@ export component TerminalView inherits Rectangle {
         // Keep it in layout but invisible: opacity:0 forces full font loading.
         opacity: 0;
         // Park it at y<0 so it never overlaps terminal content.
-        y: -200px;
+        y: -200px * Theme.ui-scale;
         width: 0px; // zero out layout contribution
         height: 0px;
     }
@@ -371,20 +371,20 @@ export component TerminalView inherits Rectangle {
     // 非 SFTP 会话（本地终端 / 串口 / Telnet）不占位：面板与折叠条都不渲染，
     // 返回 36px 只会白留一条空带并少算列数。
     property <length> term-overview-overhead: root.overview-available
-        ? (root.overview-collapsed ? 36px : max(255px, root.overview-panel-width))
+        ? (root.overview-collapsed ? Theme.overview-strip-w : max(Theme.overview-min-w, root.overview-panel-width))
         : 0px;
     property <length> term-available-w: root.width - root.term-overview-overhead;
     // `- 0.5` 列是安全边距：cell-w 来自 50 字符探针的平均值，长连续文本按真实字距
     // 排布会相对网格累积漂移。留整列太保守（右侧白多一个字符宽），留半列
     // （≈3.9px）足够覆盖实测漂移，同时把右侧余量压到 0.5~1.5 列。
-    property <float> term-cols: max(10, floor((root.term-available-w - 10px) / cell-w - 0.5));
-    property <float> term-rows: max(5,  floor((key-capture.height - 8px) / cell-h));
+    property <float> term-cols: max(10, floor((root.term-available-w - 10px * Theme.ui-scale) / cell-w - 0.5));
+    property <float> term-rows: max(5,  floor((key-capture.height - 8px * Theme.ui-scale) / cell-h));
     // Only resize the PTY while this tab is visible.  Inactive tabs are laid
     // out at width 0 (→ term-cols collapses to 10); resizing the remote to 10
     // columns reflows the vt100 screen and destroys the scrollback, so when you
     // switch back the output is gone.  Guarding on `visible` keeps each hidden
     // session frozen at its real size; `changed visible` re-syncs on return.
-    property <bool> has-real-size: root.term-available-w >= 80px && key-capture.height >= 80px;
+    property <bool> has-real-size: root.term-available-w >= 80px * Theme.ui-scale && key-capture.height >= 80px * Theme.ui-scale;
     changed term-cols => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
     changed term-rows => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
     changed has-real-size => { if (root.visible && root.has-real-size) { root.terminal-resize(root.term-cols, root.term-rows); } }
@@ -459,13 +459,13 @@ export component TerminalView inherits Rectangle {
         vertical-stretch: 1;
         // 右缘固定：sf-taken 用于定宽，sf-viz 用于动画。
         property <length> sf-taken: !root.overview-available ? 0px
-            : root.overview-collapsed ? 36px
-            : max(255px, root.overview-panel-width);
+            : root.overview-collapsed ? Theme.overview-strip-w
+            : max(Theme.overview-min-w, root.overview-panel-width);
 
         // 面板与分隔条读 sf-viz。
         property <length> sf-viz: !root.overview-available ? 0px
-            : max(255px, root.overview-panel-width)
-            + (36px - max(255px, root.overview-panel-width)) * root.overview-progress;
+            : max(Theme.overview-min-w, root.overview-panel-width)
+            + (Theme.overview-strip-w - max(Theme.overview-min-w, root.overview-panel-width)) * root.overview-progress;
         central := Rectangle {
             x: 0px;
             y: 0px;
@@ -524,17 +524,17 @@ export component TerminalView inherits Rectangle {
                     // the content so we can scroll back through history.
                     content-height: root.is-alt-screen
                         ? self.height
-                        : max(self.height, 8px + root.rows-used * root.cell-h + 8px);
+                        : max(self.height, 8px * Theme.ui-scale + root.rows-used * root.cell-h + 8px * Theme.ui-scale);
 
                     // The terminal grid.  Each coloured run is placed with
                     // absolute coordinates derived from its (row, col) and the
                     // measured cell size — no per-line layout needed,
                     // which keeps the model flat (a single `for`).
                     Rectangle {
-                        x: 5px;
-                        y: 8px;
-                        width: parent.width - 10px;
-                        height: flickable.content-height - 8px;
+                        x: 5px * Theme.ui-scale;
+                        y: 8px * Theme.ui-scale;
+                        width: parent.width - 10px * Theme.ui-scale;
+                        height: flickable.content-height - 8px * Theme.ui-scale;
 
                         // Click-to-focus over the whole terminal body.  Without
                         // this, clicking anywhere in the output area blurs the
@@ -624,8 +624,8 @@ export component TerminalView inherits Rectangle {
                                 if (root.mouse-press-pending) {
                                     // 拖出 4px 才算拖选；在那之前仍按"可能是点击"处理，
                                     // 免得手抖把一次点击变成选区（上游 2e5f125）。
-                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px
-                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px) {
+                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px * Theme.ui-scale
+                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px * Theme.ui-scale) {
                                         root.mouse-press-pending = false;
                                         root.selecting = true;
                                         root.select-start(
@@ -656,7 +656,7 @@ export component TerminalView inherits Rectangle {
                                         // captures the pointer while pressed, so dragging
                                         // past the edge still scrolls to extend across
                                         // more than one screen.
-                                        root.vis-y = self.mouse-y + 8px + flickable.content-y;
+                                        root.vis-y = self.mouse-y + 8px * Theme.ui-scale + flickable.content-y;
                                         if (root.vis-y < 0) {
                                             root.autoscroll-dir = -1;       // past top → older
                                         } else if (root.vis-y > flickable.height) {
@@ -701,7 +701,7 @@ export component TerminalView inherits Rectangle {
                             width: m.len * root.cell-w;
                             height: root.cell-h;
                             background: Theme.warning.with-alpha(0.45);
-                            border-radius: 2px;
+                            border-radius: 2px * Theme.ui-scale;
                         }
 
                         // Each span = a background fill (transparent for the
@@ -776,7 +776,7 @@ export component TerminalView inherits Rectangle {
                                 y: ch * 0.90; width: parent.width; height: line-w;
                                 clip: true;
                                 HorizontalLayout {
-                                    spacing: 2px;
+                                    spacing: Theme.sp-2;
                                     for _ in 60 : Rectangle {
                                         width: line-w; height: line-w;
                                         border-radius: line-w / 2;
@@ -789,7 +789,7 @@ export component TerminalView inherits Rectangle {
                                 y: ch * 0.90; width: parent.width; height: line-w;
                                 clip: true;
                                 HorizontalLayout {
-                                    spacing: 3px;
+                                    spacing: Theme.sp-3;
                                     for _ in 25 : Rectangle {
                                         width: line-w * 4; height: line-w;
                                         background: span.fg;
@@ -817,9 +817,9 @@ export component TerminalView inherits Rectangle {
                             // it after ASCII glyphs and inside wide CJK cells (#319).
                             x: root.cursor-col * root.cell-w;
                             y: root.cursor-row * root.cell-h
-                                + (root.cursor-style == "underline" ? max(0px, root.cell-h - max(2px, root.cell-h / 8)) : 0px);
-                            width: root.cursor-style == "bar" ? max(2px, root.cell-w / 8) : root.cell-w;
-                            height: root.cursor-style == "underline" ? max(2px, root.cell-h / 8) : root.cell-h;
+                                + (root.cursor-style == "underline" ? max(0px, root.cell-h - max(2px * Theme.ui-scale, root.cell-h / 8)) : 0px);
+                            width: root.cursor-style == "bar" ? max(2px * Theme.ui-scale, root.cell-w / 8) : root.cell-w;
+                            height: root.cursor-style == "underline" ? max(2px * Theme.ui-scale, root.cell-h / 8) : root.cell-h;
                             background: root.cursor-color;
                             // Blink while focused; show solid (no repaint) when the
                             // window is unfocused so the cursor neither vanishes nor
@@ -892,8 +892,8 @@ export component TerminalView inherits Rectangle {
                             moved => {
                                 if (root.mouse-press-pending) {
                                     // 拖出 4px 才算拖选（阈值同上游 2e5f125）。
-                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px
-                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px) {
+                                    if (max(self.mouse-x - root.mouse-press-x, root.mouse-press-x - self.mouse-x) > 4px * Theme.ui-scale
+                                            || max(self.mouse-y - root.mouse-press-y, root.mouse-press-y - self.mouse-y) > 4px * Theme.ui-scale) {
                                         root.mouse-press-pending = false;
                                         root.selecting = true;
                                         root.select-start(
@@ -908,7 +908,7 @@ export component TerminalView inherits Rectangle {
                                         floor(self.mouse-x / root.cell-w),
                                         self.mouse-x - root.cell-w * floor(self.mouse-x / root.cell-w) < root.cell-w / 2);
                                     if (!root.is-alt-screen) {
-                                        root.vis-y = self.mouse-y + 8px + flickable.content-y;
+                                        root.vis-y = self.mouse-y + 8px * Theme.ui-scale + flickable.content-y;
                                         if (root.vis-y < 0) {
                                             root.autoscroll-dir = -1;
                                         } else if (root.vis-y > flickable.height) {
@@ -936,8 +936,8 @@ export component TerminalView inherits Rectangle {
                         ctx-menu := PopupWindow {
                             x: root.ctx-x;
                             y: root.ctx-y;
-                            width: 132px;
-                            height: 132px;
+                            width: 132px * Theme.ui-scale;
+                            height: 132px * Theme.ui-scale;
                             Rectangle {
                                 background: Theme.bg-panel;
                                 border-radius: Theme.radius-sm;
@@ -946,7 +946,7 @@ export component TerminalView inherits Rectangle {
                                 drop-shadow-blur: Theme.shadow-popup-blur;
                                 drop-shadow-color: Theme.shadow-popup-color;
                                 VerticalLayout {
-                                    padding: 4px;
+                                    padding: Theme.sp-4;
                                     spacing: 1px;
                                     MenuItem {
                                         icon: "\u{E14D}"; label: @tr("Copy");
@@ -990,8 +990,8 @@ export component TerminalView inherits Rectangle {
                 // participating in layout or exposing a second I-beam hit area.
                 // Following the VT cursor also places native IME candidate UI near
                 // the actual insertion point.
-                x: 5px + max(0, root.cursor-col) * root.cell-w;
-                y: 8px + max(0, root.cursor-row) * root.cell-h;
+                x: 5px * Theme.ui-scale + max(0, root.cursor-col) * root.cell-w;
+                y: 8px * Theme.ui-scale + max(0, root.cursor-row) * root.cell-h;
                 width: 1px;
                 height: 1px;
                 opacity: 0;
@@ -1100,10 +1100,10 @@ export component TerminalView inherits Rectangle {
             // alternate screen). Driven by scroll-max/scroll-offset; click or drag
             // the track to jump to an absolute position.
             if root.scroll-max > 0 && !root.is-alt-screen : Rectangle {
-                x: flickable.x + flickable.width - 10px;
-                y: flickable.y + 4px;
-                width: Theme.is-mac ? 6px : 8px;
-                height: flickable.height - 8px;
+                x: flickable.x + flickable.width - 10px * Theme.ui-scale;
+                y: flickable.y + 4px * Theme.ui-scale;
+                width: Theme.is-mac ? 6px * Theme.ui-scale : 8px * Theme.ui-scale;
+                height: flickable.height - 8px * Theme.ui-scale;
                 track-ta := TouchArea {
                     moved => {
                         if (self.pressed) {
@@ -1123,13 +1123,13 @@ export component TerminalView inherits Rectangle {
                 Rectangle {
                     property <float> total: root.scroll-max + root.term-rows;
                     x: 1px;
-                    width: Theme.is-mac ? 4px : 6px;
-                    height: max(28px, parent.height * root.term-rows / total);
+                    width: Theme.is-mac ? 4px * Theme.ui-scale : 6px * Theme.ui-scale;
+                    height: max(28px * Theme.ui-scale, parent.height * root.term-rows / total);
                     y: (parent.height - self.height) * (root.scroll-max - root.scroll-offset) / max(1, root.scroll-max);
                     background: track-ta.has-hover || track-ta.pressed
                         ? Theme.text-secondary
                         : (Theme.is-mac ? #ffffff55 : Theme.border-strong);
-                    border-radius: 3px;
+                    border-radius: Theme.radius-xs;
                     animate background {
                         duration: (track-ta.has-hover || track-ta.pressed) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
                         easing: (track-ta.has-hover || track-ta.pressed) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
@@ -1142,7 +1142,7 @@ export component TerminalView inherits Rectangle {
                 x: 0;
                 y: 0;
                 width: parent.width;
-                height: 34px;
+                height: Theme.bar-h;
                 background: Theme.bg-panel;
                 border-width: 1px;
                 border-color: Theme.border-strong;
@@ -1160,8 +1160,8 @@ export component TerminalView inherits Rectangle {
                 }
 
                 HorizontalLayout {
-                    padding: 6px;
-                    spacing: 6px;
+                    padding: Theme.sp-6;
+                    spacing: Theme.sp-6;
                     IconText {
                         text: "\u{E8B6}";
                         color: Theme.text-secondary;
@@ -1170,12 +1170,12 @@ export component TerminalView inherits Rectangle {
                     }
                     Rectangle {
                         background: Theme.bg-root;
-                        border-radius: 3px;
+                        border-radius: Theme.radius-xs;
                         horizontal-stretch: 1;
                         find-input := TextInput {
                             input-method-hints: Theme.plain-input-hints;
-                            x: 6px;
-                            width: parent.width - 12px;
+                            x: 6px * Theme.ui-scale;
+                            width: parent.width - 12px * Theme.ui-scale;
                             height: parent.height;
                             color: Theme.text-primary;
                             font-family: Theme.ui-font-family; // CJK-capable (#54)
@@ -1209,7 +1209,7 @@ export component TerminalView inherits Rectangle {
                         }
                     }
                     Rectangle {
-                        width: 24px;
+                        width: 24px * Theme.ui-scale;
                         close-ta := TouchArea {
                             mouse-cursor: pointer;
                             clicked => {
@@ -1233,7 +1233,7 @@ export component TerminalView inherits Rectangle {
         // --- Command bar (#55): quick commands + input box + history ---------
         cmd-bar := CommandBar {
             visible: !root.cmd-bar-hidden;
-            height: root.cmd-bar-hidden ? 0px : 34px;
+            height: root.cmd-bar-hidden ? 0px : Theme.bar-h;
             cmd-bar-hidden: root.cmd-bar-hidden;
             quick-commands: root.quick-commands;
             command-history: root.command-history;
@@ -1270,9 +1270,9 @@ export component TerminalView inherits Rectangle {
         // --- SFTP resize splitter（固定在右缘，竖向）--------------------------
         Rectangle {
             visible: root.overview-available && !root.overview-collapsed;   // gone when collapsed (like the resource splitter)
-            x: parent.width - parent.sf-viz - 2px;
+            x: parent.width - parent.sf-viz - 2px * Theme.ui-scale;
             y: 0px;
-            width:  2px;
+            width:  2px * Theme.ui-scale;
             height: parent.height;
             background: divider-ta.has-hover || root.sftp-dragging
                 ? Theme.accent : Theme.border-subtle;
@@ -1280,9 +1280,9 @@ export component TerminalView inherits Rectangle {
                 // Hit area extends a few px past the thin visual bar so it's easy
                 // to grab without landing on the terminal / SFTP edge.
                 // 视觉条 2px，命中区 12px（条左右各 5px）。
-                x: -5px;
+                x: -5px * Theme.ui-scale;
                 y: 0px;
-                width:  12px;
+                width:  12px * Theme.ui-scale;
                 height: parent.height;
                 mouse-cursor: ew-resize;
                 pointer-event(ev) => {
@@ -1302,7 +1302,7 @@ export component TerminalView inherits Rectangle {
                         root.set-overview-panel-width(clamp(
                             dock-region.width - ((self.absolute-position.x + self.mouse-x)
                                 - dock-region.absolute-position.x),
-                            255px, max(310px, dock-region.width - 200px)));
+                            Theme.overview-min-w, max(310px * Theme.ui-scale, dock-region.width - 200px * Theme.ui-scale)));
                     }
                 }
             }
@@ -1409,9 +1409,9 @@ export component TerminalView inherits Rectangle {
             // 同时必须有 SFTP 能力：本地终端 / 串口 / Telnet 的 `overview_collapsed`
             // 播种为 true，只看进度会在右侧永久立一条 36px 的禁用条。
             visible: root.overview-progress > 0.001 && root.overview-available;
-            x: parent.width - 36px;
+            x: parent.width - Theme.overview-strip-w;
             y: 0px;
-            width: 36px;
+            width: Theme.overview-strip-w;
             height: parent.height;
             glyph: "\u{E2C7}";   // folder — SFTP
             tooltip: root.overview-available ? "SFTP" : @tr("SFTP not available");

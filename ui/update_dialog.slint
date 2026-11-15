@@ -90,9 +90,9 @@ export component UpdateDialog inherits Rectangle {
 
     Rectangle {
         x: (parent.width - self.width) / 2;
-        y: (parent.height - self.height) / 2 + (open ? 0px : 12px);
-        width: min(560px, parent.width - 40px);
-        height: min(520px, parent.height - 60px);
+        y: (parent.height - self.height) / 2 + (open ? 0px : 12px * Theme.ui-scale);
+        width: min(560px * Theme.ui-zoom, parent.width - 40px * Theme.ui-scale);
+        height: min(520px * Theme.ui-zoom, parent.height - 60px * Theme.ui-scale);
         background: Theme.bg-panel;
         border-radius: Theme.radius-lg;
         border-width: 1px;
@@ -112,15 +112,15 @@ export component UpdateDialog inherits Rectangle {
 
             // ── 标题栏：标题 + 通道徽章 + ✕ ─────────────────────────────
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 8px;
-                padding-top: 10px;
-                padding-bottom: 10px;
-                spacing: 10px;
+                padding-left: Theme.sp-20;
+                padding-right: Theme.sp-8;
+                padding-top: Theme.sp-10;
+                padding-bottom: Theme.sp-10;
+                spacing: Theme.sp-10;
                 HorizontalLayout {
                     horizontal-stretch: 1;
                     alignment: start;
-                    spacing: 8px;
+                    spacing: Theme.sp-8;
                     Text {
                         text: @tr("Automatic update");
                         color: Theme.text-primary;
@@ -134,8 +134,8 @@ export component UpdateDialog inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             HorizontalLayout {
-                                padding-left: 7px;
-                                padding-right: 7px;
+                                padding-left: 7px * Theme.ui-scale;
+                                padding-right: 7px * Theme.ui-scale;
                                 Text {
                                     text: root.badge;
                                     color: Theme.text-secondary;
@@ -156,22 +156,22 @@ export component UpdateDialog inherits Rectangle {
             // ── 卡片主体 ────────────────────────────────────────────────
             VerticalLayout {
                 vertical-stretch: 1;
-                padding: 20px;
-                spacing: 14px;
+                padding: Theme.sp-20;
+                spacing: Theme.sp-14;
 
                 HorizontalLayout {
-                    spacing: 14px;
+                    spacing: Theme.sp-14;
                     // 圆底图标 + 状态色（成功=绿、失败=红、其余=强调色）
                     Rectangle {
-                        width: 44px;
-                        height: 44px;
-                        border-radius: 22px;
+                        width: 44px * Theme.ui-zoom;
+                        height: 44px * Theme.ui-zoom;
+                        border-radius: 22px * Theme.ui-zoom;
                         background: root.tone.with-alpha(0.16);
                         Text {
                             text: "\u{E2C4}";     // Material "file_download"
                             font-family: "Material Icons";
                             color: root.tone;
-                            font-size: 22px;
+                            font-size: 22px * Theme.ui-zoom;
                             horizontal-alignment: center;
                             vertical-alignment: center;
                         }
@@ -179,7 +179,7 @@ export component UpdateDialog inherits Rectangle {
                     VerticalLayout {
                         horizontal-stretch: 1;
                         alignment: center;
-                        spacing: 5px;
+                        spacing: Theme.sp-5;
                         Text {
                             text: root.heading;
                             color: Theme.text-primary;
@@ -188,7 +188,7 @@ export component UpdateDialog inherits Rectangle {
                         }
                         HorizontalLayout {
                             alignment: start;
-                            spacing: 8px;
+                            spacing: Theme.sp-8;
                             Text {
                                 text: root.current-version;
                                 color: Theme.text-muted;
@@ -223,7 +223,7 @@ export component UpdateDialog inherits Rectangle {
                     background: Theme.bg-elevated;
                     ScrollView {
                         VerticalLayout {
-                            padding: 10px;
+                            padding: Theme.sp-10;
                             Text {
                                 text: root.notes != ""
                                     ? root.notes
@@ -239,19 +239,19 @@ export component UpdateDialog inherits Rectangle {
 
                 // 进度 + 状态行（下载/安装中显示进度条；3/4 态只有一行状态）
                 if root.update-status != "" : HorizontalLayout {
-                    spacing: 10px;
+                    spacing: Theme.sp-10;
                     if root.running : Rectangle {
-                        width: 180px;
-                        height: 6px;
+                        width: 180px * Theme.ui-scale;
+                        height: 6px * Theme.ui-scale;
                         y: (parent.height - self.height) / 2;
-                        border-radius: 3px;
+                        border-radius: Theme.radius-xs;
                         background: Theme.bg-active;
                         Rectangle {
                             x: 0;
                             y: 0;
-                            height: 6px;
+                            height: 6px * Theme.ui-scale;
                             width: parent.width * root.update-progress;
-                            border-radius: 3px;
+                            border-radius: Theme.radius-xs;
                             background: root.tone;
                         }
                     }
@@ -269,11 +269,11 @@ export component UpdateDialog inherits Rectangle {
 
             // ── 底部：浏览器兜底 + 关闭 / 主操作 ────────────────────────
             HorizontalLayout {
-                padding-left: 20px;
-                padding-right: 20px;
-                padding-top: 12px;
-                padding-bottom: 12px;
-                spacing: 8px;
+                padding-left: Theme.sp-20;
+                padding-right: Theme.sp-20;
+                padding-top: Theme.sp-12;
+                padding-bottom: Theme.sp-12;
+                spacing: Theme.sp-8;
                 // 自更新失败时的兜底（原横幅的 Download 按钮）—— 常驻可点，
                 // 不随状态变化：任何一步卡住都能去发布页手动下。
                 HorizontalLayout {
@@ -290,8 +290,8 @@ export component UpdateDialog inherits Rectangle {
                         VerticalLayout {
                             alignment: center;
                             HorizontalLayout {
-                                padding-left: 6px;
-                                padding-right: 6px;
+                                padding-left: Theme.sp-6;
+                                padding-right: Theme.sp-6;
                                 Text {
                                     text: @tr("Open release page");
                                     color: Theme.accent;

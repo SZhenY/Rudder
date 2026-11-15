@@ -58,8 +58,8 @@ export component HelpText inherits Text {
 ///   `x: (root.width - w) / 2` 定位（那样会取到窗口），而是让组件铺满宿主、内部用
 ///   `parent.width` 居中。
 export component ModalCard inherits Rectangle {
-    in property <length> card-width: 340px;
-    in property <length> card-height: 196px;
+    in property <length> card-width: 340px * Theme.ui-scale;
+    in property <length> card-height: 196px * Theme.ui-scale;
     // true = 高度随内容（原来的 `min(body.preferred-height + 53px, …)` 写法）
     in property <bool> auto-height: false;
     in property <length> radius: Theme.radius-sm;
@@ -68,8 +68,8 @@ export component ModalCard inherits Rectangle {
     // 卡片内边距与行距：多数对话框是 18 / 12，快捷键那一处是 18 / 5。
     // ⚠️ 不能叫 `padding` —— `Rectangle` 已带同名属性（"Cannot override property
     // 'padding'"），与之前 `color` 那个坑同源。
-    in property <length> body-padding: 18px;
-    in property <length> spacing: 12px;
+    in property <length> body-padding: 18px * Theme.ui-scale;
+    in property <length> spacing: Theme.sp-12;
     // 点击遮罩时触发（调用方负责关闭；不接就不响应）。
     callback dismissed();
     // 遮罩是否拦截输入。用 `if` 包起来调用时恒为 true 即可；
@@ -89,7 +89,7 @@ export component ModalCard inherits Rectangle {
     card := Rectangle {
         width: root.card-width;
         height: root.auto-height
-            ? min(card-body.preferred-height, parent.height - 40px)
+            ? min(card-body.preferred-height, parent.height - 40px * Theme.ui-scale)
             : root.card-height;
         x: (parent.width - self.width) / 2;
         y: (parent.height - self.height) / 2;

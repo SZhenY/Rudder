@@ -12,7 +12,7 @@ export component SegOption inherits Rectangle {
     in property <string> label;
     in property <bool> active;
     callback clicked();
-    height: 30px;
+    height: Theme.control-h;
     horizontal-stretch: 1;
     border-radius: Theme.radius-sm;
     border-width: 1px;
@@ -36,7 +36,7 @@ export component MiniInput inherits Rectangle {
     in property <string> placeholder;
     in-out property <string> value;
     callback edited(string);
-    height: 30px;
+    height: Theme.control-h;
     horizontal-stretch: 1;
     border-radius: Theme.radius-sm;
     border-width: 1px;
@@ -44,8 +44,8 @@ export component MiniInput inherits Rectangle {
     background: Theme.bg-root;
     mi := TextInput {
         input-method-hints: Theme.plain-input-hints;
-        x: 8px;
-        width: parent.width - 16px;
+        x: 8px * Theme.ui-scale;
+        width: parent.width - 16px * Theme.ui-scale;
         height: parent.height;
         color: Theme.text-primary;
         font-family: Theme.ui-font-family;
@@ -56,7 +56,7 @@ export component MiniInput inherits Rectangle {
         edited => { root.edited(root.value); }
     }
     if root.value == "" : Text {
-        x: 8px;
+        x: 8px * Theme.ui-scale;
         height: parent.height;
         text: root.placeholder;
         color: Theme.text-muted;
@@ -91,16 +91,16 @@ export component PortForwardRow inherits VerticalLayout {
         });
     }
 
-    spacing: 6px;
-    padding: 8px;
+    spacing: Theme.sp-6;
+    padding: Theme.sp-8;
 
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         SegOption { label: @tr("Local (-L)"); active: root.kind == "local"; clicked => { root.kind = "local"; root.notify-updated(); } }
         SegOption { label: @tr("Remote (-R)"); active: root.kind == "remote"; clicked => { root.kind = "remote"; root.notify-updated(); } }
         SegOption { label: @tr("Dynamic (-D)"); active: root.kind == "dynamic"; clicked => { root.kind = "dynamic"; root.notify-updated(); } }
         CloseButton {
-            size: 30px;
+            size: 30px * Theme.ui-zoom;
             glyph-size: Theme.fs-sm;
             tone: "danger";
             clicked => { root.remove(root.index); }
@@ -112,7 +112,7 @@ export component PortForwardRow inherits VerticalLayout {
         edited(value) => { root.name = value; root.notify-updated(); }
     }
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         MiniInput {
             placeholder: "127.0.0.1";
             value <=> root.bind-addr;
@@ -134,7 +134,7 @@ export component PortForwardRow inherits VerticalLayout {
         line-height-factor: 1.3; max-lines: 3;
     }
     if root.kind != "dynamic" : HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         MiniInput {
             placeholder: @tr("Target host");
             value <=> root.host;
@@ -170,17 +170,17 @@ export component TriggerRow inherits VerticalLayout {
         });
     }
 
-    spacing: 6px;
-    padding: 8px;
+    spacing: Theme.sp-6;
+    padding: Theme.sp-8;
     HorizontalLayout {
-        spacing: 6px;
+        spacing: Theme.sp-6;
         MiniInput {
             placeholder: @tr("Expected output");
             value <=> root.expect;
             edited(value) => { root.expect = value; root.notify-updated(); }
         }
         CloseButton {
-            size: 30px;
+            size: 30px * Theme.ui-zoom;
             glyph-size: Theme.fs-sm;
             tone: "danger";
             clicked => { root.remove(root.index); }
@@ -192,7 +192,7 @@ export component TriggerRow inherits VerticalLayout {
         edited(value) => { root.response = value; root.notify-updated(); }
     }
     HorizontalLayout {
-        spacing: 14px;
+        spacing: Theme.sp-14;
         SegOption {
             label: @tr("Send Enter"); active: root.append-enter;
             clicked => { root.append-enter = !root.append-enter; root.notify-updated(); }
@@ -211,12 +211,12 @@ export component GroupCombo inherits VerticalLayout {
     in property <string> placeholder;
     in-out property <string> value;
     in property <[string]> groups;       // existing group names
-    spacing: 4px;
+    spacing: Theme.sp-4;
 
     FieldLabel { text: root.label; }
 
     Rectangle {
-        height: 32px;
+        height: 32px * Theme.ui-zoom;
         border-radius: Theme.radius-sm;
         border-width: 1px;
     border-color: ginput.has-focus ? Theme.accent : Theme.border-strong;
@@ -224,8 +224,8 @@ export component GroupCombo inherits VerticalLayout {
 
         ginput := TextInput {
             input-method-hints: Theme.plain-input-hints;
-            x: 10px;
-            width: parent.width - 44px;     // room for the ▾ button
+            x: 10px * Theme.ui-scale;
+            width: parent.width - 44px * Theme.ui-scale;     // room for the ▾ button
             height: parent.height;
             text <=> root.value;
             color: Theme.text-primary;
@@ -236,7 +236,7 @@ export component GroupCombo inherits VerticalLayout {
         }
 
         if root.value == "" : Text {
-            x: 10px;
+            x: 10px * Theme.ui-scale;
             height: parent.height;
             text: root.placeholder;
             color: Theme.text-muted;
@@ -246,14 +246,14 @@ export component GroupCombo inherits VerticalLayout {
 
         // ▾ — opens the existing-groups list (no-op when there are none).
         drop-ta := TouchArea {
-            x: parent.width - 36px;
-            width: 36px;
+            x: parent.width - 36px * Theme.ui-scale;
+            width: 36px * Theme.ui-scale;
             height: parent.height;
             mouse-cursor: root.groups.length > 0 ? pointer : default;
             clicked => { if (root.groups.length > 0) { groups-popup.show(); } }
             Rectangle {
-                width: 28px;
-                height: 28px;
+                width: Theme.row-h;
+                height: Theme.row-h;
                 border-radius: Theme.radius-sm;
                 background: (drop-ta.has-hover && root.groups.length > 0) ? Theme.state-hover : transparent;
                 animate background {
@@ -275,7 +275,7 @@ export component GroupCombo inherits VerticalLayout {
 
         groups-popup := PopupWindow {
             x: 0;
-            y: parent.height + 3px;
+            y: parent.height + 3px * Theme.ui-scale;
             width: parent.width;
             Rectangle {
                 background: Theme.bg-elevated;
@@ -283,10 +283,10 @@ export component GroupCombo inherits VerticalLayout {
                 border-width: 1px;
                 border-color: Theme.border-subtle;
                 VerticalLayout {
-                    padding: 4px;
-                    spacing: 1px;
+                    padding: Theme.sp-4;
+                    spacing: 1px * Theme.ui-scale;
                     for g in root.groups : Rectangle {
-                        height: 28px;
+                        height: Theme.row-h;
                         border-radius: Theme.radius-sm;
                         background: g-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -299,8 +299,8 @@ export component GroupCombo inherits VerticalLayout {
                             clicked => { root.value = g; groups-popup.close(); }
                         }
                         Text {
-                            x: 10px;
-                            width: parent.width - 20px;
+                            x: 10px * Theme.ui-scale;
+                            width: parent.width - 20px * Theme.ui-scale;
                             text: g;
                             color: Theme.text-primary;
                             font-size: Theme.fs-md;
@@ -321,12 +321,12 @@ export component JumpCombo inherits VerticalLayout {
     in property <string> label;
     in property <[string]> choices;      // display labels; index 0 = "no jump host"
     in-out property <int> selected-index: 0;
-    spacing: 4px;
+    spacing: Theme.sp-4;
 
     FieldLabel { text: root.label; }
 
     Rectangle {
-        height: 32px;
+        height: 32px * Theme.ui-zoom;
         border-radius: Theme.radius-sm;
         border-width: 1px;
     border-color: jump-ta.has-hover ? Theme.accent : Theme.border-strong;
@@ -343,8 +343,8 @@ export component JumpCombo inherits VerticalLayout {
         }
 
         Text {
-            x: 10px;
-            width: parent.width - 44px;
+            x: 10px * Theme.ui-scale;
+            width: parent.width - 44px * Theme.ui-scale;
             height: parent.height;
             text: (root.selected-index >= 0 && root.selected-index < root.choices.length)
                 ? root.choices[root.selected-index] : "";
@@ -355,9 +355,9 @@ export component JumpCombo inherits VerticalLayout {
         }
 
         Rectangle {
-            x: parent.width - 36px;
-            width: 28px;
-            height: 28px;
+            x: parent.width - 36px * Theme.ui-scale;
+            width: 28px * Theme.ui-scale;
+            height: 28px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: jump-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -376,7 +376,7 @@ export component JumpCombo inherits VerticalLayout {
 
         jump-popup := PopupWindow {
             x: 0;
-            y: parent.height + 3px;
+            y: parent.height + 3px * Theme.ui-scale;
             width: parent.width;
             Rectangle {
                 background: Theme.bg-elevated;
@@ -384,10 +384,10 @@ export component JumpCombo inherits VerticalLayout {
                 border-width: 1px;
                 border-color: Theme.border-subtle;
                 VerticalLayout {
-                    padding: 4px;
-                    spacing: 1px;
+                    padding: Theme.sp-4;
+                    spacing: 1px * Theme.ui-scale;
                     for c[idx] in root.choices : Rectangle {
-                        height: 28px;
+                        height: Theme.row-h;
                         border-radius: Theme.radius-sm;
                         background: c-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -400,8 +400,8 @@ export component JumpCombo inherits VerticalLayout {
                             clicked => { root.selected-index = idx; jump-popup.close(); }
                         }
                         Text {
-                            x: 10px;
-                            width: parent.width - 20px;
+                            x: 10px * Theme.ui-scale;
+                            width: parent.width - 20px * Theme.ui-scale;
                             text: c;
                             color: Theme.text-primary;
                             font-size: Theme.fs-md;

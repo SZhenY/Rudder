@@ -259,7 +259,7 @@ pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
         window.set_output_highlight_rules(output_highlight_rule_model(&s));
         window.set_json_format_output(s.json_format_output());
         window.global::<Theme>().set_ui_scale(s.ui_scale() as f32 / 100.0); // global UI zoom (#100)
-        window.global::<Theme>().set_panel_font(s.panel_font() as f32 / 100.0); // settings-panel font scale
+        window.global::<Theme>().set_ui_font_px(s.ui_font_px() as f32); // UI base font (px)
         window.set_renderer_mode(s.renderer_mode_choice().into());
         window.set_aggressive_memory_reclaim(s.aggressive_memory_reclaim());
     }

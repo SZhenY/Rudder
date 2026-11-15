@@ -27,8 +27,8 @@ export component QuickGroupDialog inherits ModalCard {
     callback close-requested();
     callback submit-quick-group(string /* orig */, string /* name */);
 
-    card-width: 340px;
-    card-height: 178px;
+    card-width: 340px * Theme.ui-zoom;
+    card-height: 178px * Theme.ui-zoom;
     radius: Theme.radius-md;
     dismissed() => { root.close-requested(); }
     Text {
@@ -54,7 +54,7 @@ export component QuickGroupDialog inherits ModalCard {
     Rectangle { vertical-stretch: 1; }
     HorizontalLayout {
         alignment: end;
-        spacing: 8px;
+        spacing: Theme.sp-8;
         Button {
             text: lang-en ? "Cancel" : "取消";
             clicked => { root.close-requested(); }

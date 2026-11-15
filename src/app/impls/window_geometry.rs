@@ -185,7 +185,7 @@ pub(crate) fn terminal_wheel_hit(
 
     // Leave the command bar to TextInput/history handling; wheel fallback is for
     // terminal output only.
-    term_h = (term_h - 34.0).max(0.0);
+    term_h = (term_h - win.global::<Theme>().get_bar_h()).max(0.0);
     if !contains_logical(
         LogicalRect {
             x: term_x,
@@ -280,10 +280,10 @@ pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, Lo
         active,
         LogicalRect {
             x: area.x + pane.x,
-            // 标签栏 36px（`ui/tabs.slint` 的 height），不是旧的 40（36 + 4）。
-            y: area.y + pane.y + 36.0,
+            // 标签栏高度取 Theme 令牌（`ui/tabs.slint` 的 tabbar-h）。
+            y: area.y + pane.y + win.global::<Theme>().get_tabbar_h(),
             w: pane.w,
-            h: (pane.h - 36.0).max(0.0),
+            h: (pane.h - win.global::<Theme>().get_tabbar_h()).max(0.0),
         },
         term_state,
     ))
@@ -321,13 +321,15 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
     // OverviewPanel layout: toolbar, then file headers 20 + separator 1.
     // 工具栏高度随 `narrow-toolbar` 变化（`ui/sftp_panel.slint`）：宽度 < 480px
     // （含 255 下限）时是两行 62px，不是 34px。写死 34 会让落点偏高 28px。
-    let toolbar_h = if term_state.overview_panel_width < 480.0 {
-        62.0
+    let t = win.global::<Theme>();
+    let toolbar_h = if term_state.overview_panel_width < 480.0 * t.get_ui_scale().max(0.8) {
+        t.get_toolbar_h_narrow()
     } else {
-        34.0
+        t.get_bar_h()
     };
-    panel.y += toolbar_h + 20.0 + 1.0;
-    panel.h = (panel.h - toolbar_h - 20.0 - 1.0).max(0.0);
+    let header_h = 20.0 * t.get_ui_scale().max(0.8) + 1.0;
+    panel.y += toolbar_h + header_h;
+    panel.h = (panel.h - toolbar_h - header_h).max(0.0);
     Some(panel)
 }
 

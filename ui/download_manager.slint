@@ -67,10 +67,10 @@ TouchArea {
 Rectangle {
     // 跟随下载按钮定位：右侧快捷命令面板占位时工具栏整体左移，这里同步偏移。
     // 364px = 自身宽 350px + 14px 右边距（原来是手算的常数，改绑自身宽度）
-    x: parent.width - self.width - 14px - toolbar-x-off;
-    y: (custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
-    width: 350px;
-    height: 400px;
+    x: parent.width - self.width - 14px * Theme.ui-scale - toolbar-x-off;
+    y: (custom-titlebar ? Theme.titlebar-height + 40px * Theme.ui-scale : 40px * Theme.ui-scale + titlebar-inset) + toolbar-y-off;
+    width: 350px * Theme.ui-zoom;
+    height: 400px * Theme.ui-zoom;
     visible: download-open;
     background: Theme.bg-panel;
     border-radius: Theme.radius-md;
@@ -84,8 +84,8 @@ Rectangle {
     TouchArea {}
 
     VerticalLayout {
-        padding: 14px;
-        spacing: 10px;
+        padding: Theme.sp-14;
+        spacing: Theme.sp-10;
 
         HorizontalLayout {
             Text {
@@ -97,7 +97,7 @@ Rectangle {
                 vertical-alignment: center;
             }
             CloseButton {
-                size: 20px;
+                size: Theme.icon-btn;
                 glyph-size: Theme.fs-sm;
                 tone: "windows";        // hover 变红、字形转白
                 clicked => { root.close-requested(); }
@@ -108,12 +108,12 @@ Rectangle {
 
             // Current path display
             Rectangle {
-                height: 26px;
+                height: Theme.control-h-sm;
                 background: Theme.bg-root;
                 border-radius: Theme.radius-sm;
                 Text {
-                    x: 8px;
-                    width: parent.width - 16px;
+                    x: 8px * Theme.ui-scale;
+                    width: parent.width - 16px * Theme.ui-scale;
                     height: parent.height;
                     text: download-dir == "" ? @tr("(ask every time)") : download-dir;
                     color: download-dir == "" ? Theme.text-muted : Theme.text-primary;
@@ -124,11 +124,11 @@ Rectangle {
             }
 
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 alignment: end;
 
                 Rectangle {
-                    width: 110px; height: 28px;
+                    width: 110px * Theme.ui-zoom; height: 28px * Theme.ui-zoom;
                     border-radius: Theme.radius-sm;
                     background: pick-ta.has-hover ? Theme.accent-hover : Theme.accent;
                     animate background {
@@ -144,7 +144,7 @@ Rectangle {
                            horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Rectangle {
-                    width: 76px; height: 28px;
+                    width: 76px * Theme.ui-zoom; height: 28px * Theme.ui-zoom;
                     border-radius: Theme.radius-sm;
                     background: open-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
                     animate background {
@@ -173,7 +173,7 @@ Rectangle {
                     vertical-alignment: center;
                 }
                 Rectangle {
-                    width: 44px; height: 20px;
+                    width: 44px * Theme.ui-zoom; height: 20px * Theme.ui-zoom;
                     border-radius: Theme.radius-sm;
                     background: clr-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
@@ -196,7 +196,7 @@ Rectangle {
                 content-height: max(self.height, xfer-col.preferred-height);
                 xfer-col := VerticalLayout {
                     alignment: start;
-                    spacing: 4px;
+                    spacing: Theme.sp-4;
 
                     if transfers.length == 0 : Text {
                         text: @tr("No transfers yet");
@@ -205,15 +205,15 @@ Rectangle {
                     }
 
                     for t in transfers : Rectangle {
-                        height: 36px;
+                        height: 36px * Theme.ui-zoom;
                         border-radius: Theme.radius-sm;
                         background: Theme.bg-root;
                         VerticalLayout {
-                            padding-left: 8px; padding-right: 8px;
-                            padding-top: 4px; padding-bottom: 4px;
-                            spacing: 3px;
+                            padding-left: Theme.sp-8; padding-right: Theme.sp-8;
+                            padding-top: Theme.sp-4; padding-bottom: Theme.sp-4;
+                            spacing: Theme.sp-3;
                             HorizontalLayout {
-                                spacing: 4px;
+                                spacing: Theme.sp-4;
                                 // Direction glyph: upload green / download purple.
                                 IconText {
                                     text: t.is-upload ? "\u{E5D8}" : "\u{E5DB}"; // arrow_upward / arrow_downward
@@ -240,7 +240,7 @@ Rectangle {
                                 // Cancel button — only while the transfer is
                                 // active (0) or preparing (3) (#100).
                                 if t.state == 0 || t.state == 3 : CloseButton {
-                                    size: 16px;
+                                    size: 16px * Theme.ui-scale;
                                     glyph-size: Theme.fs-sm;
                                     tone: "danger-on-hover";   // 平时灰、hover 转红
                                     clicked => { root.cancel-transfer(t.id); }
@@ -248,13 +248,13 @@ Rectangle {
                             }
                             // progress bar
                             Rectangle {
-                                height: 4px;
-                                border-radius: 2px;
+                                height: 4px * Theme.ui-scale;
+                                border-radius: 2px * Theme.ui-scale;
                                 background: Theme.bg-elevated;
                                 Rectangle {
                                     x: 0; y: 0; height: parent.height;
                                     width: parent.width * clamp(t.percent, 0.0, 1.0);
-                                    border-radius: 2px;
+                                    border-radius: 2px * Theme.ui-scale;
                                     background: t.state == 2 ? Theme.danger
                                               : t.state == 1 ? Theme.success
                                               : Theme.accent;

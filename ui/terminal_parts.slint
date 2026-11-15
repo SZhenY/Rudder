@@ -37,7 +37,7 @@ export component MenuItem inherits Rectangle {
     in property <string> label;
     callback clicked();
 
-    height: 28px;
+    height: Theme.row-h;
     border-radius: Theme.radius-sm;
     background: ta.has-hover ? Theme.state-hover : transparent;
     animate background {
@@ -51,9 +51,9 @@ export component MenuItem inherits Rectangle {
         clicked => { root.clicked(); }
     }
     HorizontalLayout {
-        padding-left: 8px;
-        padding-right: 8px;
-        spacing: 8px;
+        padding-left: Theme.sp-8;
+        padding-right: Theme.sp-8;
+        spacing: Theme.sp-8;
         IconText {
             text: root.icon;
             color: Theme.text-secondary;
@@ -86,10 +86,10 @@ export component QuickDockPanel inherits Rectangle {
     VerticalLayout {
         spacing: 0;
         Rectangle {
-            height: 34px;
+            height: Theme.bar-h;
             background: transparent;
             HorizontalLayout {
-                padding-left: 8px; padding-right: 4px; spacing: 6px;
+                padding-left: Theme.sp-8; padding-right: Theme.sp-4; spacing: Theme.sp-6;
                 IconText {
                     text: "\u{E25D}";
                     color: Theme.text-muted; font-size: Theme.fs-md;
@@ -102,7 +102,7 @@ export component QuickDockPanel inherits Rectangle {
                     horizontal-stretch: 1;
                 }
                 Rectangle {
-                    width: 28px;
+                    width: Theme.icon-btn-lg;
                     background: close-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
                         duration: close-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -126,17 +126,17 @@ export component QuickDockPanel inherits Rectangle {
             content-width: self.width;
             content-height: max(self.height, list.preferred-height);
             list := VerticalLayout {
-                padding: 6px; spacing: 2px; alignment: start;
+                padding: Theme.sp-6; spacing: Theme.sp-2; alignment: start;
                 if root.commands.length == 0 : Text {
-                    height: 36px;
+                    height: 36px * Theme.ui-zoom;
                     text: @tr("No quick commands yet");
                     color: Theme.text-muted; font-size: Theme.fs-xs;
                     horizontal-alignment: center; vertical-alignment: center;
                 }
                 for q in root.commands : VerticalLayout {
-                    spacing: 1px;
+                    spacing: 1px * Theme.ui-scale;
                     if q.group-header != "" : Rectangle {
-                        height: 26px;
+                        height: Theme.control-h-sm;
                         border-radius: Theme.radius-sm;
                         background: group-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -149,7 +149,7 @@ export component QuickDockPanel inherits Rectangle {
                             clicked => { root.toggle-group(q.group); }
                         }
                         HorizontalLayout {
-                            padding-left: 6px; padding-right: 6px; spacing: 5px;
+                            padding-left: Theme.sp-6; padding-right: Theme.sp-6; spacing: Theme.sp-5;
                             IconText {
                                 text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}";
                                 color: Theme.text-muted; font-size: Theme.fs-sm;
@@ -164,7 +164,7 @@ export component QuickDockPanel inherits Rectangle {
                         }
                     }
                     if !q.collapsed && q.orig-index >= 0 : Rectangle {
-                        height: max(44px, item-col.preferred-height + 8px);
+                        height: max(44px * Theme.ui-zoom, item-col.preferred-height + 8px * Theme.ui-scale);
                         border-radius: Theme.radius-sm;
                         background: item-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -177,8 +177,8 @@ export component QuickDockPanel inherits Rectangle {
                             clicked => { root.activate(q.command, q.send-enter); }
                         }
                         item-col := VerticalLayout {
-                            padding-left: 9px; padding-right: 9px;
-                            padding-top: 4px; padding-bottom: 4px; spacing: 1px;
+                            padding-left: 9px * Theme.ui-scale; padding-right: 9px * Theme.ui-scale;
+                            padding-top: Theme.sp-4; padding-bottom: Theme.sp-4; spacing: 1px * Theme.ui-scale;
                             Text {
                                 text: q.name; color: Theme.text-primary;
                                 font-size: Theme.fs-sm; wrap: word-wrap;
@@ -197,7 +197,7 @@ export component QuickDockPanel inherits Rectangle {
         }
 
         Rectangle {
-            height: 32px;
+            height: 32px * Theme.ui-zoom;
             background: manage-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
                 duration: manage-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();

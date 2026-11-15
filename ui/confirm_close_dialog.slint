@@ -52,8 +52,8 @@ export component ConfirmCloseDialog inherits Rectangle {
     Rectangle {
         x: (avail-width - self.width) / 2;
         y: (avail-height - self.height) / 2;
-        width: 340px;
-        height: 168px;
+        width: 340px * Theme.ui-zoom;
+        height: 168px * Theme.ui-zoom;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
         border-width: 1px;
@@ -63,8 +63,8 @@ export component ConfirmCloseDialog inherits Rectangle {
         TouchArea {}
 
         VerticalLayout {
-            padding: 18px;
-            spacing: 12px;
+            padding: 18px * Theme.ui-scale;
+            spacing: Theme.sp-12;
             Text {
                 text: lang-en ? "Close Rudder?" : "确定关闭 Rudder?";
                 color: Theme.text-primary; font-size: Theme.fs-lg; font-weight: 700;

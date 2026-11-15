@@ -32,11 +32,11 @@ export component ConnStatusDialog inherits ModalCard {
 
     visible: open;
     active: open;                              // 关闭时不吞整窗点击
-    card-width: min(400px, root.width - 40px);
+    card-width: min(400px * Theme.ui-scale, root.width - 40px * Theme.ui-scale);
     auto-height: true;                         // 高度随内容，不做成大框
     radius: Theme.radius-lg;
-    body-padding: 16px;
-    spacing: 10px;
+    body-padding: Theme.sp-16;
+    spacing: Theme.sp-10;
     dismissed() => { root.close-requested(); }
 
     property <brush> tone:
@@ -58,15 +58,15 @@ export component ConnStatusDialog inherits ModalCard {
     // 固定 36px：不给 `preferred-height` 留循环依赖的空间（父高反推子高、
     // 子高又依赖父宽）。
     Rectangle {
-        height: 36px;
+        height: 36px * Theme.ui-scale;
         HorizontalLayout {
-            padding-right: 30px;               // 给右上角关闭按钮让位
-            spacing: 8px;
+            padding-right: 30px * Theme.ui-scale;               // 给右上角关闭按钮让位
+            spacing: Theme.sp-8;
             IconText {
-                width: 20px;
+                width: 20px * Theme.ui-scale;
                 text: root.glyph;
                 color: root.tone;
-                font-size: 20px;
+                font-size: 20px * Theme.ui-scale;
                 centered: true;
             }
             Text {
@@ -100,7 +100,7 @@ export component ConnStatusDialog inherits ModalCard {
     // 留下空白（`visible:false` 仍占布局空间）。
     // 外层限高而不是给 Text 绑 `height: self.preferred-height`（自引用）。
     if root.phase >= 2 && root.detail != "" : Rectangle {
-        height: min(reason-text.preferred-height, 110px);
+        height: min(reason-text.preferred-height, 110px * Theme.ui-scale);
         clip: true;
         reason-text := Text {
             width: parent.width;

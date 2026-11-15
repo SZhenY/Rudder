@@ -47,10 +47,10 @@ export component McpClientsPopup inherits Rectangle {
     card := Rectangle {
         // 右边缘对齐工具栏内容区：工具栏的 `padding-right` 是 8px，跟着它走就不会
         // 因为图标增减而漂（不学设置菜单那个 196/198 的推导常数）。
-        x: parent.width - self.width - 8px - toolbar-x-off;
+        x: parent.width - self.width - 8px * Theme.ui-scale - toolbar-x-off;
         // 与设置菜单 / 下载面板同一公式，三个偏移同源。
-        y: (root.custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
-        width: 320px;
+        y: (root.custom-titlebar ? Theme.titlebar-height + 40px * Theme.ui-scale : 40px * Theme.ui-scale + titlebar-inset) + toolbar-y-off;
+        width: 320px * Theme.ui-zoom;
         height: card-vl.preferred-height;
         visible: root.open;
         background: Theme.bg-panel;
@@ -63,13 +63,13 @@ export component McpClientsPopup inherits Rectangle {
         TouchArea {}   // 吞掉卡片内的点击，别漏给下层终端
 
         card-vl := VerticalLayout {
-            padding: 8px;
-            spacing: 2px;
+            padding: Theme.sp-8;
+            spacing: Theme.sp-2;
 
             // 标题行：标题 stretch + ✕
             HorizontalLayout {
-                padding: 4px;
-                spacing: 4px;
+                padding: Theme.sp-4;
+                spacing: Theme.sp-4;
 
                 Text {
                     text: root.lang-en
@@ -87,7 +87,7 @@ export component McpClientsPopup inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     CloseButton {
-                        size: 20px;
+                        size: Theme.icon-btn;
                         glyph-size: Theme.fs-sm;
                         clicked => { root.close-requested(); }
                     }
@@ -99,14 +99,14 @@ export component McpClientsPopup inherits Rectangle {
                 text: root.lang-en ? "No client connected." : "当前没有客户端连接。";
                 color: Theme.text-muted;
                 font-size: Theme.fs-sm;
-                height: 56px;
+                height: 56px * Theme.ui-zoom;
                 horizontal-alignment: center;
                 vertical-alignment: center;
             }
 
             // 列表：超过 5 行滚动（服务端上限 8 个客户端）。
             if root.client-count > 0 : Rectangle {
-                height: min(56px * root.client-count, 280px);
+                height: min(56px * root.client-count * Theme.ui-zoom, 280px * Theme.ui-zoom);
                 ScrollView {
                     width: 100%;
                     height: 100%;
@@ -120,7 +120,7 @@ export component McpClientsPopup inherits Rectangle {
                             spacing: 0;
 
                             if row.kind == "header" : Rectangle {
-                                height: 56px;
+                                height: 56px * Theme.ui-zoom;
                                 border-radius: Theme.radius-sm;
                                 background: row-ta.has-hover ? Theme.state-hover : transparent;
                                 animate background {
@@ -132,16 +132,16 @@ export component McpClientsPopup inherits Rectangle {
                                 row-ta := TouchArea { }
 
                                 HorizontalLayout {
-                                    padding-left: 8px;
+                                    padding-left: Theme.sp-8;
                                     // 右侧给 ScrollView 的滚动条留位，否则「断开」会被它压住。
-                                    padding-right: 10px;
-                                    spacing: 8px;
+                                    padding-right: Theme.sp-10;
+                                    spacing: Theme.sp-8;
 
                                     VerticalLayout {
                                         horizontal-stretch: 1;
                                         min-width: 0;
                                         alignment: center;
-                                        spacing: 1px;
+                                        spacing: 1px * Theme.ui-scale;
                                         Text {
                                             text: row.client;
                                             color: Theme.text-primary;

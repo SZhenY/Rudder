@@ -2,6 +2,7 @@
 //!
 //! 卡片本身**不吸收**布局富余高度（`vertical-stretch: 0`），高度由内容决定 ——
 //! 否则富余会被「均分兜底」塞给标题行，标题上下出现大块空白。
+//! 内部 `VerticalLayout` 用 `alignment: start`，标题行与内容各取内容高度。
 //!
 //! 后续卡片拖拽排序时，只需在 `OverviewView` 里把固定实例换成按 id 渲染的
 //! `for`，卡片内部不需要改。
@@ -22,11 +23,12 @@ export component OverviewCard inherits Rectangle {
     border-color: Theme.border-subtle;
 
     VerticalLayout {
-        padding: 8px;
-        spacing: 4px;
+        padding: Theme.sp-8;
+        spacing: Theme.sp-4;
+        alignment: start;
 
         HorizontalLayout {
-            spacing: 4px;
+            spacing: Theme.sp-4;
             IconText {
                 text: root.title-icon;
                 color: Theme.text-muted;

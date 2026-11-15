@@ -35,10 +35,10 @@ export component ChmodDialog inherits ModalCard {
     callback close-requested();
     callback sftp-chmod-apply();
 
-    card-width: 320px;
-    card-height: 270px;
+    card-width: 320px * Theme.ui-zoom;
+    card-height: 270px * Theme.ui-zoom;
     radius: Theme.radius-md;
-    spacing: 10px;
+    spacing: Theme.sp-10;
     dismissed() => { root.close-requested(); }
     Text {
         text: lang-en ? "Permissions" : "修改文件权限";
@@ -55,10 +55,10 @@ overflow: elide;
         { lbl: lang-en ? "Group" : "组",     g: 1 },
         { lbl: lang-en ? "Other" : "其他",   g: 2 },
     ] : VerticalLayout {
-        spacing: 2px;
+        spacing: Theme.sp-2;
         Text { text: grp.lbl; color: Theme.text-secondary; font-size: Theme.fs-xs; }
         HorizontalLayout {
-            spacing: 14px;
+            spacing: Theme.sp-14;
             CheckBox {
                 text: lang-en ? "Read" : "读取";
                 checked: grp.g == 0 ? chmod-or : (grp.g == 1 ? chmod-gr : chmod-tr);
@@ -92,7 +92,7 @@ overflow: elide;
     Rectangle { vertical-stretch: 1; }
     HorizontalLayout {
         alignment: end;
-        spacing: 8px;
+        spacing: Theme.sp-8;
         Button {
             text: lang-en ? "Cancel" : "取消";
             clicked => { root.close-requested(); }

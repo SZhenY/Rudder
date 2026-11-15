@@ -51,26 +51,26 @@ export component CommandBar inherits Rectangle {
     }
 
     visible: !root.cmd-bar-hidden;
-    height: root.cmd-bar-hidden ? 0px : 34px;
+    height: root.cmd-bar-hidden ? 0px : Theme.bar-h;
     background: Theme.bg-panel-alt;
     border-width: 0;
 
     // Outside-click backdrop: covers the terminal above so clicking
     // anywhere out of an open popup dismisses it.
     if root.quick-open || root.history-open : TouchArea {
-        x: 0; y: -2000px; width: parent.width; height: 2000px;
+        x: 0; y: -2000px * Theme.ui-scale; width: parent.width; height: 2000px * Theme.ui-scale;
         clicked => { root.quick-open = false; root.history-open = false; }
     }
 
     HorizontalLayout {
-        padding-left: 8px; padding-right: 8px;
-        padding-top: 4px; padding-bottom: 4px;
-        spacing: 6px;
+        padding-left: Theme.sp-8; padding-right: Theme.sp-8;
+        padding-top: Theme.sp-4; padding-bottom: Theme.sp-4;
+        spacing: Theme.sp-6;
 
         // Quick-command toggle. Once the right-hand sidebar is enabled,
         // the sidebar/icon strip becomes its only entry point (#215).
         if !root.quick-panel-docked : Rectangle {
-            width: qc-row.preferred-width + 16px;
+            width: qc-row.preferred-width + 16px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: qc-ta.has-hover || root.quick-open ? Theme.state-hover : Theme.bg-elevated;
             animate background {
@@ -85,7 +85,7 @@ export component CommandBar inherits Rectangle {
             qc-row := HorizontalLayout {
                 width: parent.width; height: parent.height;
                 alignment: center;
-                spacing: 3px;
+                spacing: Theme.sp-3;
                 Text { text: @tr("Quick"); color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
                 IconText { text: "\u{E5CE}";color: Theme.text-muted;
@@ -102,8 +102,8 @@ export component CommandBar inherits Rectangle {
             background: Theme.bg-root;
             cmd-input := TextInput {
                 input-method-hints: Theme.plain-input-hints;
-                x: 8px;
-                width: parent.width - 16px;
+                x: 8px * Theme.ui-scale;
+                width: parent.width - 16px * Theme.ui-scale;
                 height: parent.height;
                 color: Theme.text-primary;
                 font-family: Theme.ui-font-family;
@@ -227,8 +227,8 @@ export component CommandBar inherits Rectangle {
                 }
             }
             if cmd-input.text == "" : Text {
-                x: 8px;
-                width: parent.width - 16px;
+                x: 8px * Theme.ui-scale;
+                width: parent.width - 16px * Theme.ui-scale;
                 height: parent.height;
                 text: @tr("Type a command, Enter to send");
                 color: Theme.text-muted;
@@ -240,7 +240,7 @@ export component CommandBar inherits Rectangle {
 
         // History toggle.
         Rectangle {
-            width: 28px;
+            width: Theme.icon-btn-lg;
             border-radius: Theme.radius-sm;
             background: hist-ta.has-hover || root.history-open ? Theme.state-hover : Theme.bg-elevated;
             animate background {
@@ -263,7 +263,7 @@ export component CommandBar inherits Rectangle {
 
         // Send-to-all toggle.
         Rectangle {
-            width: all-row.preferred-width + 14px;
+            width: all-row.preferred-width + 14px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: root.send-to-all ? Theme.accent
                       : all-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
@@ -281,7 +281,7 @@ export component CommandBar inherits Rectangle {
 
         // Send button.
         Rectangle {
-            width: send-row.preferred-width + 18px;
+            width: send-row.preferred-width + 18px * Theme.ui-scale;
             border-radius: Theme.radius-sm;
             background: send-ta.has-hover ? Theme.accent-hover : Theme.accent;
             animate background {
@@ -309,10 +309,10 @@ export component CommandBar inherits Rectangle {
 
     // --- Quick-command popup (opens upward) --------------------------
     if root.quick-open : Rectangle {
-        x: 8px;
-        width: 420px;
-        height: min(320px, qc-col.preferred-height + 8px);
-        y: -self.height - 2px;
+        x: 8px * Theme.ui-scale;
+        width: 420px * Theme.ui-scale;
+        height: min(320px * Theme.ui-scale, qc-col.preferred-height + 8px * Theme.ui-scale);
+        y: -self.height - 2px * Theme.ui-scale;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
         border-width: 1px;
@@ -324,19 +324,19 @@ export component CommandBar inherits Rectangle {
             content-width: self.width;
             content-height: max(self.height, qc-col.preferred-height);
             qc-col := VerticalLayout {
-                padding: 4px;
+                padding: Theme.sp-4;
                 alignment: start;
                 if root.quick-commands.length == 0 : Text {
                     text: @tr("No quick commands yet");
                     color: Theme.text-muted; font-size: Theme.fs-xs;
                     horizontal-alignment: center;
-                    height: 32px; vertical-alignment: center;
+                    height: 32px * Theme.ui-scale; vertical-alignment: center;
                 }
                 for q in root.quick-commands : VerticalLayout {
                     // Group header on the first row of each group (#55) —
                     // click to collapse/expand the whole group.
                     if q.group-header != "" : Rectangle {
-                        height: 24px;
+                        height: 24px * Theme.ui-scale;
                         property <length> gmx;
                         property <length> gmy;
                         TouchArea {
@@ -349,7 +349,7 @@ export component CommandBar inherits Rectangle {
                             }
                         }
                         HorizontalLayout {
-                            padding-left: 4px; padding-top: 4px; spacing: 4px;
+                            padding-left: Theme.sp-4; padding-top: Theme.sp-4; spacing: Theme.sp-4;
                             IconText {
                                 text: q.collapsed ? "\u{E5CC}" : "\u{E5CF}"; // chevron ▶/▼
                                 color: Theme.text-muted; font-size: Theme.fs-sm;
@@ -367,15 +367,15 @@ export component CommandBar inherits Rectangle {
                             }
                         }
                         qpop-grp-menu := PopupWindow {
-                            x: gmx; y: gmy; width: 150px;
-                            height: (q.orig-index == -1 ? 3 : 2) * 30px + 9px;
+                            x: gmx; y: gmy; width: 150px * Theme.ui-scale;
+                            height: ((q.orig-index == -1 ? 3 : 2) * (Theme.row-h-lg + 1px * Theme.ui-scale) + 8px * Theme.ui-scale);
                             Rectangle {
                                 background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                 border-width: 1px; border-color: Theme.border-strong;
                                 drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                 VerticalLayout {
-                                    padding: 4px; spacing: 1px;
-                                    Rectangle { height: 30px; border-radius: Theme.radius-sm;
+                                    padding: Theme.sp-4; spacing: 1px * Theme.ui-scale;
+                                    Rectangle { height: 30px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pg-ren-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
                                             duration: pg-ren-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -383,10 +383,10 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pg-ren-ta := TouchArea { mouse-cursor: pointer; clicked => { root.rename-quick-group(q.group); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Rename group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                    if q.orig-index == -1 : Rectangle { height: 30px; border-radius: Theme.radius-sm;
+                                    if q.orig-index == -1 : Rectangle { height: 30px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pg-del-ta.has-hover ? #cc333320 : transparent;
                                         animate background {
                                             duration: pg-del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -394,10 +394,10 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pg-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-group(q.group); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                    Rectangle { height: 30px; border-radius: Theme.radius-sm;
+                                    Rectangle { height: 30px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pg-new-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
                                             duration: pg-new-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -405,7 +405,7 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pg-new-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-quick-group(); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                 }
@@ -413,7 +413,7 @@ export component CommandBar inherits Rectangle {
                         }
                     }
                     if !q.collapsed && q.orig-index >= 0 : Rectangle {
-                        height: 30px;
+                        height: Theme.row-h-lg;
                         border-radius: Theme.radius-sm;
                         background: q-item-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -447,7 +447,7 @@ export component CommandBar inherits Rectangle {
                         // Name + command on one line; each elides so a long
                         // entry never overflows the popup (#55).
                         HorizontalLayout {
-                            padding-left: 8px; padding-right: 8px; spacing: 10px;
+                            padding-left: Theme.sp-8; padding-right: Theme.sp-8; spacing: Theme.sp-10;
                             Text { text: q.name; color: Theme.text-primary; font-size: Theme.fs-sm;
                                    vertical-alignment: center; overflow: elide;
                                    horizontal-stretch: 1; }
@@ -457,15 +457,15 @@ export component CommandBar inherits Rectangle {
 }
                         }
                         qpop-ctx-menu := PopupWindow {
-                            x: ctx-x; y: ctx-y; width: 160px;
+                            x: ctx-x; y: ctx-y; width: 160px * Theme.ui-scale;
                             height: qpop-ctx-vl.preferred-height;
                             Rectangle {
                                 background: Theme.bg-panel; border-radius: Theme.radius-sm;
                                 border-width: 1px; border-color: Theme.border-strong;
                                 drop-shadow-blur: Theme.shadow-menu-blur; drop-shadow-color: Theme.shadow-menu-color;
                                 qpop-ctx-vl := VerticalLayout {
-                                    padding: 4px; spacing: 1px;
-                                    Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                    padding: Theme.sp-4; spacing: 1px * Theme.ui-scale;
+                                    Rectangle { height: 28px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pi-edit-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
                                             duration: pi-edit-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -473,10 +473,10 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pi-edit-ta := TouchArea { mouse-cursor: pointer; clicked => { root.quick-open = false; root.edit-quick-command(q.orig-index); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                    Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                    Rectangle { height: 28px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pi-dup-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
                                             duration: pi-dup-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -484,10 +484,10 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pi-dup-ta := TouchArea { mouse-cursor: pointer; clicked => { root.duplicate-quick-command(q.orig-index); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
-                                    Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                    Rectangle { height: 28px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pi-del-ta.has-hover ? #cc333320 : transparent;
                                         animate background {
                                             duration: pi-del-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -495,14 +495,14 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pi-del-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-quick-command(q.orig-index); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                     Divider {}
-                                    HorizontalLayout { padding-left: 10px; padding-top: 2px; spacing: 6px;
+                                    HorizontalLayout { padding-left: Theme.sp-10; padding-top: Theme.sp-2; spacing: Theme.sp-6;
                                         IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                                         Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; } }
-                                    if q.group != "default" : Rectangle { height: 28px; border-radius: Theme.radius-sm;
+                                    if q.group != "default" : Rectangle { height: 28px * Theme.ui-scale; border-radius: Theme.radius-sm;
                                         background: pi-md-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
                                             duration: pi-md-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -510,12 +510,12 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pi-md-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, "default"); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: @tr("Default"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; } } }
                                     for s in root.quick-commands : Rectangle {
                                         visible: s.group-header != "" && s.group != "default" && s.group != q.group;
-                                        height: self.visible ? 28px : 0px;
+                                        height: self.visible ? 28px * Theme.ui-scale : 0px;
                                         border-radius: Theme.radius-sm;
                                         background: pi-mv-ta.has-hover ? Theme.state-hover : transparent;
                                         animate background {
@@ -524,7 +524,7 @@ export component CommandBar inherits Rectangle {
                                             enabled: AnimationSettings.enabled;
                                         }
                                         pi-mv-ta := TouchArea { mouse-cursor: pointer; clicked => { root.move-quick-command(q.orig-index, s.group); } }
-                                        HorizontalLayout { padding-left: 10px; spacing: 8px;
+                                        HorizontalLayout { padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                             IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                             Text { text: s.group; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; } } }
                                 }
@@ -534,9 +534,9 @@ export component CommandBar inherits Rectangle {
                 }
                 // Manage entry.
                 Rectangle {
-                    height: 30px;
+                    height: Theme.row-h-lg;
                     HorizontalLayout {
-                        spacing: 2px;
+                        spacing: Theme.sp-2;
                         Rectangle {
                             horizontal-stretch: 1;
                             border-radius: Theme.radius-sm;
@@ -554,7 +554,7 @@ export component CommandBar inherits Rectangle {
                                    horizontal-alignment: center; vertical-alignment: center; }
                         }
                         if root.quick-sidebar-enabled : Rectangle {
-                            width: 34px;
+                            width: 34px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: quick-grip.has-hover ? Theme.state-hover : transparent;
                             animate background {
@@ -581,12 +581,12 @@ export component CommandBar inherits Rectangle {
 
     // --- History popup (opens upward) -------------------------------
     if root.history-open : Rectangle {
-        x: parent.width - 308px;
-        width: 300px;
+        x: parent.width - 308px * Theme.ui-scale;
+        width: 300px * Theme.ui-scale;
         height: root.history-autocomplete
-            ? min(180px, max(36px, h-col.preferred-height + 8px))
-            : min(296px, 46px + max(28px, min(228px, h-col.preferred-height + 8px)));
-        y: -self.height - 2px;
+            ? min(180px * Theme.ui-scale, max(36px * Theme.ui-scale, h-col.preferred-height + 8px * Theme.ui-scale))
+            : min(296px * Theme.ui-scale, 46px * Theme.ui-scale + max(28px * Theme.ui-scale, min(228px * Theme.ui-scale, h-col.preferred-height + 8px * Theme.ui-scale)));
+        y: -self.height - 2px * Theme.ui-scale;
         background: Theme.bg-panel;
         border-radius: Theme.radius-md;
         border-width: 1px;
@@ -595,8 +595,8 @@ export component CommandBar inherits Rectangle {
         drop-shadow-color: Theme.shadow-float-color;
         TouchArea {}
         VerticalLayout {
-            padding: 4px;
-            spacing: 4px;
+            padding: Theme.sp-4;
+            spacing: Theme.sp-4;
             // History list fills the popup; the search box is pinned at the
             // bottom (next to the command input) so it stays in a fixed,
             // easy-to-find spot no matter how tall the list is (#131).
@@ -605,16 +605,16 @@ export component CommandBar inherits Rectangle {
             content-width: self.width;
             content-height: max(self.height, h-col.preferred-height);
             h-col := VerticalLayout {
-                padding: 4px;
+                padding: Theme.sp-4;
                 alignment: start;
                 if root.history-view.length == 0 : Text {
                     text: root.command-history.length == 0 ? @tr("No history yet") : @tr("No match");
                     color: Theme.text-muted; font-size: Theme.fs-xs;
                     horizontal-alignment: center;
-                    height: 32px; vertical-alignment: center;
+                    height: 32px * Theme.ui-scale; vertical-alignment: center;
                 }
                 for h[idx] in root.history-view : Rectangle {
-                    height: 28px;
+                    height: 28px * Theme.ui-scale;
                     border-radius: Theme.radius-sm;
                     background: idx == root.history-selected ? Theme.state-selected
                               : (h-item-ta.has-hover ? Theme.state-hover : transparent);
@@ -628,7 +628,7 @@ export component CommandBar inherits Rectangle {
                         }
                     }
                     HorizontalLayout {
-                        padding-left: 8px; padding-right: 4px; spacing: 1px;
+                        padding-left: Theme.sp-8; padding-right: Theme.sp-4; spacing: 1px;
                         Label {
                             // 多行历史条目只显示压缩后的单行预览（固定 28px 行高，
                             // 直接渲染多行会溢出到相邻行）；`h` 仍是原始字符串，
@@ -642,7 +642,7 @@ export component CommandBar inherits Rectangle {
                         }
                         // Run (▶) — execute immediately, on this tab.
                         Rectangle {
-                            width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                            width: 24px * Theme.ui-scale; y: (parent.height - self.height) / 2; height: 24px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: hrun.has-hover ? Theme.accent.with-alpha(0.25) : transparent;
                             animate background {
@@ -665,7 +665,7 @@ export component CommandBar inherits Rectangle {
                         }
                         // Copy (⧉) — to clipboard, keep the popup open.
                         Rectangle {
-                            width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                            width: 24px * Theme.ui-scale; y: (parent.height - self.height) / 2; height: 24px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: hcopy.has-hover ? Theme.bg-elevated : transparent;
                             animate background {
@@ -684,7 +684,7 @@ export component CommandBar inherits Rectangle {
                         }
                         // Delete (×) — remove this entry.
                         Rectangle {
-                            width: 24px; y: (parent.height - self.height) / 2; height: 24px;
+                            width: 24px * Theme.ui-scale; y: (parent.height - self.height) / 2; height: 24px * Theme.ui-scale;
                             border-radius: Theme.radius-sm;
                             background: hdel.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
                             animate background {
@@ -709,7 +709,7 @@ export component CommandBar inherits Rectangle {
             // command input, so it stays in a fixed, easy-to-find spot no
             // matter how tall the list is — like FinalShell (#131).
             if !root.history-autocomplete : Rectangle {
-                height: 30px;
+                height: Theme.row-h-lg;
                 border-radius: Theme.radius-sm;
                 background: Theme.bg-root;
                 border-width: 1px;
@@ -724,7 +724,7 @@ export component CommandBar inherits Rectangle {
                     }
                 }
                 HorizontalLayout {
-                    padding-left: 8px; padding-right: 8px; spacing: 4px;
+                    padding-left: Theme.sp-8; padding-right: Theme.sp-8; spacing: Theme.sp-4;
                     IconText { text: "\u{E8B6}";
                            color: Theme.text-muted; font-size: Theme.fs-sm;
                            vertical-alignment: center; }

@@ -8,8 +8,8 @@ export component NavItem inherits Rectangle {
     in property <string> label;
     in property <bool> active;
     callback clicked();
-    height: 30px;
-    border-radius: 6px;
+    height: Theme.row-h-lg;
+    border-radius: 6px * Theme.ui-scale;
     // 1px 描边常驻（未选中时透明）：换成"选中才 1px"会让整行内容在切换时抖 1px。
     border-width: 1px;
     // 选中态由 `InterfacePanel` 的**滑轨**负责（整块滑动），这里只表达指针反馈。
@@ -32,8 +32,8 @@ export component NavItem inherits Rectangle {
         clicked => { root.clicked(); }
     }
     HorizontalLayout {
-        padding-left: 10px;
-        spacing: 9px;
+        padding-left: Theme.sp-10;
+        spacing: 9px * Theme.ui-scale;
         IconText { text: root.icon;
                color: root.active ? Theme.accent : Theme.text-secondary;
                font-size: 15px * Theme.panel-font; vertical-alignment: center; }
@@ -60,13 +60,13 @@ export component SettingRow inherits Rectangle {
     in property <bool> show-divider: true;
     VerticalLayout {
         HorizontalLayout {
-            spacing: 14px;
-            padding-top: 9px;
-            padding-bottom: 9px;
+            spacing: Theme.sp-14;
+            padding-top: 9px * Theme.ui-scale;
+            padding-bottom: 9px * Theme.ui-scale;
             VerticalLayout {
                 horizontal-stretch: 1;
                 alignment: center;
-                spacing: 3px;
+                spacing: Theme.sp-3;
                 Text { text: root.label; font-size: 13px * Theme.panel-font; color: Theme.text-primary; }
                 if root.desc != "" : Text { text: root.desc; font-size: 11px * Theme.panel-font;
                         color: Theme.text-muted; wrap: word-wrap;
@@ -96,9 +96,9 @@ export component ToggleSwitch inherits Rectangle {
     in-out property <bool> mirror: false;
     callback toggled(bool);
 
-    width: 40px;
-    height: 22px;
-    border-radius: 11px;
+    width: 40px * Theme.ui-scale;
+    height: 22px * Theme.ui-scale;
+    border-radius: 11px * Theme.ui-scale;
     border-width: 1px;
     border-color: root.checked ? Theme.accent : Theme.border-strong;
     background: root.checked ? Theme.accent : Theme.bg-hover;
@@ -116,11 +116,11 @@ export component ToggleSwitch inherits Rectangle {
     }
 
     Rectangle {
-        x: root.checked ? parent.width - self.width - 3px : 3px;
-        y: 3px;
-        width: 16px;
-        height: 16px;
-        border-radius: 8px;
+        x: root.checked ? parent.width - self.width - 3px * Theme.ui-scale : 3px * Theme.ui-scale;
+        y: 3px * Theme.ui-scale;
+        width: 16px * Theme.ui-scale;
+        height: 16px * Theme.ui-scale;
+        border-radius: 8px * Theme.ui-scale;
         background: root.checked ? #ffffff : Theme.text-secondary;
         // 250ms：比交互态的 100ms 明显慢，又不到容器档的 300ms。
         animate x {
@@ -184,16 +184,16 @@ export component Stepper inherits Rectangle {
     in property <int> step: 1;
     in property <string> unit;
     callback changed(int);
-    width: 112px;
-    height: 26px;
-    border-radius: 6px;
+    width: 112px * Theme.ui-scale;
+    height: Theme.control-h-sm;
+    border-radius: 6px * Theme.ui-scale;
     background: Theme.bg-elevated;
     border-width: 1px;
     border-color: Theme.border-subtle;
     clip: true;
     HorizontalLayout {
         StateSurface {
-            width: 30px;
+            width: 30px * Theme.ui-scale;
             radius: 0px;
             clicked => { root.changed(max(root.minimum, root.value - root.step)); }
             IconText { text: "\u{E15B}";font-size: 14px * Theme.panel-font;
@@ -206,7 +206,7 @@ export component Stepper inherits Rectangle {
                horizontal-alignment: center; vertical-alignment: center; }
         VDivider {}
         StateSurface {
-            width: 30px;
+            width: 30px * Theme.ui-scale;
             radius: 0px;
             clicked => { root.changed(min(root.maximum, root.value + root.step)); }
             IconText { text: "\u{E145}";font-size: 14px * Theme.panel-font;

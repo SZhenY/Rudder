@@ -54,7 +54,7 @@ export component SessionRow inherits Rectangle {
     property <bool> grab-dragging: false;
     property <length> grab-y;
 
-    height: 36px;
+    height: 36px * Theme.ui-zoom;
 
     // Remember where the right-click landed so the popup can appear there.
     property <length> ctx-x;
@@ -100,7 +100,7 @@ export component SessionRow inherits Rectangle {
             if (!root.grab-dragging) {
                 // A few pixels of vertical drift start a reorder drag; below
                 // that the press still resolves to a connect click.
-                if (root.reorder-enabled && abs(touch.mouse-y - root.grab-y) > 5px) {
+                if (root.reorder-enabled && abs(touch.mouse-y - root.grab-y) > 5px * Theme.ui-scale) {
                     root.grab-dragging = true;
                     root.grab-y = touch.mouse-y;
                     root.drag-start();
@@ -110,11 +110,11 @@ export component SessionRow inherits Rectangle {
                 // full slot (row + 2px spacing) — NOT back to the cursor — so
                 // overshoot carries over and the drag stays glued to the
                 // pointer across consecutive hops.
-                if (touch.mouse-y - root.grab-y > (root.height + 2px) / 2) {
-                    root.grab-y = root.grab-y + root.height + 2px;
+                if (touch.mouse-y - root.grab-y > (root.height + 2px * Theme.ui-scale) / 2) {
+                    root.grab-y = root.grab-y + root.height + 2px * Theme.ui-scale;
                     root.reorder(1);
-                } else if (root.grab-y - touch.mouse-y > (root.height + 2px) / 2) {
-                    root.grab-y = root.grab-y - root.height - 2px;
+                } else if (root.grab-y - touch.mouse-y > (root.height + 2px * Theme.ui-scale) / 2) {
+                    root.grab-y = root.grab-y - root.height - 2px * Theme.ui-scale;
                     root.reorder(-1);
                 }
                 // Stream the pointer-follow offset to the list, which applies
@@ -131,7 +131,7 @@ export component SessionRow inherits Rectangle {
     ctx-menu := PopupWindow {
         x: ctx-x;
         y: ctx-y;
-        width: 140px;
+        width: 140px * Theme.ui-zoom;
         // Height follows the content so a variable number of "move to" rows fit.
         height: menu-vl.preferred-height;
 
@@ -144,12 +144,12 @@ export component SessionRow inherits Rectangle {
             drop-shadow-color: Theme.shadow-menu-color;
 
             menu-vl := VerticalLayout {
-                padding: 4px;
-                spacing: 2px;
+                padding: Theme.sp-4;
+                spacing: Theme.sp-2;
 
                 // Edit
                 if !root.system-row : Rectangle {
-                    height: 28px;
+                    height: Theme.row-h;
                     border-radius: Theme.radius-sm;
                     background: edit-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
@@ -162,8 +162,8 @@ export component SessionRow inherits Rectangle {
                         clicked => { root.edit(); }
                     }
                     HorizontalLayout {
-                        padding-left: 10px;
-                        spacing: 8px;
+                        padding-left: Theme.sp-10;
+                        spacing: Theme.sp-8;
                         IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Edit"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -171,7 +171,7 @@ export component SessionRow inherits Rectangle {
 
                 // Duplicate — clone this session as a starting point (#41).
                 if !root.system-row : Rectangle {
-                    height: 28px;
+                    height: Theme.row-h;
                     border-radius: Theme.radius-sm;
                     background: dup-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
@@ -184,8 +184,8 @@ export component SessionRow inherits Rectangle {
                         clicked => { root.duplicate(); }
                     }
                     HorizontalLayout {
-                        padding-left: 10px;
-                        spacing: 8px;
+                        padding-left: Theme.sp-10;
+                        spacing: Theme.sp-8;
                         IconText { text: "\u{E14D}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Duplicate"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -193,7 +193,7 @@ export component SessionRow inherits Rectangle {
 
                 // Delete (red tint)
                 if !root.system-row : Rectangle {
-                    height: 28px;
+                    height: Theme.row-h;
                     border-radius: Theme.radius-sm;
                     background: del-ta.has-hover ? #cc333320 : transparent;
                     animate background {
@@ -206,8 +206,8 @@ export component SessionRow inherits Rectangle {
                         clicked => { root.remove(); }
                     }
                     HorizontalLayout {
-                        padding-left: 10px;
-                        spacing: 8px;
+                        padding-left: Theme.sp-10;
+                        spacing: Theme.sp-8;
                         IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: @tr("Delete"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                     }
@@ -218,9 +218,9 @@ export component SessionRow inherits Rectangle {
                 // "Move to" hint — labels the group list below so the user knows
                 // these entries move the session into that folder.
                 if !root.system-row : HorizontalLayout {
-                    padding-left: 10px;
-                    padding-top: 2px;
-                    spacing: 6px;
+                    padding-left: Theme.sp-10;
+                    padding-top: Theme.sp-2;
+                    spacing: Theme.sp-6;
                     IconText { text: "\u{E2C7}";color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; }
                     Text { text: @tr("Move to"); color: Theme.text-muted; font-size: Theme.fs-xs; vertical-alignment: center; horizontal-stretch: 1; }
                 }
@@ -231,7 +231,7 @@ export component SessionRow inherits Rectangle {
                 for s[i] in root.all-sessions : Rectangle {
                     visible: !root.system-row && s.group-header != ""
                         && s.group-header != "system" && s.group-header != root.session.group;
-                    height: self.visible ? 28px : 0px;
+                    height: self.visible ? Theme.row-h : 0px;
                     border-radius: Theme.radius-sm;
                     background: mv-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
@@ -244,8 +244,8 @@ export component SessionRow inherits Rectangle {
                         clicked => { root.move-to-group(s.group-header); }
                     }
                     HorizontalLayout {
-                        padding-left: 10px;
-                        spacing: 8px;
+                        padding-left: Theme.sp-10;
+                        spacing: Theme.sp-8;
                         IconText { text: "\u{E2C7}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                         Text { text: s.group-header; color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
                     }
@@ -263,7 +263,7 @@ export component SessionRow inherits Rectangle {
         border-radius: Theme.radius-sm;
         background: root.drag-target ? Theme.bg-elevated
             : (touch.has-hover ? Theme.state-hover : transparent);
-        drop-shadow-blur: root.drag-target ? 14px : 0px;
+        drop-shadow-blur: root.drag-target ? 14px * Theme.ui-scale : 0px;
         drop-shadow-color: root.drag-target ? #00000060 : transparent;
         animate background {
             duration: (root.drag-target || touch.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -277,14 +277,14 @@ export component SessionRow inherits Rectangle {
         }
 
     HorizontalLayout {
-        padding-left: 10px;
-        padding-right: 10px;
-        spacing: 12px;
+        padding-left: Theme.sp-10;
+        padding-right: Theme.sp-10;
+        spacing: Theme.sp-12;
 
         Rectangle {
-            width: 18px; height: 18px;
+            width: 18px * Theme.ui-zoom; height: 18px * Theme.ui-zoom;
             y: (parent.height - self.height) / 2;
-            border-radius: 3px;
+            border-radius: 3px * Theme.ui-zoom;
             background: Theme.bg-elevated;
             IconText {
                 centered: true;
@@ -299,7 +299,7 @@ export component SessionRow inherits Rectangle {
             color: Theme.text-primary;
             font-size: Theme.fs-md;
             vertical-alignment: center;
-            width: 180px;
+            width: 180px * Theme.ui-zoom;
             overflow: elide;
         }
         Text {
@@ -307,7 +307,7 @@ export component SessionRow inherits Rectangle {
             color: Theme.text-secondary;
             font-size: Theme.fs-sm;
             vertical-alignment: center;
-            width: 180px;
+            width: 180px * Theme.ui-zoom;
             overflow: elide;
         }
         Text {

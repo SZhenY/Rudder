@@ -65,7 +65,7 @@ export component AppearancePage inherits VerticalLayout {
     callback set-animations-enabled(bool);
     callback set-hide-special-partitions(bool);
     callback set-mount-filter(string);
-    callback set-panel-font(int);
+    callback set-ui-font-px(int);
     callback set-renderer-mode(string);
     callback set-ui-font(string);
     callback upload-ui-font();
@@ -100,9 +100,9 @@ export component AppearancePage inherits VerticalLayout {
         return root.lbl-gpu;
     }
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
 
@@ -113,25 +113,25 @@ export component AppearancePage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "壁纸";
         title-en: "WALLPAPER";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "Wallpaper" : "壁纸";
             desc: root.lang-en
                 ? "Dark / light (each with its matching backdrop), or anything you upload — uploads are copied into config/wallpapers."
                 : "深色 / 浅色(各自带配套底图),或上传自己的图片;上传的图片会复制到 config/wallpapers。";
             HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-10;
                 ComboBox {
-                    width: 176px;
+                    width: 176px * Theme.ui-scale;
                     model: root.wallpaper-labels;
                     current-index <=> root.wallpaper-index;
                     selected(v) => { root.set-wallpaper(v); }
                 }
                 // 上传：挑一张图片 → 复制进 `config/wallpapers` → 立刻出现在上面的列表里。
                 Rectangle {
-                    width: 34px;
-                    height: 30px;
-                    border-radius: 6px;
+                    width: 34px * Theme.ui-scale;
+                    height: 30px * Theme.ui-scale;
+                    border-radius: 6px * Theme.ui-scale;
                     border-width: 1px;
                     border-color: upload-ta.has-hover ? Theme.border-strong : Theme.border-subtle;
                     background: upload-ta.has-hover ? Theme.emphasis-hover : Theme.bg-elevated;
@@ -165,10 +165,10 @@ export component AppearancePage inherits VerticalLayout {
                 ? "Follows the wallpaper's complementary colour by default; pick a preset or custom colour to override."
                 : "默认跟随壁纸的互补色;也可以点预设或自定义颜色覆盖。";
             VerticalLayout {
-                spacing: 7px;
+                spacing: 7px * Theme.ui-scale;
                 alignment: center;
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     // 首格 = 当前壁纸互补色（跟随）：壁纸在 → wp-accent；无壁纸 → 默认蓝。
                     CursorPaletteSwatch {
                         hex: "";
@@ -209,14 +209,14 @@ export component AppearancePage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "曲线时间范围";
         title-en: "CURVE TIME SPAN";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "Curve time span" : "曲线时间范围";
             desc: root.lang-en
                 ? "How much history the CPU and network charts keep. The 15-second window samples once per second."
                 : "CPU 与网络曲线保留多久的历史。15 秒窗口每秒采样一次。";
             ComboBox {
-                width: 176px;
+                width: 176px * Theme.ui-scale;
                 model: root.lang-en
                     ? ["15 seconds", "1 minute", "5 minutes", "30 minutes", "1 hour", "6 hours"]
                     : ["15 秒", "1 分钟", "5 分钟", "30 分钟", "1 小时", "6 小时"];
@@ -231,25 +231,25 @@ export component AppearancePage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "界面字体";
         title-en: "UI FONT";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "UI font" : "界面字体";
             desc: root.lang-en
                 ? "Choose a font for menus, settings and dialogs. Changes take effect immediately."
                 : "选择菜单、设置和对话框的字体。修改后即时生效。";
             HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-10;
                 ComboBox {
-                    width: 176px;
+                    width: 176px * Theme.ui-scale;
                     model: root.ui-fonts;
                     current-index <=> root.ui-font-index;
                     selected(v) => { root.set-ui-font(v); }
                 }
                 // 上传：复制进 `config/fonts`（与壁纸同一条规则），注册后立刻可选，不必重启。
                 Rectangle {
-                    width: 34px;
-                    height: 30px;
-                    border-radius: 6px;
+                    width: 34px * Theme.ui-scale;
+                    height: 30px * Theme.ui-scale;
+                    border-radius: 6px * Theme.ui-scale;
                     border-width: 1px;
                     border-color: font-upload-ta.has-hover ? Theme.border-strong : Theme.border-subtle;
                     background: font-upload-ta.has-hover ? Theme.emphasis-hover : Theme.bg-elevated;
@@ -285,7 +285,7 @@ export component AppearancePage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "遮罩";
         title-en: "OVERLAY";
-        title-height: 22px;
+        title-height: 22px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "Wallpaper transparency" : "壁纸遮罩透明度";
             desc: root.lang-en
@@ -293,9 +293,9 @@ export component AppearancePage inherits VerticalLayout {
                 : "壁纸透过面板 / 终端背景的程度,越往右越透;没设壁纸时不生效。";
             show-divider: false;
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 Slider {
-                    width: 150px;
+                    width: 150px * Theme.ui-scale;
                     minimum: 0;
                     // Up to 70% transparency (overlay floor 0.30).
                     maximum: 70;
@@ -312,18 +312,47 @@ export component AppearancePage inherits VerticalLayout {
                     color: Theme.text-secondary;
                     font-size: 12px * Theme.panel-font;
                     vertical-alignment: center;
-                    width: 34px;
+                    width: 34px * Theme.ui-scale;
                 }
             }
         }
 
     }
     SettingsSection {
+        section-id: "appearance.interface";
+        lang-en: root.lang-en;
+        title-zh: "界面";
+        title-en: "INTERFACE";
+        title-height: 24px * Theme.ui-scale;
+        SettingRow {
+            label: root.lang-en ? "UI font size" : "界面字体大小";
+            desc: root.lang-en
+                ? "Base text size shared by the main window and this panel; controls grow with it."
+                : "主界面与设置窗口共用的文字基准；控件高度随之自适应。";
+            Stepper {
+                value: round(Theme.ui-font-px / 1px); minimum: 10; maximum: 20; step: 1; unit: "px";
+                changed(v) => { root.set-ui-font-px(v); }
+            }
+        }
+        SettingRow {
+            label: root.lang-en ? "UI scale" : "界面缩放";
+            desc: root.lang-en
+                ? "Zooms every element; at 100% the OS DPI sets the physical size."
+                : "等比放大所有元素；100% 时由系统 DPI 决定物理大小。";
+            show-divider: false;
+            Stepper {
+                value: round(root.ui-scale * 100); minimum: 80; maximum: 200; step: 10; unit: "%";
+                changed(v) => { root.set-ui-scale(v); }
+            }
+        }
+    }
+
+    SettingsSection {
         section-id: "appearance.rendering";
         lang-en: root.lang-en;
         title-zh: "渲染";
         title-en: "RENDERING";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "Renderer" : "渲染器";
             desc: root.lang-en
@@ -331,7 +360,7 @@ export component AppearancePage inherits VerticalLayout {
                 : "默认自动：首次启动探测一次，没有可用 GPU 时自动改用软件渲染。";
             show-divider: false;
             ComboBox {
-                width: 150px;
+                width: 150px * Theme.ui-scale;
                 // 三平台同一份列表、三档。"自动"是默认档：首次启动探测一次并把结论写回配置
                 // （见 config.rs 的 renderer_mode_choice 与 app/window.rs）。
                 model: [root.lbl-auto, root.lbl-gpu, root.lbl-soft];
@@ -382,26 +411,6 @@ export component AppearancePage inherits VerticalLayout {
 
             }
         }
-        SettingRow {
-            label: root.lang-en ? "UI scale" : "界面缩放";
-            desc: root.lang-en ? "Zooms the whole interface (not this panel)."
-                               : "缩放整个界面(不影响本面板)。";
-            Stepper {
-                value: round(root.ui-scale * 100); minimum: 80; maximum: 200; step: 10; unit: "%";
-                changed(v) => { root.set-ui-scale(v); }
-            }
-        }
-        SettingRow {
-            label: root.lang-en ? "Settings font size" : "界面字体大小";
-            desc: root.lang-en ? "Enlarges this settings panel (font + window)."
-                               : "放大本设置面板的字体和窗口。";
-            show-divider: false;
-            Stepper {
-                value: round(Theme.panel-font * 100); minimum: 80; maximum: 160; step: 10; unit: "%";
-                changed(v) => { root.set-panel-font(v); }
-            }
-        }
-
         // 分组留白（原为空 `Rectangle` 占位）：14px → 12px（−2px）
         GroupGap {
             gap: Theme.gap-md;
@@ -422,13 +431,13 @@ export component AppearancePage inherits VerticalLayout {
                 ? "Only show these mount points (space/comma/semicolon separated). Leave empty to show all."
                 : "仅显示这些挂载点的磁盘信息（空格/逗号/分号分隔）。留空表示显示全部。";
             Rectangle {
-                width: 208px; height: 30px;
-                border-radius: 6px; border-width: 1px;
+                width: 208px * Theme.ui-scale; height: 30px * Theme.ui-scale;
+                border-radius: 6px * Theme.ui-scale; border-width: 1px;
                 border-color: Theme.border-subtle;
                 background: Theme.bg-elevated;
                 TextInput {
                     input-method-hints: Theme.plain-input-hints;
-                    width: parent.width - 8px; x: 4px;
+                    width: parent.width - 8px * Theme.ui-scale; x: 4px * Theme.ui-scale;
                     height: parent.height; vertical-alignment: center;
                     color: Theme.text-primary;
                     text <=> root.mount-filter;

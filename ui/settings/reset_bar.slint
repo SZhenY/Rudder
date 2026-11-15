@@ -9,6 +9,7 @@
 //     ResetBar { page-id: "terminal"; reset-page(p) => { root.reset-page(p); } }
 //
 import { GhostButton } from "../widgets.slint";
+import { Theme } from "../theme.slint";
 
 export component ResetBar inherits HorizontalLayout {
     /// 传给上层 `reset-page(page-id)` 的页面标识，需与 Rust 侧 `SettingsPage` 一致。
@@ -19,8 +20,8 @@ export component ResetBar inherits HorizontalLayout {
 
     property <bool> armed: false;
 
-    padding-top: 12px;
-    padding-bottom: 4px;
+    padding-top: Theme.sp-12;
+    padding-bottom: Theme.sp-4;
     Rectangle { horizontal-stretch: 1; }
     GhostButton {
         text: root.armed ? root.label-armed : root.label;

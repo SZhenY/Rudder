@@ -7,6 +7,7 @@
 import { SettingSwitch } from "../chrome.slint";
 import { SettingsSection } from "../section.slint";
 import { ResetBar } from "../reset_bar.slint";
+import { Theme } from "../../theme.slint";
 
 export component TransferPage inherits VerticalLayout {
     in-out property <bool> download-always-ask;
@@ -16,9 +17,9 @@ export component TransferPage inherits VerticalLayout {
     callback set-download-always-ask(bool);
     callback set-sftp-follow-cd(bool);
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
     SettingsSection {

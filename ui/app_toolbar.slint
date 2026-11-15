@@ -23,16 +23,16 @@ export component AppToolbar inherits HorizontalLayout {
         // 这里踩过坑：写成 `x: root.toolbar-x-off; width: root.width - root.toolbar-x-off`
         // 会让右边界落到 `x + width == root.width`，于是图标**溢出到右侧状态栏里**。
         // 左边界无关紧要（内容右对齐、盒子无背景、不拦截点击），取 0 即可。
-        height: 26px;
+        height: 26px * Theme.ui-scale;
         alignment: end;                            // 靠右
-        spacing: 4px;
-        padding-right: 8px;
+        spacing: Theme.sp-4;
+        padding-right: Theme.sp-8;
         // Docker / 笔记页整页接管内容区，工具栏跟着收起 —— 否则会浮在占位页上
         // 且仍可点。zen-mode 保持既有行为（仍显示）。
         visible: !root.in-dock-page;
 
         IconButton {
-            size: 26px;
+            size: Theme.icon-btn;
             font-family: "Material Icons";
             tint-on-hover: false;
             glyph: "\u{E86F}";   // Material "code" — command bar
@@ -44,7 +44,7 @@ export component AppToolbar inherits HorizontalLayout {
             clicked => { root.show-cmd-bar = !root.show-cmd-bar; root.set-show-cmd-bar(root.show-cmd-bar); }
         }
         IconButton {
-            size: 26px;
+            size: Theme.icon-btn;
             font-family: "Material Icons";
             tint-on-hover: false;
             glyph: "\u{E627}";
@@ -56,7 +56,7 @@ export component AppToolbar inherits HorizontalLayout {
             clicked => { root.sync-input = !root.sync-input; root.set-sync-input(root.sync-input); }
         }
         IconButton {
-            size: 26px;
+            size: Theme.icon-btn;
             font-family: "Material Icons";
             tint-on-hover: false;
             glyph: Theme.dark ? "\u{E518}" : "\u{E51C}";
@@ -65,7 +65,7 @@ export component AppToolbar inherits HorizontalLayout {
             clicked => { root.toggle-theme(); }
         }
         IconButton {
-            size: 26px;
+            size: Theme.icon-btn;
             font-family: "Material Icons";
             tint-on-hover: false;
             glyph: "\u{E25D}";   // quick commands
@@ -77,7 +77,7 @@ export component AppToolbar inherits HorizontalLayout {
             clicked => { root.toggle-quick-sidebar(); }
         }
         IconButton {
-            size: 26px;
+            size: Theme.icon-btn;
             font-family: "Material Icons";
             tint-on-hover: false;
             glyph: "\u{E5D5}";   // swap_vert — transfer manager (up/down)
@@ -93,8 +93,8 @@ export component AppToolbar inherits HorizontalLayout {
         if root.mcp-client-count > 0 : VerticalLayout {
             alignment: center;
             Rectangle {
-                width: 40px;
-                height: 20px;
+                width: 40px * Theme.ui-scale;
+                height: 20px * Theme.ui-scale;
                 border-radius: Theme.radius-sm;
                 background: Theme.state-selected;
                 border-width: 1px;

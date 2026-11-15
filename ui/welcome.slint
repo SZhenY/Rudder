@@ -68,8 +68,8 @@ export component Welcome inherits Rectangle {
     }
 
     VerticalLayout {
-        padding: 24px;
-        spacing: 20px;
+        padding: Theme.sp-24;
+        spacing: Theme.sp-20;
 
         // Header (title + tagline) — pinned to the top at its natural height so
         // it can't grab the stretch space and spread apart (seen on macOS); the
@@ -77,11 +77,11 @@ export component Welcome inherits Rectangle {
         VerticalLayout {
             vertical-stretch: 0;
             alignment: start;
-            spacing: 4px;
+            spacing: Theme.sp-4;
             Text {
                 text: "Rudder";
                 color: Theme.text-primary;
-                font-size: 28px;
+                font-size: 28px * Theme.ui-zoom;
                 font-weight: 700;
             }
             Text {
@@ -103,13 +103,13 @@ export component Welcome inherits Rectangle {
             border-color: Theme.border-subtle;
 
             VerticalLayout {
-                padding: 16px;
-                spacing: 12px;
+                padding: Theme.sp-16;
+                spacing: Theme.sp-12;
 
                 Rectangle {
                     height: header-row.preferred-height;
                     header-row := HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Theme.sp-8;
                         Text {
                             text: @tr("Quick connect");
                             color: Theme.text-primary;
@@ -133,16 +133,16 @@ export component Welcome inherits Rectangle {
 
                 // Filter saved and built-in sessions by display name or host.
                 Rectangle {
-                    height: 32px;
+                    height: 32px * Theme.ui-zoom;
                     border-radius: Theme.radius-sm;
                     border-width: 1px;
                     border-color: search-input.has-focus ? Theme.accent : Theme.border-subtle;
                     background: Theme.bg-root;
 
                     HorizontalLayout {
-                        padding-left: 8px;
-                        padding-right: 4px;
-                        spacing: 6px;
+                        padding-left: Theme.sp-8;
+                        padding-right: Theme.sp-4;
+                        spacing: Theme.sp-6;
 
                         IconText {
                             text: "\u{E8B6}";
@@ -179,12 +179,12 @@ export component Welcome inherits Rectangle {
                         }
 
                         if root.search-query != "" : Rectangle {
-                            width: 24px;
+                            width: 24px * Theme.ui-zoom;
                             height: parent.height;
 
                             Rectangle {
-                                width: 24px;
-                                height: 24px;
+                                width: 24px * Theme.ui-zoom;
+                                height: 24px * Theme.ui-zoom;
                                 y: (parent.height - self.height) / 2;
                                 border-radius: Theme.radius-sm;
                                 background: clear-search.has-hover ? Theme.state-hover : transparent;
@@ -213,14 +213,14 @@ export component Welcome inherits Rectangle {
 
                                 if clear-search.has-hover : Rectangle {
                                     x: parent.width - self.width;
-                                    y: parent.height + 4px;
-                                    width: clear-search-tip.preferred-width + 16px;
-                                    height: 22px;
+                                    y: parent.height + 4px * Theme.ui-scale;
+                                    width: clear-search-tip.preferred-width + 16px * Theme.ui-scale;
+                                    height: 22px * Theme.ui-zoom;
                                     background: Theme.bg-elevated;
                                     border-radius: Theme.radius-sm;
                                     border-width: 1px;
                                     border-color: Theme.border-strong;
-                                    drop-shadow-blur: 8px;
+                                    drop-shadow-blur: 8px * Theme.ui-scale;
                                     drop-shadow-color: #00000070;
 
                                     clear-search-tip := Text {
@@ -247,7 +247,7 @@ export component Welcome inherits Rectangle {
 
                     VerticalLayout {
                         alignment: center;
-                        spacing: 6px;
+                        spacing: Theme.sp-6;
                         Text {
                             text: root.search-query == ""
                                 ? @tr("No sessions yet")
@@ -275,19 +275,19 @@ export component Welcome inherits Rectangle {
                         // Exclude hidden rows from layout spacing while a group
                         // is collapsed; keep its first row for the group header.
                         visible: session.group-header != "" || !session.collapsed;
-                        padding-top: self.visible && i > 0 ? 2px : 0px;
-                        spacing: 2px;
+                        padding-top: self.visible && i > 0 ? 2px * Theme.ui-scale : 0px;
+                        spacing: Theme.sp-2;
                         // Group header on the first row of each group (#41).
                         // Click anywhere on it to collapse / expand the group.
                         if session.group-header != "" : Rectangle {
-                            height: 26px;
+                            height: Theme.control-h-sm;
                             // Right-click popup anchor.
                             property <length> gmx;
                             property <length> gmy;
                             HorizontalLayout {
-                                padding-top: 6px;
-                                padding-left: 4px;
-                                spacing: 4px;
+                                padding-top: Theme.sp-6;
+                                padding-left: Theme.sp-4;
+                                spacing: Theme.sp-4;
                                 // Collapse chevron — shown for every group, empty
                                 // folders included, so they line up and can be
                                 // toggled (an empty group just expands to nothing).
@@ -335,9 +335,9 @@ export component Welcome inherits Rectangle {
                             grp-menu := PopupWindow {
                                 x: gmx;
                                 y: gmy;
-                                width: 140px;
+                                width: 140px * Theme.ui-zoom;
                                 // edit + new always; delete only for an empty group.
-                                height: (session.id == "" ? 3 : 2) * 28px + 9px;
+                                height: ((session.id == "" ? 3 : 2) * (Theme.row-h + 1px * Theme.ui-scale) + 8px * Theme.ui-scale);
                                 Rectangle {
                                     background: Theme.bg-panel;
                                     border-radius: Theme.radius-sm;
@@ -346,11 +346,11 @@ export component Welcome inherits Rectangle {
                                     drop-shadow-blur: Theme.shadow-menu-blur;
                                     drop-shadow-color: Theme.shadow-menu-color;
                                     VerticalLayout {
-                                        padding: 4px;
-                                        spacing: 1px;
+                                        padding: Theme.sp-4;
+                                        spacing: 1px * Theme.ui-scale;
                                         // Edit (rename) group
                                         Rectangle {
-                                            height: 28px;
+                                            height: Theme.row-h;
                                             border-radius: Theme.radius-sm;
                                             background: eg-ta.has-hover ? Theme.state-hover : transparent;
                                             animate background {
@@ -360,14 +360,14 @@ export component Welcome inherits Rectangle {
                                             }
                                             eg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.edit-group(session.group); } }
                                             HorizontalLayout {
-                                                padding-left: 10px; spacing: 8px;
+                                                padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                                 IconText { text: "\u{E3C9}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("Edit group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
                                         }
                                         // Delete group — only when it has no sessions (id == "")
                                         if session.id == "" : Rectangle {
-                                            height: 28px;
+                                            height: Theme.row-h;
                                             border-radius: Theme.radius-sm;
                                             background: dg-ta.has-hover ? #cc333320 : transparent;
                                             animate background {
@@ -377,14 +377,14 @@ export component Welcome inherits Rectangle {
                                             }
                                             dg-ta := TouchArea { mouse-cursor: pointer; clicked => { root.delete-group(session.group); } }
                                             HorizontalLayout {
-                                                padding-left: 10px; spacing: 8px;
+                                                padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                                 IconText { text: "\u{E872}";color: #cc3333; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("Delete group"); color: #cc3333; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }
                                         }
                                         // New group
                                         Rectangle {
-                                            height: 28px;
+                                            height: Theme.row-h;
                                             border-radius: Theme.radius-sm;
                                             background: ng-ta.has-hover ? Theme.state-hover : transparent;
                                             animate background {
@@ -394,7 +394,7 @@ export component Welcome inherits Rectangle {
                                             }
                                             ng-ta := TouchArea { mouse-cursor: pointer; clicked => { root.new-group(); } }
                                             HorizontalLayout {
-                                                padding-left: 10px; spacing: 8px;
+                                                padding-left: Theme.sp-10; spacing: Theme.sp-8;
                                                 IconText { text: "\u{E2CC}";color: Theme.text-secondary; font-size: Theme.fs-sm; vertical-alignment: center; }
                                                 Text { text: @tr("New group"); color: Theme.text-primary; font-size: Theme.fs-md; vertical-alignment: center; horizontal-stretch: 1; }
                                             }

@@ -102,9 +102,8 @@ pub(super) fn sync_settings_theme(m: &AppWindow, sw: &SettingsWindow) {
     swt.set_term_font_family(t.get_term_font_family());
     swt.set_term_font_size(t.get_term_font_size());
     swt.set_term_font_bold(t.get_term_font_bold());
-    // 面板字号：设置窗的窗口尺寸与全部正文都乘它（ui/settings_window.slint:78-79），
-    // 不同步的话用户在设置里调了字号，设置窗自己反而不变。
-    swt.set_panel_font(t.get_panel_font());
+    // 界面字号：设置窗的窗口尺寸与全部正文都乘它，不同步的话调字号时设置窗自己不变。
+    swt.set_ui_font_px(t.get_ui_font_px());
 }
 
 /// 只留一个原生关闭按钮：隐藏 macOS 的「最小化(黄)」与「缩放(绿)」，保留「关闭(红)」。
@@ -275,6 +274,7 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_mcp_audit_retention(m.get_mcp_audit_retention());
     sw.set_mcp_token_visible(false);
     sync_settings_theme(m, sw);
+    clamp_settings_size_before_show(m, sw);
     let _ = sw.show();
     // 摆到主窗口正中；必须 `show()` 之后，那时才有 `outer_size`。
     super::resource_ui::place_settings_window(m, sw);
@@ -303,6 +303,28 @@ pub(super) fn open_settings_window(m: &AppWindow, sw: &SettingsWindow) {
             keep_only_close_button(w.window());
         }
     });
+}
+
+/// 开窗前按界面倍率预估尺寸，并夹到主窗口所在显示器。
+///
+/// `preferred-*` 只在 show 时用一次，而且 Slint 不知道屏幕大小；200% 时
+/// `560px × 倍率` 会高过 1080p 的逻辑工作区，底部按钮因此不可达。
+fn clamp_settings_size_before_show(m: &AppWindow, sw: &SettingsWindow) {
+    // 面板倍率已含界面字号与总缩放（`Theme.panel-font` 是计算值）。
+    let scale = m.global::<Theme>().get_panel_font().max(1.0);
+    let want = (760.0 * scale, 560.0 * scale);
+    let dpr = m.window().scale_factor().max(0.01);
+    let monitor = m.window().with_winit_window(|ww| {
+        ww.current_monitor().map(|mo| {
+            let s = mo.size();
+            (s.width as f32 / dpr, s.height as f32 / dpr)
+        })
+    });
+    let (mon_w, mon_h) = monitor.flatten().unwrap_or((1440.0, 900.0));
+    // 横向留 32px、纵向留 80px（标题栏与任务栏）。
+    let w = want.0.clamp(640.0, (mon_w - 32.0).max(640.0));
+    let h = want.1.clamp(460.0, (mon_h - 80.0).max(460.0));
+    sw.window().set_size(slint::LogicalSize::new(w, h));
 }
 
 /// 关闭设置窗口。销毁由 `sub_windows::release_settings` 完成。
@@ -467,7 +489,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_osc52_clipboard => invoke_set_osc52_clipboard, (a0));
     forward!(sw, m, s, on_set_output_highlight => invoke_set_output_highlight, (a0, a1));
     forward!(sw, m, s, on_set_output_highlight_rule_enabled => invoke_set_output_highlight_rule_enabled, (a0, a1));
-    forward!(sw, m, s, on_set_panel_font => invoke_set_panel_font, (a0));
+    forward!(sw, m, s, on_set_ui_font_px => invoke_set_ui_font_px, (a0));
     forward!(sw, m, s, on_set_quick_commands_as_sidebar => invoke_set_quick_commands_as_sidebar, (a0));
     forward!(sw, m, s, on_set_renderer_mode => invoke_set_renderer_mode, (a0));
     forward!(sw, m, s, on_set_aggressive_memory_reclaim => invoke_set_aggressive_memory_reclaim, (a0));

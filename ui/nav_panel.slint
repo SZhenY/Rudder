@@ -23,10 +23,10 @@ component NavRow inherits Rectangle {
     in property <float> progress: 0;
     // 行宽显式传入（跟着外壳宽度动画走）。不能靠布局分配 —— 父级宽度动画期间
     // 布局重算滞后，选中高亮会等侧栏折完才开始收缩。
-    in property <length> row-w: 184px;
+    in property <length> row-w: 184px * Theme.ui-scale;
     callback activated();
 
-    height: 38px;
+    height: 38px * Theme.ui-scale;
     // 不设 clip：标签的右边界 = row-w − 10px，本来就不会溢出；
     // 外层 nav-shell 已经裁掉了宽度收缩时的多余部分。
 
@@ -65,12 +65,12 @@ component NavRow inherits Rectangle {
     // 展开态图标中心 = 10 + 9 = 19；收起态行宽 38px 时中心同样是 19 —— 两态同位，
     // 一个固定值就够。
     IconText {
-        x: 10px;
-        width: 18px;
+        x: 10px * Theme.ui-scale;
+        width: 18px * Theme.ui-scale;
         height: parent.height;
         text: root.glyph;
         color: root.current ? Theme.accent : Theme.text-secondary;
-        font-size: 18px;
+        font-size: 18px * Theme.ui-scale;
         horizontal-alignment: center;
         vertical-alignment: center;
     }
@@ -79,8 +79,8 @@ component NavRow inherits Rectangle {
     // 只滑 10px，让左缘最终与图标右缘齐平 —— 不能滑到 x = 0（会压到图标上，
     // 中途出现文字叠图标）；剩下的交给淡出与裁剪。
     Text {
-        x: 38px - root.progress * 10px;
-        width: max(0px, root.row-w - self.x - 10px);
+        x: (38px * Theme.ui-scale - root.progress * 10px * Theme.ui-scale) * Theme.ui-scale;
+        width: max(0px, root.row-w - self.x - 10px * Theme.ui-scale);
         height: parent.height;
         text: root.label;
         color: root.current ? Theme.text-primary : Theme.text-secondary;
@@ -117,7 +117,7 @@ export component NavPanel inherits Rectangle {
     // （见 AnimationSettings.collapse-duration / collapse-easing）。
     property <float> progress: root.collapsed ? 1 : 0;
     animate progress {
-        duration: AnimationSettings.collapse-duration(root.collapsed, 146px);
+        duration: AnimationSettings.collapse-duration(root.collapsed, 146px * Theme.ui-scale);
         easing: AnimationSettings.collapse-easing();
         enabled: AnimationSettings.enabled;
     }
@@ -128,7 +128,7 @@ export component NavPanel inherits Rectangle {
     }
 
     // 行宽 = 宽度减左右各 8px。显式算出来传给行，不依赖布局分配。
-    property <length> row-w: root.width - 16px;
+    property <length> row-w: root.width - 16px * Theme.ui-scale;
 
     background: transparent;
     border-width: 0;
@@ -144,10 +144,10 @@ export component NavPanel inherits Rectangle {
     //   步长 = 行高 38 + 间距 2 = 40
     // 宽度直接取 `row-w`，折叠动画期间自动跟随（184 → 38），无需再 animate。
     Rectangle {
-        x: 8px;
-        y: 56px + max(0, root.nav-row-index(root.current-page)) * 40px;
+        x: 8px * Theme.ui-scale;
+        y: (56px * Theme.ui-scale + max(0, root.nav-row-index(root.current-page)) * 40px * Theme.ui-scale) * Theme.ui-scale;
         width: root.row-w;
-        height: 38px;
+        height: 38px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
         border-width: 1px;
         border-color: Theme.state-selected-border;
@@ -171,14 +171,14 @@ export component NavPanel inherits Rectangle {
         // 否则它不跟随宽度动画中的宽度，选中高亮会等动画结束才骤然缩窄。
         width: 100%;
         height: 100%;
-        padding: 8px;
-        spacing: 2px;
+        padding: Theme.sp-8;
+        spacing: Theme.sp-2;
 
         // 头部：展开态（标题 + 收起按钮）与收起态（展开按钮）**都常驻**，
         // 靠 opacity 交叉淡化 —— 用 `if` 会导致元素随条件生死，没有过渡。
         // 两者同为 38px，叠在同一位置，交叉时不会错位。
         Rectangle {
-            height: 38px;
+            height: 38px * Theme.ui-scale;
 
             // 展开态
             Rectangle {
@@ -186,10 +186,10 @@ export component NavPanel inherits Rectangle {
                 height: 100%;
                 opacity: 1 - root.progress;
                 HorizontalLayout {
-                    padding-left: 4px;
+                    padding-left: Theme.sp-4;
                     // 不留右 padding：收起按钮的右缘要和下方导航项的 38px 高亮块对齐。
                     padding-right: 0px;
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     Text {
                         text: "Rudder";
                         color: Theme.text-primary;
@@ -201,8 +201,8 @@ export component NavPanel inherits Rectangle {
                     }
                     // 与收起态的展开按钮、以及导航项的选中高亮**同尺寸**（38×38）。
                     Rectangle {
-                        width: 38px;
-                        height: 38px;
+                        width: 38px * Theme.ui-scale;
+                        height: 38px * Theme.ui-scale;
                         border-radius: Theme.radius-sm;
                         background: collapse-ta.has-hover ? Theme.state-hover : transparent;
                         animate background {
@@ -221,7 +221,7 @@ export component NavPanel inherits Rectangle {
                         IconText {
                             text: "\u{E5CB}";   // chevron_left
                             color: collapse-ta.has-hover ? Theme.text-primary : Theme.text-muted;
-                            font-size: 18px;
+                            font-size: 18px * Theme.ui-scale;
                             centered: true;
                             width: parent.width;
                             height: parent.height;
@@ -246,7 +246,7 @@ export component NavPanel inherits Rectangle {
                 IconText {
                     text: "\u{E5CC}";   // chevron_right
                     color: expand-ta.has-hover ? Theme.accent : Theme.text-muted;
-                    font-size: 18px;
+                    font-size: 18px * Theme.ui-scale;
                     centered: true;
                     width: parent.width;
                     height: parent.height;
@@ -260,7 +260,7 @@ export component NavPanel inherits Rectangle {
             }
         }
 
-        Rectangle { height: 6px; }
+        Rectangle { height: 6px * Theme.ui-scale; }
 
         NavRow {
             glyph: "\u{E875}";   // dns / server
@@ -290,7 +290,7 @@ export component NavPanel inherits Rectangle {
         Rectangle { vertical-stretch: 1; }
 
         Rectangle { height: 1px; background: Theme.border-subtle; }
-        Rectangle { height: 6px; }
+        Rectangle { height: 6px * Theme.ui-scale; }
 
         NavRow {
             glyph: "\u{E8B8}";   // settings

@@ -124,6 +124,16 @@ pub(super) fn proc_weak() -> slint::Weak<ProcWindow> {
     })
 }
 
+/// 已创建的系统信息窗弱引用；未创建时返回默认（不可升级）的 `Weak`。
+pub(super) fn system_info_weak() -> slint::Weak<SystemInfoWindow> {
+    SYS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|w| w.as_weak())
+            .unwrap_or_default()
+    })
+}
+
 /// 首次打开进程窗时创建并接好回调；之后直接复用。
 pub(super) fn ensure_process(
     _main: &AppWindow,

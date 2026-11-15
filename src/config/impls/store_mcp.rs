@@ -142,15 +142,22 @@ impl ConfigStore {
     pub fn set_wallpaper_overlay(&mut self, v: f32) {
         self.cache.appearance.wallpaper_overlay = v.clamp(0.30, 1.0);
     }
-    pub fn panel_font(&self) -> u32 {
-        if self.cache.appearance.panel_font == 0 {
-            100
+    /// 界面基准字号（px）。0 表示老配置：按旧的 panel_font 百分比换算（13px 为 100%）。
+    pub fn ui_font_px(&self) -> u32 {
+        let px = if self.cache.appearance.ui_font_px == 0 {
+            let pct = if self.cache.appearance.panel_font == 0 {
+                100
+            } else {
+                self.cache.appearance.panel_font
+            };
+            (13.0 * pct as f32 / 100.0).round() as u32
         } else {
-            self.cache.appearance.panel_font
-        }
+            self.cache.appearance.ui_font_px
+        };
+        px.clamp(10, 20)
     }
-    pub fn set_panel_font(&mut self, percent: u32) {
-        self.cache.appearance.panel_font = percent.clamp(80, 160);
+    pub fn set_ui_font_px(&mut self, px: u32) {
+        self.cache.appearance.ui_font_px = px.clamp(10, 20);
     }
     pub fn overview_panel_width(&self) -> f32 {
         let w = self.cache.layout.overview_panel_width;

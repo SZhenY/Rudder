@@ -12,7 +12,7 @@ export component TrendCurve inherits Rectangle {
     /// 末端当前值（0..1），用于画「现在」圆点。
     /// 末端当前值（0..1）；-1 表示不画圆点（网络图不需要）。
     in property <float> last: -1.0;
-    in property <length> chart-height: 44px;
+    in property <length> chart-height: 44px * Theme.ui-scale;
 
     height: root.chart-height;
     vertical-stretch: 0;
@@ -62,11 +62,11 @@ export component TrendCurve inherits Rectangle {
     }
 
     if root.commands != "" && root.last >= 0.0 : Rectangle {
-        x: parent.width - 3px;
-        y: parent.height * (1 - clamp(root.last, 0.0, 1.0)) - 3px;
-        width: 6px;
-        height: 6px;
-        border-radius: 3px;
+        x: parent.width - 3px * Theme.ui-scale;
+        y: parent.height * (1 - clamp(root.last, 0.0, 1.0)) - 3px * Theme.ui-scale;
+        width: 6px * Theme.ui-scale;
+        height: 6px * Theme.ui-scale;
+        border-radius: Theme.radius-xs;
         background: root.tone;
     }
 }

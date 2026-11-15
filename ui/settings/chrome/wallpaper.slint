@@ -4,10 +4,10 @@ import { IconText } from "../../components/text.slint";
 export component WallpaperSwatch inherits Rectangle {
     in property <bool> selected;
     callback clicked();
-    width: 120px;
-    height: 74px;
-    border-radius: 8px;
-    border-width: root.selected ? 3px : 1px;
+    width: 120px * Theme.ui-scale;
+    height: 74px * Theme.ui-scale;
+    border-radius: 8px * Theme.ui-scale;
+    border-width: root.selected ? 3px * Theme.ui-scale : 1px;
     border-color: root.selected ? Theme.state-selected-border : Theme.border-strong;
     clip: true;
     animate border-color {
@@ -22,11 +22,11 @@ export component WallpaperSwatch inherits Rectangle {
     }
     @children
     if root.selected : Rectangle {
-        x: parent.width - self.width - 5px;
-        y: 5px;
-        width: 18px;
-        height: 18px;
-        border-radius: 9px;
+        x: parent.width - self.width - 5px * Theme.ui-scale;
+        y: 5px * Theme.ui-scale;
+        width: 18px * Theme.ui-scale;
+        height: 18px * Theme.ui-scale;
+        border-radius: 9px * Theme.ui-scale;
         background: Theme.accent;
         IconText {
             centered: true;

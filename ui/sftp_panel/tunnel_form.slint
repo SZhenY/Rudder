@@ -34,13 +34,13 @@ export component TunnelForm inherits Rectangle {
         content-height: max(self.visible-height, tunnel-body.preferred-height);
 
         tunnel-body := VerticalLayout {
-            padding: 10px;
-            spacing: 8px;
+            padding: Theme.sp-10;
+            spacing: Theme.sp-8;
 
             HorizontalLayout {
-                spacing: 6px;
+                spacing: Theme.sp-6;
                 Rectangle {
-                    width: 54px; height: 24px; border-radius: Theme.radius-sm;
+                    width: 54px * Theme.ui-scale; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: root.tunnel-kind == "local" ? Theme.accent : (tl-ta.has-hover ? Theme.state-hover : Theme.bg-root);
                     animate background {
                         duration: root.tunnel-kind == "local" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -51,7 +51,7 @@ export component TunnelForm inherits Rectangle {
                     Text { text: "-L"; color: root.tunnel-kind == "local" ? #ffffff : Theme.text-primary; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
                 }
                 Rectangle {
-                    width: 54px; height: 24px; border-radius: Theme.radius-sm;
+                    width: 54px * Theme.ui-scale; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: root.tunnel-kind == "dynamic" ? Theme.accent : (td-ta.has-hover ? Theme.state-hover : Theme.bg-root);
                     animate background {
                         duration: root.tunnel-kind == "dynamic" ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -63,7 +63,7 @@ export component TunnelForm inherits Rectangle {
                 }
                 Rectangle { horizontal-stretch: 1; }
                 Rectangle {
-                    width: 72px; height: 24px; border-radius: Theme.radius-sm;
+                    width: 72px * Theme.ui-scale; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: add-tunnel-ta.has-hover ? Theme.accent-hover : Theme.accent;
                     animate background {
                         duration: add-tunnel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -83,51 +83,51 @@ export component TunnelForm inherits Rectangle {
             }
 
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 Rectangle {
-                    horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
+                    horizontal-stretch: 1; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                    TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-name; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
+                    TextInput { x: 7px * Theme.ui-scale; width: parent.width - 14px * Theme.ui-scale; height: parent.height; text <=> root.tunnel-name; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                 }
             }
 
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 Rectangle {
-                    horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
+                    horizontal-stretch: 1; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                    TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
+                    TextInput { x: 7px * Theme.ui-scale; width: parent.width - 14px * Theme.ui-scale; height: parent.height; text <=> root.tunnel-bind; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                 }
                 Rectangle {
-                    width: 76px; height: 24px; border-radius: Theme.radius-sm;
+                    width: 76px * Theme.ui-scale; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                    TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-bind-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
+                    TextInput { x: 7px * Theme.ui-scale; width: parent.width - 14px * Theme.ui-scale; height: parent.height; text <=> root.tunnel-bind-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                 }
             }
 
             if root.tunnel-kind == "local" : HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 Rectangle {
-                    horizontal-stretch: 1; height: 24px; border-radius: Theme.radius-sm;
+                    horizontal-stretch: 1; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                    TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
+                    TextInput { x: 7px * Theme.ui-scale; width: parent.width - 14px * Theme.ui-scale; height: parent.height; text <=> root.tunnel-host; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                 }
                 Rectangle {
-                    width: 76px; height: 24px; border-radius: Theme.radius-sm;
+                    width: 76px * Theme.ui-scale; height: 24px * Theme.ui-scale; border-radius: Theme.radius-sm;
                     background: Theme.bg-root; border-width: 1px; border-color: Theme.border-subtle;
-                    TextInput { x: 7px; width: parent.width - 14px; height: parent.height; text <=> root.tunnel-host-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
+                    TextInput { x: 7px * Theme.ui-scale; width: parent.width - 14px * Theme.ui-scale; height: parent.height; text <=> root.tunnel-host-port; color: Theme.text-primary; font-family: Theme.ui-font-family; font-size: Theme.fs-sm; single-line: true; vertical-alignment: center; input-method-hints: Theme.plain-input-hints; }
                 }
             }
 
             Divider {}
 
             if root.tunnels.length == 0 : Rectangle {
-                height: 36px;
+                height: 36px * Theme.ui-scale;
                 Text { text: @tr("No tunnels"); color: Theme.text-muted; font-size: Theme.fs-sm; horizontal-alignment: center; vertical-alignment: center; }
             }
 
             for tun in root.tunnels : Rectangle {
-                height: 44px;
+                height: 44px * Theme.ui-scale;
                 border-radius: Theme.radius-sm;
                 background: tunnel-row-ta.has-hover ? Theme.state-hover : Theme.bg-root.with-alpha(0.42);
                 animate background {
@@ -137,14 +137,14 @@ export component TunnelForm inherits Rectangle {
                 }
                 tunnel-row-ta := TouchArea {}
                 VerticalLayout {
-                    padding-left: 8px; padding-right: 8px; spacing: 2px;
+                    padding-left: Theme.sp-8; padding-right: Theme.sp-8; spacing: Theme.sp-2;
                     HorizontalLayout {
-                        spacing: 8px;
-                        Text { text: tun.active ? "●" : "○"; color: tun.active ? #28c76f : Theme.text-muted; width: 14px; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
-                        Text { text: tun.kind == "dynamic" ? "-D" : (tun.kind == "remote" ? "-R" : "-L"); color: Theme.text-muted; width: 28px; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
+                        spacing: Theme.sp-8;
+                        Text { text: tun.active ? "●" : "○"; color: tun.active ? #28c76f : Theme.text-muted; width: 14px * Theme.ui-scale; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
+                        Text { text: tun.kind == "dynamic" ? "-D" : (tun.kind == "remote" ? "-R" : "-L"); color: Theme.text-muted; width: 28px * Theme.ui-scale; font-size: Theme.fs-sm; vertical-alignment: center; horizontal-alignment: center; }
                         Text { text: tun.name; color: Theme.text-primary; horizontal-stretch: 1; font-size: Theme.fs-sm; overflow: elide; vertical-alignment: center; }
                         Rectangle {
-                            width: 48px; height: 22px; border-radius: Theme.radius-sm;
+                            width: 48px * Theme.ui-scale; height: 22px * Theme.ui-scale; border-radius: Theme.radius-sm;
                             background: (tun.active && tun.kind != "remote") ? (stop-ta.has-hover ? Theme.danger.with-alpha(0.24) : transparent) : transparent;
                             animate background {
                                 duration: (tun.active && tun.kind != "remote") ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
@@ -159,9 +159,9 @@ export component TunnelForm inherits Rectangle {
                         }
                     }
                     HorizontalLayout {
-                        spacing: 8px;
+                        spacing: Theme.sp-8;
                         Text { text: tun.bind + (tun.target != "" ? " → " + tun.target : ""); color: Theme.text-secondary; horizontal-stretch: 1; font-size: Theme.fs-xs; overflow: elide; vertical-alignment: center; }
-                        Text { text: tun.status; color: tun.active ? Theme.accent : Theme.text-muted; width: 62px; font-size: Theme.fs-xs; overflow: elide; vertical-alignment: center; horizontal-alignment: right; }
+                        Text { text: tun.status; color: tun.active ? Theme.accent : Theme.text-muted; width: 62px * Theme.ui-scale; font-size: Theme.fs-xs; overflow: elide; vertical-alignment: center; horizontal-alignment: right; }
                     }
                 }
             }

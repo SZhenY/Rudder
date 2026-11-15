@@ -9,7 +9,7 @@ export component SftpMenuItem inherits Rectangle {
     in property <brush> tint: Theme.text-primary;
     in property <bool> enabled: true;   // disabled items grey out + ignore clicks
     callback clicked();
-    height: 26px;
+    height: 26px * Theme.ui-scale;
     border-radius: Theme.radius-sm;
     background: (root.enabled && ta.has-hover) ? Theme.state-hover : transparent;
     animate background {
@@ -22,7 +22,7 @@ export component SftpMenuItem inherits Rectangle {
         clicked => { if (root.enabled) { root.clicked(); } }
     }
     Text {
-        x: 10px;
+        x: 10px * Theme.ui-scale;
         text: root.label;
         color: root.enabled ? root.tint : Theme.text-muted;
         font-size: Theme.fs-sm;

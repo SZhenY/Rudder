@@ -12,6 +12,7 @@
 // `Rectangle { height: Npx; }` 占位 —— 那是空元素当间距（Slint 官方 462 个 .slint
 // 里 0 例）。分区内部 `spacing: 0` 是刻意的：各设置行之间靠自身分隔线，不靠间距。
 import { SectionHeader } from "chrome.slint";
+import { Theme } from "../theme.slint";
 
 export component SettingsSection inherits VerticalLayout {
     /// 稳定 id，形如 `transfer.download`。
@@ -20,7 +21,7 @@ export component SettingsSection inherits VerticalLayout {
     in property <string> title-en;
     in property <bool> lang-en;
     /// 标题行高：历史上 22px / 24px 两种，原样保留。
-    in property <length> title-height: 24px;
+    in property <length> title-height: 24px * Theme.ui-scale;
     /// 是否处于"编辑排序"模式（阶段 E 接线，当前恒为 false）。
     in property <bool> reorderable: false;
     /// 与下一个分区之间的间距 —— 历史写法是在分区末尾放一个空 `Rectangle` 占位，
@@ -38,7 +39,7 @@ export component SettingsSection inherits VerticalLayout {
             horizontal-stretch: 1;
         }
         // 排序控件的位置：阶段 E 在这里放 ↑ / ↓ 或拖拽把手。
-        if root.reorderable : Rectangle { width: 40px; }
+        if root.reorderable : Rectangle { width: 40px * Theme.ui-scale; }
     }
     @children
 }

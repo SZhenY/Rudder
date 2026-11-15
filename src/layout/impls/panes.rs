@@ -21,6 +21,11 @@ pub const SPLITTER: f32 = 6.0;
 /// Smallest a pane is allowed to get along the split axis when dragging, in px.
 const MIN_PANE: f32 = 80.0;
 
+/// 窗格最小宽度按界面缩放放大：200% 下 80px 装不下一个标签。
+pub fn min_pane(scale: f32) -> f32 {
+    MIN_PANE * scale.max(0.8)
+}
+
 impl Layout {
     /// A fresh single-pane layout owning `tabs` with `active` selected.
     pub fn new(tabs: Vec<String>, active: String) -> Self {
@@ -42,14 +47,23 @@ impl Layout {
         id
     }
 
-    /// Flatten the tree into pane + splitter rects for the given content area.
-    pub fn flatten(&self, x: f32, y: f32, w: f32, h: f32) -> (Vec<PaneRect>, Vec<SplitterRect>) {
+    /// Flatten the tree into pane + splitter rects for the given content area,
+    /// with the splitter width scaled by `scale`.
+    pub fn flatten_scaled(
+        &self,
+        x: f32,
+        y: f32,
+        w: f32,
+        h: f32,
+        scale: f32,
+    ) -> (Vec<PaneRect>, Vec<SplitterRect>) {
         let mut panes = Vec::new();
         let mut splits = Vec::new();
         layout_node(
             &self.root,
             Rect { x, y, w, h },
             self.focused,
+            SPLITTER * scale.max(0.8),
             &mut panes,
             &mut splits,
         );
@@ -226,7 +240,9 @@ impl Layout {
 
     /// Adjust the ratio of split `split_id` so the boundary sits at `pos` px along
     /// the split's axis, given the split occupies `[start, start+len]`.
-    pub fn set_ratio(&mut self, split_id: u64, start: f32, len: f32, pos: f32) {
+    /// Adjust the ratio of split `split_id` so the boundary sits at `pos` px along
+    /// the split's axis, given the split occupies `[start, start+len]`.
+    pub fn set_ratio_min(&mut self, split_id: u64, start: f32, len: f32, pos: f32, min_pane: f32) {
         if len <= 0.0 {
             return;
         }
@@ -234,7 +250,7 @@ impl Layout {
         // `panic = "abort"` —— 内容区被挤到 < 2×MIN_PANE（例如窗口很窄 + 侧栏展开）时，
         // `MIN_PANE / len > 0.5` 就会让 `min > 1.0 - min`，用户一拖分隔条整个程序就没了。
         // 先夹住比例上限，保证 min ≤ max。
-        let min = (MIN_PANE / len).min(0.5);
+        let min = (min_pane / len).min(0.5);
         let r = ((pos - start) / len).clamp(min, 1.0 - min);
         set_split_ratio(&mut self.root, split_id, r);
     }
@@ -256,6 +272,7 @@ fn layout_node(
     node: &Node,
     rect: Rect,
     focused: u64,
+    splitter: f32,
     panes: &mut Vec<PaneRect>,
     splits: &mut Vec<SplitterRect>,
 ) {
@@ -278,17 +295,23 @@ fn layout_node(
             first,
             second,
         } => {
-            let half = SPLITTER / 2.0;
             match dir {
                 Dir::Horizontal => {
-                    let fw = (w - SPLITTER).max(0.0) * ratio;
-                    let sw = (w - SPLITTER).max(0.0) - fw;
-                    layout_node(first, Rect { x, y, w: fw, h }, focused, panes, splits);
+                    let fw = (w - splitter).max(0.0) * ratio;
+                    let sw = (w - splitter).max(0.0) - fw;
+                    layout_node(
+                        first,
+                        Rect { x, y, w: fw, h },
+                        focused,
+                        splitter,
+                        panes,
+                        splits,
+                    );
                     splits.push(SplitterRect {
                         split_id: *id,
                         x: x + fw,
                         y,
-                        w: SPLITTER,
+                        w: splitter,
                         h,
                         vertical: true,
                         axis_start: x,
@@ -297,27 +320,34 @@ fn layout_node(
                     layout_node(
                         second,
                         Rect {
-                            x: x + fw + SPLITTER,
+                            x: x + fw + splitter,
                             y,
                             w: sw,
                             h,
                         },
                         focused,
+                        splitter,
                         panes,
                         splits,
                     );
-                    let _ = half;
                 }
                 Dir::Vertical => {
-                    let fh = (h - SPLITTER).max(0.0) * ratio;
-                    let sh = (h - SPLITTER).max(0.0) - fh;
-                    layout_node(first, Rect { x, y, w, h: fh }, focused, panes, splits);
+                    let fh = (h - splitter).max(0.0) * ratio;
+                    let sh = (h - splitter).max(0.0) - fh;
+                    layout_node(
+                        first,
+                        Rect { x, y, w, h: fh },
+                        focused,
+                        splitter,
+                        panes,
+                        splits,
+                    );
                     splits.push(SplitterRect {
                         split_id: *id,
                         x,
                         y: y + fh,
                         w,
-                        h: SPLITTER,
+                        h: splitter,
                         vertical: false,
                         axis_start: y,
                         axis_len: h,
@@ -326,11 +356,12 @@ fn layout_node(
                         second,
                         Rect {
                             x,
-                            y: y + fh + SPLITTER,
+                            y: y + fh + splitter,
                             w,
                             h: sh,
                         },
                         focused,
+                        splitter,
                         panes,
                         splits,
                     );
@@ -479,7 +510,7 @@ mod tests {
     #[test]
     fn single_pane_fills_area() {
         let l = Layout::new(vec!["a".into(), "b".into()], "a".into());
-        let (panes, splits) = l.flatten(0.0, 0.0, 1000.0, 600.0);
+        let (panes, splits) = l.flatten_scaled(0.0, 0.0, 1000.0, 600.0, 1.0);
         assert_eq!(panes.len(), 1);
         assert!(splits.is_empty());
         assert_eq!(
@@ -506,7 +537,7 @@ mod tests {
     fn horizontal_split_halves_width_and_emits_splitter() {
         let mut l = Layout::new(vec!["a".into(), "b".into()], "a".into());
         let new = l.split(1, Dir::Horizontal, "b", false).unwrap();
-        let (panes, splits) = l.flatten(0.0, 0.0, 1006.0, 600.0);
+        let (panes, splits) = l.flatten_scaled(0.0, 0.0, 1006.0, 600.0, 1.0);
         assert_eq!(panes.len(), 2);
         assert_eq!(splits.len(), 1);
         // (1006 - 6) * 0.5 = 500 each.
@@ -525,7 +556,7 @@ mod tests {
         let new = l.split(1, Dir::Vertical, "b", false).unwrap();
         // Close 'b' → its pane empties → split collapses back to a single pane.
         l.remove_tab("b");
-        let (panes, splits) = l.flatten(0.0, 0.0, 800.0, 600.0);
+        let (panes, splits) = l.flatten_scaled(0.0, 0.0, 800.0, 600.0, 1.0);
         assert_eq!(panes.len(), 1);
         assert!(splits.is_empty());
         assert_eq!(panes[0].tabs, vec!["a".to_string()]);
@@ -542,7 +573,7 @@ mod tests {
         let mut rtabs = l.leaf(right).unwrap().tabs.clone();
         rtabs.sort();
         assert_eq!(rtabs, vec!["b".to_string(), "c".to_string()]);
-        assert_eq!(ids(&l.flatten(0.0, 0.0, 800.0, 600.0).0).len(), 2);
+        assert_eq!(ids(&l.flatten_scaled(0.0, 0.0, 800.0, 600.0, 1.0).0).len(), 2);
     }
 
     #[test]
@@ -550,7 +581,7 @@ mod tests {
         let mut l = Layout::new(vec!["a".into(), "b".into(), "c".into()], "a".into());
         let right = l.split(1, Dir::Horizontal, "c", false).unwrap();
         let dest = l.merge_leaf_into_other(right).unwrap();
-        let (panes, splits) = l.flatten(0.0, 0.0, 800.0, 600.0);
+        let (panes, splits) = l.flatten_scaled(0.0, 0.0, 800.0, 600.0, 1.0);
         assert_eq!(panes.len(), 1);
         assert!(splits.is_empty());
         assert_eq!(dest, 1);
@@ -567,7 +598,7 @@ mod tests {
         let mut l = Layout::new(vec!["a".into(), "b".into(), "c".into()], "a".into());
         let r = l.split(1, Dir::Horizontal, "b", false).unwrap();
         l.split(r, Dir::Vertical, "c", false).unwrap();
-        let (panes, _) = l.flatten(0.0, 0.0, 1006.0, 606.0);
+        let (panes, _) = l.flatten_scaled(0.0, 0.0, 1006.0, 606.0, 1.0);
         assert_eq!(panes.len(), 3);
         // Total covered area equals the content area (minus splitter gaps).
         let area: f32 = panes.iter().map(|p| p.w * p.h).sum();

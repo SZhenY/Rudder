@@ -50,10 +50,10 @@ export component SettingsWindow inherits Window {
     // min == max，`window_is_resizable()` 直接判 false → winit 调
     // `set_resizable(false)` → 样式里没有 WS_SIZEBOX → 系统的缩放循环不会启动，
     // 连拖动都会被 winit 的 `dragging` 标志卡死（只有重启程序才恢复）。
-    min-width: 640px;
-    min-height: 460px;
-    preferred-width: max(720px, 760px * Theme.panel-font);
-    preferred-height: max(480px, 560px * Theme.panel-font);
+    min-width: 640px * Theme.ui-scale;
+    min-height: 460px * Theme.ui-scale;
+    preferred-width: max(720px * Theme.ui-scale, 760px * Theme.panel-font);
+    preferred-height: max(480px * Theme.ui-scale, 560px * Theme.panel-font);
     // 不透明底（壁纸层与磨砂面板都盖在它上面）—— 与主窗口 / `ProcWindow` 同一套合成。
     background: Theme.window-base;
     default-font-family: Theme.ui-font-family;
@@ -208,7 +208,7 @@ export component SettingsWindow inherits Window {
     callback set-osc52-clipboard(bool);
     callback set-output-highlight(bool, string);
     callback set-output-highlight-rule-enabled(int, bool);
-    callback set-panel-font(int);
+    callback set-ui-font-px(int);
     callback set-quick-commands-as-sidebar(bool);
     callback set-renderer-mode(string);
     callback set-scrollback-lines(string) -> bool;
@@ -293,14 +293,14 @@ export component SettingsWindow inherits Window {
             if root.custom-titlebar : WindowTitleBar {
                 title: root.lang-en ? "Settings" : "设置";
                 bg: Theme.bg-elevated;
-                icon-size: 16px;
+                icon-size: 16px * Theme.ui-scale;
                 close() => { root.close-requested(); }
                 drag() => { root.win-drag(); }
             }
             // macOS 的窗口是「全尺寸内容视图 + 透明标题栏」→ 原生交通灯会**浮在内容之上**，
             // 顶部必须留出 25px（与主窗口 `titlebar-inset`、`ProcWindow` 同一取值）。
             // 自绘标题栏的平台标题栏在内容之上，不用让位。
-            padding-top: (root.is-mac && !root.custom-titlebar) ? 25px : 0px;
+            padding-top: (root.is-mac && !root.custom-titlebar) ? 25px * Theme.ui-scale : 0px;
             // 自写的 44px 标题栏（标题 + 拖动 + ✕）与它下面的 Divider 都退休了：
             // 标题、拖动、关闭按钮现在由 macOS 窗口标题栏提供，少两层图元，
             // 也少一块 44px 高的重绘面积。
@@ -408,7 +408,7 @@ export component SettingsWindow inherits Window {
                     root.set-output-highlight-rule-enabled(index, enabled);
                 }
                 set-ui-scale(v) => { root.set-ui-scale(v); }
-                set-panel-font(v) => { root.set-panel-font(v); }
+                set-ui-font-px(v) => { root.set-ui-font-px(v); }
                 set-renderer-mode(v) => { root.set-renderer-mode(v); }
                 set-aggressive-memory-reclaim(v) => { root.set-aggressive-memory-reclaim(v); }
                 set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
@@ -488,8 +488,8 @@ export component SettingsWindow inherits Window {
 
     // 无边框平台上系统不再提供缩放边缘 → 右下角留一个 16px 的抓手。
     if root.custom-titlebar : Rectangle {
-        width: 16px;
-        height: 16px;
+        width: 16px * Theme.ui-scale;
+        height: 16px * Theme.ui-scale;
         x: root.width - self.width;
         y: root.height - self.height;
         TouchArea {
@@ -500,8 +500,8 @@ export component SettingsWindow inherits Window {
                 }
             }
         }
-        Rectangle { x: parent.width - 5px;  y: parent.height - 5px;  width: 2px; height: 2px; background: Theme.text-muted; }
-        Rectangle { x: parent.width - 9px;  y: parent.height - 5px;  width: 2px; height: 2px; background: Theme.text-muted; }
-        Rectangle { x: parent.width - 5px;  y: parent.height - 9px;  width: 2px; height: 2px; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale;  y: parent.height - 5px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px * Theme.ui-scale;  y: parent.height - 5px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale;  y: parent.height - 9px * Theme.ui-scale;  width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
     }
 }

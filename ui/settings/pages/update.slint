@@ -30,8 +30,8 @@ component ChannelSegment inherits Rectangle {
     in property <bool> selected;
     callback clicked();
 
-    height: 28px;
-    width: max(64px, seg-label.preferred-width + 24px);
+    height: 28px * Theme.ui-scale;
+    width: max(64px * Theme.ui-scale, seg-label.preferred-width + 24px * Theme.ui-scale);
     border-radius: Theme.radius-sm;
     border-width: 1px;
     border-color: root.selected ? Theme.state-selected-border : Theme.border-subtle;
@@ -86,9 +86,9 @@ export component UpdatePage inherits VerticalLayout {
     callback set-update-proxy-enabled(bool);
     callback set-update-proxy(string);
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
     SettingsSection {
@@ -96,7 +96,7 @@ export component UpdatePage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "新版本提示";
         title-en: "UPDATE CHECK";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingSwitch {
             label: root.lang-en ? "Check for updates on every launch" : "启动时自动检查更新";
             checked <=> root.update-check-enabled;
@@ -105,7 +105,7 @@ export component UpdatePage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Check frequency" : "检查频率";
             ComboBox {
-                width: 160px;
+                width: 160px * Theme.ui-scale;
                 model: root.update-freq-labels;
                 current-index <=> root.update-freq-index;
                 selected(v) => { root.set-update-freq(root.update-freq-index); }
@@ -114,7 +114,7 @@ export component UpdatePage inherits VerticalLayout {
         SettingRow {
             label: root.lang-en ? "Update channel" : "更新通道";
             HorizontalLayout {
-                spacing: 6px;
+                spacing: Theme.sp-6;
                 alignment: end;
                 ChannelSegment {
                     label: root.lang-en ? "Stable" : "正式版";
@@ -139,11 +139,11 @@ export component UpdatePage inherits VerticalLayout {
             desc: root.update-check-status;
             show-divider: false;
             HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-10;
                 alignment: end;
                 Rectangle {
-                    width: root.update-checking ? 92px : 80px;
-                    height: 28px;
+                    width: root.update-checking ? 92px * Theme.ui-scale : 80px * Theme.ui-scale;
+                    height: 28px * Theme.ui-scale;
                     border-radius: Theme.radius-sm;
                     background: root.update-checking ? Theme.bg-elevated
                         : (upd-ck-ta.pressed ? Theme.state-press
@@ -203,7 +203,7 @@ export component UpdatePage inherits VerticalLayout {
             lang-en: root.lang-en;
             title-zh: "更新网络";
             title-en: "UPDATE NETWORK";
-            title-height: 24px;
+            title-height: 24px * Theme.ui-scale;
             // 分区说明：这两行只管更新链路，避免被当成会话代理去填。
             GroupGap {
                 gap: Theme.gap-sm;
@@ -233,9 +233,9 @@ export component UpdatePage inherits VerticalLayout {
                     : "留空跟随系统代理；可写 主机:端口，或带账号密码的完整地址。";
                 show-divider: false;
                 Rectangle {
-                    width: 208px;
-                    height: 30px;
-                    border-radius: 6px;
+                    width: 208px * Theme.ui-scale;
+                    height: 30px * Theme.ui-scale;
+                    border-radius: 6px * Theme.ui-scale;
                     border-width: 1px;
                     // 代理关掉时整行退成"不可用"：底、边框、文字一起暗一档。
                     border-color: proxy-input.has-focus ? Theme.accent : Theme.border-subtle;
@@ -243,8 +243,8 @@ export component UpdatePage inherits VerticalLayout {
                     proxy-input := TextInput {
                         input-method-hints: Theme.plain-input-hints;
                         enabled: root.update-proxy-enabled;
-                        x: 6px;
-                        width: parent.width - 12px;
+                        x: 6px * Theme.ui-scale;
+                        width: parent.width - 12px * Theme.ui-scale;
                         height: parent.height;
                         vertical-alignment: center;
                         color: root.update-proxy-enabled ? Theme.text-primary : Theme.text-muted;
@@ -254,7 +254,7 @@ export component UpdatePage inherits VerticalLayout {
                     }
                     // 空值时给个格式示例 —— `TextInput` 本身没有 placeholder（1.18 起仍无）。
                     if root.update-proxy == "" : Text {
-                        x: 6px;
+                        x: 6px * Theme.ui-scale;
                         height: parent.height;
                         text: root.update-proxy-enabled ? "127.0.0.1:7890" : (root.lang-en ? "Proxy off" : "代理未启用");
                         color: Theme.text-muted;

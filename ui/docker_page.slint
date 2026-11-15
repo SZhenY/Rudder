@@ -29,16 +29,16 @@ export component DockerPage inherits Rectangle {
     background: Theme.bg-root;
 
     VerticalLayout {
-        padding-left: 20px;
-        padding-right: 20px;
-        padding-top: 16px;
-        padding-bottom: 16px;
-        spacing: 12px;
+        padding-left: Theme.sp-20;
+        padding-right: Theme.sp-20;
+        padding-top: Theme.sp-16;
+        padding-bottom: Theme.sp-16;
+        spacing: Theme.sp-12;
 
         // --- 顶栏 -------------------------------------------------------
         HorizontalLayout {
-            height: 32px;
-            spacing: 10px;
+            height: 32px * Theme.ui-zoom;
+            spacing: Theme.sp-10;
 
             IconText {
                 text: "\u{E30C}";   // desktop_windows
@@ -68,8 +68,8 @@ export component DockerPage inherits Rectangle {
                 vertical-alignment: center;
             }
             if root.page-status != "no-session" : StateSurface {
-                width: 30px;
-                height: 26px;
+                width: 30px * Theme.ui-zoom;
+                height: 26px * Theme.ui-zoom;
                 radius: Theme.radius-sm;
                 clicked => { root.refresh(); }
                 IconText {
@@ -89,11 +89,11 @@ export component DockerPage inherits Rectangle {
         // --- 内容 -------------------------------------------------------
         if root.page-status == "no-session" : VerticalLayout {
             alignment: center;
-            spacing: 8px;
+            spacing: Theme.sp-8;
             IconText {
                 text: "\u{E30C}";
                 color: Theme.text-muted;
-                font-size: 28px;
+                font-size: 28px * Theme.ui-zoom;
                 horizontal-alignment: center;
             }
             Text {
@@ -106,11 +106,11 @@ export component DockerPage inherits Rectangle {
 
         if root.page-status == "disconnected" : VerticalLayout {
             alignment: center;
-            spacing: 10px;
+            spacing: Theme.sp-10;
             IconText {
                 text: "\u{E002}";   // warning
                 color: Theme.warning;
-                font-size: 28px;
+                font-size: 28px * Theme.ui-zoom;
                 horizontal-alignment: center;
             }
             Text {
@@ -120,8 +120,8 @@ export component DockerPage inherits Rectangle {
                 horizontal-alignment: center;
             }
             StateSurface {
-                width: 96px;
-                height: 28px;
+                width: 96px * Theme.ui-zoom;
+                height: 28px * Theme.ui-zoom;
                 radius: Theme.radius-sm;
                 clicked => { root.refresh(); }
                 Text {
@@ -146,11 +146,11 @@ export component DockerPage inherits Rectangle {
 
         if root.page-status == "error" : VerticalLayout {
             alignment: center;
-            spacing: 10px;
+            spacing: Theme.sp-10;
             IconText {
                 text: "\u{E002}";   // warning
                 color: Theme.danger;
-                font-size: 28px;
+                font-size: 28px * Theme.ui-zoom;
                 horizontal-alignment: center;
             }
             Text {
@@ -159,11 +159,11 @@ export component DockerPage inherits Rectangle {
                 color: Theme.text-secondary;
                 horizontal-alignment: center;
                 wrap: word-wrap;
-                max-width: 520px;
+                max-width: 520px * Theme.ui-zoom;
             }
             StateSurface {
-                width: 96px;
-                height: 28px;
+                width: 96px * Theme.ui-zoom;
+                height: 28px * Theme.ui-zoom;
                 radius: Theme.radius-sm;
                 clicked => { root.refresh(); }
                 Text {
@@ -178,11 +178,11 @@ export component DockerPage inherits Rectangle {
 
         if root.page-status == "empty" : VerticalLayout {
             alignment: center;
-            spacing: 8px;
+            spacing: Theme.sp-8;
             IconText {
                 text: "\u{E30C}";
                 color: Theme.text-muted;
-                font-size: 28px;
+                font-size: 28px * Theme.ui-zoom;
                 horizontal-alignment: center;
             }
             Text {
@@ -199,10 +199,10 @@ export component DockerPage inherits Rectangle {
             vertical-stretch: 1;
 
             VerticalLayout {
-                spacing: 2px;
+                spacing: Theme.sp-2;
 
                 for c in root.containers : Rectangle {
-                    height: 44px;
+                    height: 44px * Theme.ui-zoom;
                     border-radius: Theme.radius-sm;
                     background: row-ta.has-hover ? Theme.state-hover : transparent;
                     animate background {
@@ -215,18 +215,18 @@ export component DockerPage inherits Rectangle {
                     }
 
                     HorizontalLayout {
-                        padding-left: 10px;
-                        padding-right: 10px;
-                        spacing: 10px;
+                        padding-left: Theme.sp-10;
+                        padding-right: Theme.sp-10;
+                        spacing: Theme.sp-10;
 
                         // 状态点
                         VerticalLayout {
-                            width: 8px;
+                            width: 8px * Theme.ui-scale;
                             alignment: center;
                             Rectangle {
-                                width: 8px;
-                                height: 8px;
-                                border-radius: 4px;
+                                width: 8px * Theme.ui-scale;
+                                height: 8px * Theme.ui-scale;
+                                border-radius: 4px * Theme.ui-scale;
                                 background: c.state == "running"
                                     ? Theme.success
                                     : c.state == "paused"
@@ -240,7 +240,7 @@ export component DockerPage inherits Rectangle {
                         VerticalLayout {
                             horizontal-stretch: 2;
                             alignment: center;
-                            spacing: 2px;
+                            spacing: Theme.sp-2;
                             Text {
                                 text: c.name;
                                 font-size: Theme.fs-sm;
@@ -269,7 +269,7 @@ export component DockerPage inherits Rectangle {
                             font-size: Theme.fs-xs;
                             color: Theme.text-muted;
                             vertical-alignment: center;
-                            width: 140px;
+                            width: 140px * Theme.ui-zoom;
                             overflow: elide;
                         }
                     }

@@ -29,8 +29,8 @@ export component GroupDialog inherits ModalCard {
     callback close-requested();
     callback submit-group(string /* orig */, string /* name */) -> string;
 
-    card-width: 340px;
-    card-height: 208px;
+    card-width: 340px * Theme.ui-zoom;
+    card-height: 208px * Theme.ui-zoom;
     radius: Theme.radius-md;
     dismissed() => { root.close-requested(); }
     Text {
@@ -64,12 +64,12 @@ export component GroupDialog inherits ModalCard {
         text: group-dialog-error;
         color: Theme.danger;
         font-size: Theme.fs-xs;
-        height: 18px;
+        height: 18px * Theme.ui-zoom;
     }
     Rectangle { vertical-stretch: 1; }
     HorizontalLayout {
         alignment: end;
-        spacing: 8px;
+        spacing: Theme.sp-8;
         Button {
             text: lang-en ? "Cancel" : "取消";
             clicked => { root.close-requested(); }

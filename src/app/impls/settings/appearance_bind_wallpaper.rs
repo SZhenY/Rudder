@@ -26,6 +26,7 @@ pub(super) fn wire_wallpaper(window: &AppWindow, store: &Store, bufs: &TermBuffe
             }
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_ui_scale(clamped as f32 / 100.0);
+                refresh_sub_windows(&w);
             }
         });
     }
@@ -33,15 +34,16 @@ pub(super) fn wire_wallpaper(window: &AppWindow, store: &Store, bufs: &TermBuffe
     {
         let weak = window.as_weak();
         let store = store.clone();
-        window.on_set_panel_font(move |percent: i32| {
-            let clamped = clamp_panel_font(percent);
+        window.on_set_ui_font_px(move |px: i32| {
+            let clamped = clamp_ui_font_px(px);
             {
                 persist(&store, |s| {
-                    s.set_panel_font(clamped);
+                    s.set_ui_font_px(clamped);
                 });
             }
             if let Some(w) = weak.upgrade() {
-                w.global::<Theme>().set_panel_font(clamped as f32 / 100.0);
+                w.global::<Theme>().set_ui_font_px(clamped as f32);
+                refresh_sub_windows(&w);
             }
         });
     }

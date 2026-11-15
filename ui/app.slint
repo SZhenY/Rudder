@@ -144,10 +144,10 @@ export component AppWindow inherits Window {
     // Frameless when we draw our own title bar (#119); Rust sets custom-titlebar
     // true on Windows/Linux. Slint maps no-frame → winit set_decorations(false).
     no-frame: root.custom-titlebar;
-    min-width: 960px;
-    min-height: 600px;
-    preferred-width: 1440px;
-    preferred-height: 900px;
+    min-width: 960px * Theme.ui-scale;
+    min-height: 600px * Theme.ui-scale;
+    preferred-width: 1440px * Theme.ui-scale;
+    preferred-height: 900px * Theme.ui-scale;
     // Always-opaque base; the wallpaper Image (when active) covers it and panels
     // frost over the image. Using window-base (not bg-root) keeps the window
     // itself opaque even though bg-root turns translucent in immersive mode.
@@ -206,7 +206,7 @@ export component AppWindow inherits Window {
     // macOS immersive title bar: Rust makes the native bar transparent and lets
     // content render under it, so we reserve this much space at the top for the
     // traffic-light buttons + a clean drag strip (0 elsewhere). See setup_macos_platform.
-    property <length> titlebar-inset: root.is-mac ? 28px : 0px;
+    property <length> titlebar-inset: root.is-mac ? 28px * Theme.ui-scale : 0px;
     in-out property <bool> window-maximized: false;
     callback win-minimize();
     callback win-maximize-toggle();
@@ -214,7 +214,7 @@ export component AppWindow inherits Window {
     callback win-close();
     callback reset-page(string);   // settings: restore page defaults
     callback win-resize(int);     // start an OS resize; arg = direction code
-    in-out property <bool> sidebar-collapsed: false; // 导航条收起（44px 图标条）
+    in-out property <bool> sidebar-collapsed: false; // 导航条收起（44px * Theme.ui-scale 图标条）
     callback set-sidebar-collapsed(bool);       // apply + persist
     // 左侧导航当前分区：0 主机 / 3 Docker / 5 笔记（1 = 终端，由标签切换驱动）。
     in-out property <int> nav-page: 0;
@@ -240,7 +240,7 @@ export component AppWindow inherits Window {
     // 54 是算出来的：两侧各 8px 留白 → 行宽 38px，(38 − 18) / 2 = 10px，
     // 正好与 `NavRow` 里图标的 `x: 10px` 相等，图标在高亮框里像素级居中。
     // out 供 Rust 计算鼠标命中区。
-    out property <length> nav-width: root.sidebar-collapsed ? 54px : 200px;
+    out property <length> nav-width: root.sidebar-collapsed ? Theme.nav-w-collapsed : Theme.nav-w;
 
     // 导航切页只做一次短淡入：换页即时落位，nav-fade 从 0.85 回到 1。
     property <float> nav-fade: 1.0;
@@ -269,11 +269,11 @@ export component AppWindow inherits Window {
     // 上它不显示也不占位，这里跟着不偏移，否则右上角会空出一条竖带。
     property <length> toolbar-x-off:
         root.quick-panel-open && root.quick-has-session
-            ? (root.quick-panel-collapsed ? 36px : root.quick-panel-width + 2px)
+            ? (root.quick-panel-collapsed ? 36px * Theme.ui-scale : root.quick-panel-width + 2px * Theme.ui-scale)
             : 0px;
     property <length> toolbar-y-off: 0px;
     property <length> toolbar-y:
-        (root.custom-titlebar ? Theme.titlebar-height + 5px : 5px + root.titlebar-inset) + root.toolbar-y-off;
+        (root.custom-titlebar ? Theme.titlebar-height + 5px * Theme.ui-scale : 5px * Theme.ui-scale + root.titlebar-inset) + root.toolbar-y-off;
     in-out property <bool> about-open: false;     // centered About dialog
     callback open-repo();                          // open the project's GitHub page
     in-out property <bool> shortcuts-open: false; // centered keyboard-shortcuts dialog (#103)
@@ -321,8 +321,8 @@ export component AppWindow inherits Window {
     // 当前活动标签是不是真实会话：新标签页的 id 是 "welcome"，布局为空时也可能是空串。
     property <bool> quick-has-session:
         root.active-tab-id != "welcome" && root.active-tab-id != "";
-    in-out property <length> quick-panel-width: 260px;
-    in-out property <length> quick-panel-height: 220px;
+    in-out property <length> quick-panel-width: Theme.quick-w;
+    in-out property <length> quick-panel-height: 220px * Theme.ui-scale;
     property <string> quick-external-command;
     property <bool> quick-external-send-enter;
     property <int> quick-external-sequence;
@@ -337,8 +337,8 @@ export component AppWindow inherits Window {
     callback delete-history-cmd(string /* cmd */);   // remove a history entry by command (#101)
     callback search-history(string /* query */);     // filter the history dropdown (#101)
     in-out property <bool> quick-cmd-manage-open: false;  // manage dialog
-    in-out property <length> qcm-dialog-width: 560px;
-    in-out property <length> qcm-dialog-height: 560px;
+    in-out property <length> qcm-dialog-width: 560px * Theme.ui-scale;
+    in-out property <length> qcm-dialog-height: 560px * Theme.ui-scale;
     in-out property <string> qcm-name;                // manage form: name field
     in-out property <string> qcm-command;             // manage form: command field
     in-out property <string> qcm-group;               // manage form: group field (#55)
@@ -400,7 +400,7 @@ export component AppWindow inherits Window {
     in-out property <string> output-highlight-preset: "log";
     in property <[OutputRuleItem]> output-highlight-rules;
     in-out property <string> output-highlight-rule-status;
-    callback set-panel-font(int);                          // apply + persist (percent)
+    callback set-ui-font-px(int);                           // apply + persist UI base font (px)
     // Window focused & visible — Rust drives it from winit events; gates the
     // cursor blink so an idle background window stops repainting (#127).
     in-out property <bool> window-focused <=> Theme.window-focused;
@@ -633,8 +633,8 @@ export component AppWindow inherits Window {
     callback save-webdav-settings(bool, string, string, string, string, bool);
     callback webdav-upload();
     callback webdav-download();
-    in-out property <length> overview-panel-height: 220px; // shared; lets Rust locate the drop zone
-    in-out property <length> overview-panel-width: 380px;  // 右侧面板宽度
+    in-out property <length> overview-panel-height: 220px * Theme.ui-scale; // shared; lets Rust locate the drop zone
+    in-out property <length> overview-panel-width: Theme.overview-w;  // 右侧面板宽度
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
@@ -1009,7 +1009,7 @@ export component AppWindow inherits Window {
             // 宽度过渡与 NavPanel 内部的 `progress` 用同一组时长/缓动
             // （AnimationSettings.collapse-*）—— 两者各写各的会错开。
             animate width {
-                duration: AnimationSettings.collapse-duration(root.sidebar-collapsed, 146px);
+                duration: AnimationSettings.collapse-duration(root.sidebar-collapsed, 146px * Theme.ui-scale);
                 easing: AnimationSettings.collapse-easing();
                 enabled: AnimationSettings.enabled;
             }
@@ -1046,7 +1046,7 @@ export component AppWindow inherits Window {
         property <length> quick-outer-strip:
             root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
                 && !root.in-dock-page
-                ? 36px : 0px;
+                ? 36px * Theme.ui-scale : 0px;
         // 快捷面板固定贴右缘：四边几何已收敛，只保留右侧留白。
         property <length> quick-left: 0px;
         property <length> quick-right: dock-area.quick-outer-strip;
@@ -1444,16 +1444,16 @@ export component AppWindow inherits Window {
                     enabled: AnimationSettings.enabled;
                 }
                 sp-ta := TouchArea {
-                    x: sp.vertical ? -5px : 0px;
-                    y: sp.vertical ? 0px : -5px;
-                    width: sp.vertical ? parent.width + 10px : parent.width;
-                    height: sp.vertical ? parent.height : parent.height + 10px;
+                    x: sp.vertical ? -5px * Theme.ui-scale : 0px;
+                    y: sp.vertical ? 0px : -5px * Theme.ui-scale;
+                    width: sp.vertical ? parent.width + 10px * Theme.ui-scale : parent.width;
+                    height: sp.vertical ? parent.height : parent.height + 10px * Theme.ui-scale;
                     mouse-cursor: sp.vertical ? ew-resize : ns-resize;
                     moved => {
                         if (self.pressed) {
                             root.splitter-drag(sp.split-id,
-                                sp.vertical ? sp.x - 5px + self.mouse-x
-                                            : sp.y - 5px + self.mouse-y,
+                                sp.vertical ? sp.x - 5px * Theme.ui-scale + self.mouse-x
+                                            : sp.y - 5px * Theme.ui-scale + self.mouse-y,
                                 sp.vertical);
                         }
                     }
@@ -1533,9 +1533,9 @@ export component AppWindow inherits Window {
         Rectangle {
             visible: root.quick-panel-open && !root.quick-panel-collapsed
                 && !root.in-dock-page;
-            x: parent.width - parent.quick-w - 2px;
+            x: parent.width - parent.quick-w - 2px * Theme.ui-scale;
             y: 0px;
-            width: 2px;
+            width: 2px * Theme.ui-scale;
             height: parent.height;
             background: quick-split-ta.has-hover ? Theme.accent : transparent;
             animate background {
@@ -1545,9 +1545,9 @@ export component AppWindow inherits Window {
             }
             quick-split-ta := TouchArea {
                 // 视觉条 2px，命中区 12px（条左右各 5px）。
-                x: -5px;
+                x: -5px * Theme.ui-scale;
                 y: 0px;
-                width: 12px;
+                width: 12px * Theme.ui-scale;
                 height: parent.height;
                 mouse-cursor: ew-resize;
                 moved => {
@@ -1555,7 +1555,7 @@ export component AppWindow inherits Window {
                         root.quick-panel-width = clamp(
                             quick-area.width - ((self.absolute-position.x + self.mouse-x)
                                 - quick-area.absolute-position.x),
-                            180px, max(200px, quick-area.width - 240px));
+                            180px * Theme.ui-scale, max(200px * Theme.ui-scale, quick-area.width - 240px * Theme.ui-scale));
                     }
                 }
             }
@@ -1602,42 +1602,42 @@ export component AppWindow inherits Window {
         width: 100%;
         height: 100%;
         TouchArea {  // top
-            x: 8px; y: 0; width: parent.width - 16px; height: 5px;
+            x: 8px * Theme.ui-scale; y: 0; width: parent.width - 16px * Theme.ui-scale; height: 5px * Theme.ui-scale;
             mouse-cursor: ns-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(0); } }
         }
         TouchArea {  // bottom
-            x: 8px; y: parent.height - 5px; width: parent.width - 16px; height: 5px;
+            x: 8px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: parent.width - 16px * Theme.ui-scale; height: 5px * Theme.ui-scale;
             mouse-cursor: ns-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(1); } }
         }
         TouchArea {  // left
-            x: 0; y: 8px; width: 5px; height: parent.height - 16px;
+            x: 0; y: 8px * Theme.ui-scale; width: 5px * Theme.ui-scale; height: parent.height - 16px * Theme.ui-scale;
             mouse-cursor: ew-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(3); } }
         }
         TouchArea {  // right
-            x: parent.width - 5px; y: 8px; width: 5px; height: parent.height - 16px;
+            x: parent.width - 5px * Theme.ui-scale; y: 8px * Theme.ui-scale; width: 5px * Theme.ui-scale; height: parent.height - 16px * Theme.ui-scale;
             mouse-cursor: ew-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(2); } }
         }
         TouchArea {  // top-left
-            x: 0; y: 0; width: 8px; height: 8px;
+            x: 0; y: 0; width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
             mouse-cursor: nwse-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(5); } }
         }
         TouchArea {  // top-right
-            x: parent.width - 8px; y: 0; width: 8px; height: 8px;
+            x: parent.width - 8px * Theme.ui-scale; y: 0; width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
             mouse-cursor: nesw-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(4); } }
         }
         TouchArea {  // bottom-left
-            x: 0; y: parent.height - 8px; width: 8px; height: 8px;
+            x: 0; y: parent.height - 8px * Theme.ui-scale; width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
             mouse-cursor: nesw-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(7); } }
         }
         TouchArea {  // bottom-right
-            x: parent.width - 8px; y: parent.height - 8px; width: 8px; height: 8px;
+            x: parent.width - 8px * Theme.ui-scale; y: parent.height - 8px * Theme.ui-scale; width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
             mouse-cursor: nwse-resize;
             pointer-event(e) => { if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) { root.win-resize(6); } }
         }
@@ -2015,7 +2015,7 @@ export component AppWindow inherits Window {
 /// 屏幕外起一个真窗口渲染一帧，用来判断某个渲染器在这台机器上到底能不能初始化 ——
 /// femtovg 的 GL 上下文是**延迟**创建的，只有真渲染才会暴露驱动问题（虚拟机里的典型情况）。
 export component RendererProbe inherits Window {
-    width: 16px;
-    height: 16px;
+    width: 16px * Theme.ui-scale;
+    height: 16px * Theme.ui-scale;
     background: #000000;
 }

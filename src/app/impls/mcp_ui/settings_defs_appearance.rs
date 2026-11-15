@@ -62,23 +62,25 @@ pub(crate) fn appearance_defs() -> Vec<SettingDef> {
                 ui.window
                     .global::<Theme>()
                     .set_ui_scale(ui.ctx.store.borrow().ui_scale() as f32 / 100.0);
+                settings_window::resync_if_open(&ui.window);
             },
         },
         SettingDef {
-            key: "appearance.panel_font",
-            kind: SettingKind::Int { min: 80, max: 160 },
-            get: |ui| json!(ui.ctx.store.borrow().panel_font()),
+            key: "appearance.ui_font_px",
+            kind: SettingKind::Int { min: 10, max: 20 },
+            get: |ui| json!(ui.ctx.store.borrow().ui_font_px()),
             set: |ui, value| {
                 ui.ctx
                     .store
                     .borrow_mut()
-                    .set_panel_font(value.as_u64().unwrap_or(100) as u32);
+                    .set_ui_font_px(value.as_u64().unwrap_or(13) as u32);
                 Ok(())
             },
             apply: |ui, _| {
                 ui.window
                     .global::<Theme>()
-                    .set_panel_font(ui.ctx.store.borrow().panel_font() as f32 / 100.0);
+                    .set_ui_font_px(ui.ctx.store.borrow().ui_font_px() as f32);
+                settings_window::resync_if_open(&ui.window);
             },
         },
         SettingDef {

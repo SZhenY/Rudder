@@ -56,11 +56,11 @@ TouchArea {
 Rectangle {
     // 非导航锚定时按右上工具栏偏移定位（右侧快捷命令面板占位时工具栏整体左移）。
     // 导航底部齿轮：贴窗口左下角，高度用菜单自身内容高度反推。
-    x: root.anchor-nav ? 8px : parent.width - 196px - toolbar-x-off;
+    x: root.anchor-nav ? 8px * Theme.ui-scale : parent.width - 196px * Theme.ui-scale - toolbar-x-off;
     y: root.anchor-nav
-        ? parent.height - menu-vl.preferred-height - 8px
-        : (custom-titlebar ? Theme.titlebar-height + 40px : 40px + titlebar-inset) + toolbar-y-off;
-    width: 198px;
+        ? parent.height - menu-vl.preferred-height - 8px * Theme.ui-scale
+        : (custom-titlebar ? Theme.titlebar-height + 40px * Theme.ui-scale : 40px * Theme.ui-scale + titlebar-inset) + toolbar-y-off;
+    width: 198px * Theme.ui-zoom;
     // Size to the menu's content so adding/removing items (or the
     // ~/.ssh/config import hint expanding) never overflows the card (#150-fix).
     height: menu-vl.preferred-height;
@@ -69,17 +69,17 @@ Rectangle {
     border-radius: Theme.radius-md;
     border-width: 1px;
     border-color: Theme.border-strong;
-    drop-shadow-blur: 14px;
+    drop-shadow-blur: 14px * Theme.ui-scale;
     drop-shadow-color: #00000060;
 
     TouchArea {}   // swallow events so they don't reach the terminal
 
     menu-vl := VerticalLayout {
-        padding: 4px;
-        spacing: 1px;
+        padding: Theme.sp-4;
+        spacing: 1px * Theme.ui-scale;
         // Interface (font) settings.
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: iface-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -95,7 +95,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E429}";// tune
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -106,7 +106,7 @@ Rectangle {
         }
         // Export all connections to a portable file (#46).
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: export-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -122,7 +122,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E5D8}";// ↑ export
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -133,7 +133,7 @@ Rectangle {
         }
         // Import connections from a portable file (#46).
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: impconn-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -149,7 +149,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E5DB}";// ↓ import
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -160,7 +160,7 @@ Rectangle {
         }
         // Batch-import connections from pasted text (#150).
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: batchimp-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -176,7 +176,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E1C3}";// table/rows
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -190,7 +190,7 @@ Rectangle {
         // to only show on the welcome page, so importing while a session was
         // open looked like nothing happened (#133).
         Rectangle {
-            height: ssh-import-hint != "" ? 46px : 28px;
+            height: ssh-import-hint != "" ? 46px * Theme.ui-zoom : Theme.row-h;
             border-radius: Theme.radius-sm;
             background: import-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -203,7 +203,7 @@ Rectangle {
                 clicked => { root.import-ssh-config(); }
             }
             HorizontalLayout {
-                padding-left: 8px; padding-right: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; padding-right: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E890}";// input/import
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -222,7 +222,7 @@ Rectangle {
         }
         // Language toggle: shows the language you'll switch TO.
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: lang-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -238,7 +238,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E894}";// language/translate
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -249,7 +249,7 @@ Rectangle {
         }
         // Keyboard shortcuts reference (#103).
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: keys-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -265,7 +265,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E312}";// keyboard
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }
@@ -275,7 +275,7 @@ Rectangle {
             }
         }
         Rectangle {
-            height: 28px;
+            height: Theme.row-h;
             border-radius: Theme.radius-sm;
             background: about-ta.has-hover ? Theme.state-hover : transparent;
             animate background {
@@ -291,7 +291,7 @@ Rectangle {
                 }
             }
             HorizontalLayout {
-                padding-left: 8px; spacing: 8px;
+                padding-left: Theme.sp-8; spacing: Theme.sp-8;
                 IconText { text: "\u{E88E}";// Info
                        color: Theme.text-secondary; font-size: Theme.fs-sm;
                        vertical-alignment: center; }

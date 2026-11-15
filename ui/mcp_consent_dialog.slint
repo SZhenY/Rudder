@@ -102,12 +102,12 @@ export component McpConsentDialog inherits Rectangle {
     }
 
     card-box := Rectangle {
-        width: min(parent.width - 40px, 460px);
+        width: min(parent.width - 40px * Theme.ui-scale, 460px * Theme.ui-zoom);
         // 12 行 + 风险/功能区标题会超过窗口 min-height 600：封顶并让行区滚动。
-        height: min(parent.height - 40px, 620px);
+        height: min(parent.height - 40px * Theme.ui-scale, 620px * Theme.ui-zoom);
         x: (parent.width - self.width) / 2;
         // 关窗时下沉 12px，开窗弹回 —— 与 confirm / update / about 三个模态同款。
-        y: (parent.height - self.height) / 2 + (root.is-open ? 0px : 12px);
+        y: (parent.height - self.height) / 2 + (root.is-open ? 0px : 12px * Theme.ui-scale);
         animate y {
             duration: root.is-open ? AnimationSettings.enter-modal() : AnimationSettings.exit-modal();
             easing: root.is-open ? AnimationSettings.s-default() : AnimationSettings.e-exit();
@@ -130,15 +130,15 @@ export component McpConsentDialog inherits Rectangle {
 
         card := VerticalLayout {
             height: 100%;
-            padding: 20px;
-            spacing: 10px;
+            padding: Theme.sp-20;
+            spacing: Theme.sp-10;
 
             // 标题 + 「已选 n / 共 12」：高风险组默认收起，这是唯一能看出
             // "有已勾选项被折叠在里面"的地方。
             // 不写 alignment：Slint 的 alignment 是**主轴**对齐，center/end 会关掉所有
             // horizontal-stretch（子项被钉成 preferred 宽），右对齐只能靠 stretch 列吃掉剩余空间。
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
 
                 Text {
                     text: root.lang-en ? "An AI client wants to connect" : "有 AI 客户端请求接入";
@@ -162,7 +162,7 @@ export component McpConsentDialog inherits Rectangle {
                 VerticalLayout {
                     alignment: center;
                     CloseButton {
-                        size: 20px;
+                        size: Theme.icon-btn;
                         glyph-size: Theme.fs-sm;
                         clicked => { root.reject(); }
                     }
@@ -192,7 +192,7 @@ export component McpConsentDialog inherits Rectangle {
             // 行区：标题与底部按钮固定，中间滚动。
             Rectangle {
                 vertical-stretch: 1;
-                min-height: 120px;
+                min-height: 120px * Theme.ui-zoom;
 
                 ScrollView {
                     width: 100%;
@@ -200,16 +200,16 @@ export component McpConsentDialog inherits Rectangle {
                     content-width: self.width;
 
                     VerticalLayout {
-                        spacing: 2px;
+                        spacing: Theme.sp-2;
 
                         for row in root.rows : VerticalLayout {
                             spacing: 0;
 
                             // ① 风险段：2 级标题 + 说明，不可折叠（折叠发生在"组"上）。
                             if row.risk != "" : VerticalLayout {
-                                spacing: 2px;
-                                padding-top: 10px;
-                                padding-bottom: 2px;
+                                spacing: Theme.sp-2;
+                                padding-top: Theme.sp-10;
+                                padding-bottom: Theme.sp-2;
                                 Text {
                                     text: row.risk;
                                     color: Theme.text-primary;
@@ -232,11 +232,11 @@ export component McpConsentDialog inherits Rectangle {
 
                                 // 不写 alignment（同上）：组名的 stretch 吃掉剩余空间，计数才会贴右。
                                 HorizontalLayout {
-                                    padding-left: 2px;
-                                    padding-right: 6px;
-                                    padding-top: 3px;
-                                    padding-bottom: 3px;
-                                    spacing: 4px;
+                                    padding-left: Theme.sp-2;
+                                    padding-right: Theme.sp-6;
+                                    padding-top: Theme.sp-3;
+                                    padding-bottom: Theme.sp-3;
+                                    spacing: Theme.sp-4;
 
                                     IconText {
                                         text: row.expanded ? "\u{E5CF}" : "\u{E5CC}";
@@ -279,7 +279,7 @@ export component McpConsentDialog inherits Rectangle {
                                         if (self.has-hover && row.desc != "") {
                                             root.hint-key = row.key;
                                             root.hint-text = row.desc;
-                                            root.hint-y = hover.absolute-position.y + hover.height + 2px
+                                            root.hint-y = hover.absolute-position.y + hover.height + 2px * Theme.ui-scale
                                                 - card-box.absolute-position.y;
                                         } else if (root.hint-key == row.key) {
                                             root.hint-key = "";
@@ -292,12 +292,12 @@ export component McpConsentDialog inherits Rectangle {
                                 HorizontalLayout {
                                     // 所有权限行统一缩进 12px：单条组没有组标题，若给它 0px，
                                     // 12 行的标签左边缘会在 0 与 12 之间来回跳。
-                                    padding-left: 12px;
+                                    padding-left: Theme.sp-12;
                                     // 右侧给 ScrollView 的滚动条留位，否则长描述会被它压住。
-                                    padding-right: 14px;
-                                    padding-top: 4px;
-                                    padding-bottom: 4px;
-                                    spacing: 8px;
+                                    padding-right: Theme.sp-14;
+                                    padding-top: Theme.sp-4;
+                                    padding-bottom: Theme.sp-4;
+                                    spacing: Theme.sp-8;
 
                                     Text {
                                         text: row.label;
@@ -349,7 +349,7 @@ export component McpConsentDialog inherits Rectangle {
             }
 
             HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-10;
                 alignment: start;
                 ToggleSwitch {
                     checked: root.trusted;
@@ -359,7 +359,7 @@ export component McpConsentDialog inherits Rectangle {
                     // 让它能收缩：英文描述很长，不设 stretch 会按 preferred 宽溢出卡片。
                     horizontal-stretch: 1;
                     min-width: 0;
-                    spacing: 2px;
+                    spacing: Theme.sp-2;
                     Text {
                         text: root.lang-en
                             ? "Trust this client permanently"
@@ -399,10 +399,10 @@ export component McpConsentDialog inherits Rectangle {
                 easing: root.hint-text != "" ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
                 enabled: AnimationSettings.enabled;
             }
-            x: 20px;
-            y: clamp(root.hint-y, 20px, parent.height - self.height - 20px);
-            width: min(hint-txt.preferred-width + 16px, parent.width - 40px);
-            height: hint-txt.preferred-height + 12px;
+            x: 20px * Theme.ui-scale;
+            y: clamp(root.hint-y, 20px * Theme.ui-scale, parent.height - self.height - 20px * Theme.ui-scale);
+            width: min(hint-txt.preferred-width + 16px * Theme.ui-scale, parent.width - 40px * Theme.ui-scale);
+            height: hint-txt.preferred-height + 12px * Theme.ui-scale;
             // 浅色主题下 bg-elevated 比卡片更暗（看起来凹陷），改用卡片底色 + 阴影表达浮起。
             background: Theme.bg-panel;
             border-radius: Theme.radius-sm;
@@ -412,9 +412,9 @@ export component McpConsentDialog inherits Rectangle {
             drop-shadow-color: Theme.shadow-float-color;
 
             hint-txt := Text {
-                x: 8px;
-                y: 6px;
-                width: parent.width - 16px;
+                x: 8px * Theme.ui-scale;
+                y: 6px * Theme.ui-scale;
+                width: parent.width - 16px * Theme.ui-scale;
                 text: root.hint-text;
                 color: Theme.text-primary;
                 font-size: Theme.fs-xs;

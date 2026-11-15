@@ -65,9 +65,9 @@ export component TerminalPage inherits VerticalLayout {
     callback set-term-font-bold(bool);
     callback set-term-font-size(int);
 
-    padding-left: 20px;
-    padding-right: 20px;
-    padding-top: 14px;
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
     spacing: 0;
     alignment: start;
 
@@ -76,22 +76,22 @@ export component TerminalPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "字体";
         title-en: "FONT";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             label: root.lang-en ? "Terminal font" : "终端字体";
             HorizontalLayout {
-                spacing: 10px;
+                spacing: Theme.sp-10;
                 ComboBox {
-                    width: 176px;
+                    width: 176px * Theme.ui-scale;
                     model: root.term-fonts;
                     current-index <=> root.term-font-index;
                     selected(v) => { root.set-term-font(v); }
                 }
                 // 上传：复制进 `config/fonts`（与界面字体那行同一个回调），注册后立刻可选。
                 Rectangle {
-                    width: 34px;
-                    height: 30px;
-                    border-radius: 6px;
+                    width: 34px * Theme.ui-scale;
+                    height: 30px * Theme.ui-scale;
+                    border-radius: 6px * Theme.ui-scale;
                     border-width: 1px;
                     border-color: term-font-upload-ta.has-hover ? Theme.border-strong : Theme.border-subtle;
                     background: term-font-upload-ta.has-hover ? Theme.emphasis-hover : Theme.bg-elevated;
@@ -140,7 +140,7 @@ export component TerminalPage inherits VerticalLayout {
             desc: root.lang-en ? "Choose the terminal insertion cursor shape."
                                : "选择终端输入光标的形状。";
             HorizontalLayout {
-                spacing: 5px;
+                spacing: Theme.sp-5;
                 CursorStyleButton {
                     label: root.lang-en ? "Block" : "块状";
                     cursor-kind: "block";
@@ -167,11 +167,11 @@ export component TerminalPage inherits VerticalLayout {
                 ? "Pick a preset, type a hexadecimal RGB color, or leave it empty to follow the accent colour (the wallpaper's complementary colour)."
                 : "点一个预设、或输入十六进制 RGB 颜色;留空则跟随主题色(壁纸互补色)。";
             VerticalLayout {
-                spacing: 7px;
+                spacing: 7px * Theme.ui-scale;
                 alignment: center;
                 // 与「主题色」那一行同规格：左边一排预设，下面是自定义（取色盘）。
                 HorizontalLayout {
-                    spacing: 6px;
+                    spacing: Theme.sp-6;
                     // 第一个是「跟随主题」：深底亮色 / 浅底暗色，由深浅档决定。
                     CursorPaletteSwatch {
                         hex: "";
@@ -202,15 +202,15 @@ export component TerminalPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "预览";
         title-en: "PREVIEW";
-        title-height: 22px;
+        title-height: 22px * Theme.ui-scale;
         Rectangle {
-            height: 52px;
+            height: 52px * Theme.ui-scale;
             background: Theme.term-bg;
-            border-radius: 6px;
+            border-radius: 6px * Theme.ui-scale;
             border-width: 1px;
             border-color: Theme.border-subtle;
             Text {
-                x: 12px;
+                x: 12px * Theme.ui-scale;
                 text: "Rudder ~$ echo preview 0123";
                 font-family: Theme.term-font-family;
                 font-size: Theme.term-font-size;
@@ -227,7 +227,7 @@ export component TerminalPage inherits VerticalLayout {
         lang-en: root.lang-en;
         title-zh: "回滚行数";
         title-en: "SCROLLBACK";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingRow {
             show-divider: true;
             label: root.lang-en ? "Scrollback lines" : "回滚行数";
@@ -235,14 +235,14 @@ export component TerminalPage inherits VerticalLayout {
                 ? "Number of lines kept in terminal history (100–1,000,000)."
                 : "终端历史记录保留的最大行数（100–1,000,000）。";
             Rectangle {
-                width: 148px; height: 30px;
-                border-radius: 6px; border-width: 1px;
+                width: 148px * Theme.ui-scale; height: 30px * Theme.ui-scale;
+                border-radius: 6px * Theme.ui-scale; border-width: 1px;
                 border-color: Theme.border-subtle;
                 background: Theme.bg-elevated;
                 TextInput {
                     input-method-hints: Theme.plain-input-hints;
-                    width: parent.width - 8px; height: parent.height;
-                    x: 4px; vertical-alignment: center;
+                    width: parent.width - 8px * Theme.ui-scale; height: parent.height;
+                    x: 4px * Theme.ui-scale; vertical-alignment: center;
                     color: Theme.text-primary;
                     text: root.scrollback-lines;
                     changed text => {
@@ -303,12 +303,12 @@ export component TerminalPage inherits VerticalLayout {
         }
     }
     SettingsSection {
-        bottom-gap: 14px;
+        bottom-gap: 14px * Theme.ui-scale;
         section-id: "terminal.output-highlighting";
         lang-en: root.lang-en;
         title-zh: "输出高亮";
         title-en: "OUTPUT HIGHLIGHTING";
-        title-height: 24px;
+        title-height: 24px * Theme.ui-scale;
         SettingSwitch {
             label: root.lang-en ? "Highlight plain terminal output" : "高亮纯文本终端输出";
             desc: root.lang-en
@@ -340,7 +340,7 @@ export component TerminalPage inherits VerticalLayout {
                 : "日志级别更保守；DevOps 识别部署状态；Rudder规则高亮数字、URL、IP、UUID、日期等。";
             show-divider: false;
             ComboBox {
-                width: 190px;
+                width: 190px * Theme.ui-scale;
                 enabled: root.output-highlight-enabled;
                 model: [
                     root.lang-en ? "Log levels" : "日志级别",
@@ -366,46 +366,46 @@ export component TerminalPage inherits VerticalLayout {
 
     }
     SettingsSection {
-        bottom-gap: 18px;
+        bottom-gap: 18px * Theme.ui-scale;
         section-id: "terminal.highlight-preview";
         lang-en: root.lang-en;
         title-zh: "预览";
         title-en: "PREVIEW";
-        title-height: 22px;
+        title-height: 22px * Theme.ui-scale;
         Rectangle {
-            height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px : 92px;
+            height: root.output-highlight-preset == "devops" || root.output-highlight-preset == "builtin" ? 116px * Theme.ui-scale : 92px * Theme.ui-scale;
             background: Theme.term-bg;
-            border-radius: 6px;
+            border-radius: 6px * Theme.ui-scale;
             border-width: 1px;
             border-color: Theme.border-subtle;
             VerticalLayout {
-                padding: 12px;
-                spacing: 5px;
+                padding: Theme.sp-12;
+                spacing: Theme.sp-5;
                 if root.output-highlight-preset == "builtin" : VerticalLayout {
-                    spacing: 5px;
-                    Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    spacing: Theme.sp-5;
+                    Text { text: "2026-08-14 16:30:00 INFO http://api.dev:8080/v1?id=42"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    Text { text: "client 192.168.1.100 uid=550e8400-e29b-41d4"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    Text { text: "processed 1234 records in 250ms"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
                 }
                 if root.output-highlight-preset != "builtin" : VerticalLayout {
-                    spacing: 5px;
-                    Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
-                    if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px; }
+                    spacing: Theme.sp-5;
+                    Text { text: "DEBUG cache lookup"; color: root.output-highlight-enabled ? Theme.text-muted : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    Text { text: "INFO server ready"; color: root.output-highlight-enabled ? Theme.accent : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    Text { text: "WARN disk nearly full"; color: root.output-highlight-enabled ? Theme.warning : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    Text { text: "ERROR connection failed"; color: root.output-highlight-enabled ? Theme.danger : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
+                    if root.output-highlight-preset == "devops" : Text { text: "SUCCESS deployment completed"; color: root.output-highlight-enabled ? Theme.success : Theme.term-fg; font-family: Theme.term-font-family; font-size: 12px * Theme.ui-zoom; }
                 }
             }
         }
 
     }
     SettingsSection {
-        bottom-gap: 18px;
+        bottom-gap: 18px * Theme.ui-scale;
         section-id: "terminal.custom-rules";
         lang-en: root.lang-en;
         title-zh: "自定义规则";
         title-en: "CUSTOM RULES";
-        title-height: 22px;
+        title-height: 22px * Theme.ui-scale;
         Text {
             text: root.lang-en
                 ? "Custom rules run before the built-in preset and never overwrite ANSI colours."
@@ -436,9 +436,9 @@ export component TerminalPage inherits VerticalLayout {
         GroupGap {
             gap: Theme.gap-sm;
             HorizontalLayout {
-                spacing: 8px;
+                spacing: Theme.sp-8;
                 ComboBox {
-                    width: 130px;
+                    width: 130px * Theme.ui-scale;
                     model: [root.lang-en ? "Keyword" : "关键词", root.lang-en ? "Regex" : "正则"];
                     current-value: root.new-rule-regex
                         ? (root.lang-en ? "Regex" : "正则")
@@ -448,7 +448,7 @@ export component TerminalPage inherits VerticalLayout {
                     }
                 }
                 ComboBox {
-                    width: 120px;
+                    width: 120px * Theme.ui-scale;
                     model: ["Red", "Yellow", "Green", "Cyan", "Magenta", "Gray"];
                     current-value: root.new-rule-color == "yellow" ? "Yellow"
                         : root.new-rule-color == "green" ? "Green"
@@ -508,7 +508,7 @@ export component TerminalPage inherits VerticalLayout {
             text: root.lang-en ? "No custom rules yet." : "暂无自定义规则。";
             color: Theme.text-muted;
             font-size: 11px * Theme.panel-font;
-            height: 34px;
+            height: 34px * Theme.ui-scale;
             vertical-alignment: center;
         }
         // 行 = 44px 高 + 一条**行尾**细线（线用显式几何画，不用共享的 `Divider`：
@@ -517,16 +517,16 @@ export component TerminalPage inherits VerticalLayout {
         // 所以色点 / 文字 / 开关 / 删除键自动对齐同一中线（**不要**写 `alignment: center`，
         // 那是水平居中，会把整块内容摆到行中间）。
         for rule[index] in root.output-highlight-rules : Rectangle {
-            height: 44px;
+            height: 44px * Theme.ui-scale;
             HorizontalLayout {
                 y: 0;
                 width: parent.width;
                 height: parent.height - 1px;
-                spacing: 9px;
+                spacing: 9px * Theme.ui-scale;
                 Rectangle {
-                    width: 8px;
-                    height: 8px;
-                    border-radius: 4px;
+                    width: 8px * Theme.ui-scale;
+                    height: 8px * Theme.ui-scale;
+                    border-radius: 4px * Theme.ui-scale;
                     background: rule.color == "yellow" ? Theme.warning
                         : rule.color == "green" ? Theme.success
                         : rule.color == "cyan" ? Theme.accent
@@ -538,7 +538,7 @@ export component TerminalPage inherits VerticalLayout {
                 VerticalLayout {
                     horizontal-stretch: 1;
                     alignment: center;
-                    spacing: 2px;
+                    spacing: Theme.sp-2;
                     Text {
                         text: rule.pattern;
                         color: rule.enabled ? Theme.text-primary : Theme.text-muted;
@@ -563,9 +563,9 @@ export component TerminalPage inherits VerticalLayout {
                     vertical-stretch: 0;
                 }
                 Rectangle {
-                    width: 22px;
-                    height: 22px;
-                    border-radius: 4px;
+                    width: 22px * Theme.ui-scale;
+                    height: 22px * Theme.ui-scale;
+                    border-radius: 4px * Theme.ui-scale;
                     // 与左侧的开关同高并显式不拉伸：行高 43px，拉满会让悬停底色变成一条竖条。
                     vertical-stretch: 0;
                     background: delete-ta.pressed ? Theme.state-press
