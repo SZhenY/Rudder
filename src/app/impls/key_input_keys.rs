@@ -4,7 +4,6 @@ pub(super) fn wire_key_keys(window: &AppWindow, app: &AppContext) {
     let ctx = ConnectCtx::from_app(window.as_weak(), app);
     let handles = app.handles.clone();
     let bufs = app.bufs.clone();
-    let store = app.store.clone();
 
     // Session sync / broadcast input: when on, a keystroke in any terminal is
     // mirrored to every online session (Xshell-style; #78 pt.4). Read on the hot
@@ -32,52 +31,9 @@ pub(super) fn wire_key_keys(window: &AppWindow, app: &AppContext) {
             // pressing Enter re-spawns the shell + SFTP workers in the SAME tab
             // with a fresh screen instead of forcing the user to open a new one.
             if key.as_str() == "\n" && !ctrl && !alt {
-                let dead_session = {
-                    let statuses = ctx.tab_statuses.lock().unwrap_or_else(|e| e.into_inner());
-                    statuses
-                        .get(tab_id.as_str())
-                        .filter(|st| st.state == 2)
-                        .map(|st| st.session_id.clone())
-                };
-                if let Some(session_id) = dead_session {
-                    let Some(session) = store.borrow().get(&session_id).cloned() else {
-                        return;
-                    };
-                    // Close (not just remove) the dead shell/SFTP handles for
-                    // this tab. SessionHandle has no Drop impl, so removing it
-                    // alone leaves the SSH/PTY worker threads running until the
-                    // process exits — every reconnect would leak one. close()
-                    // only posts a command, so it is safe on the UI thread.
-                    let dead_shell = ctx.handles.borrow_mut().remove(tab_id.as_str());
-                    if let Some(h) = dead_shell {
-                        h.close();
-                    }
-                    let dead_sftp =
-                        ctx.sftp_handles.lock().unwrap_or_else(|e| e.into_inner()).remove(tab_id.as_str());
-                    if let Some(h) = dead_sftp {
-                        h.close();
-                    }
-                    // Fresh screen: new parser, cleared history/selection.
-                    {
-                        if let Some(h) = term_buf(&ctx.bufs, tab_id.as_str()) {
-                            let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
-                            b.reset(ctx.store.borrow().scrollback_lines());
-                        }
-                    }
-                    if let Some(st) =
-                        ctx.tab_statuses.lock().unwrap_or_else(|e| e.into_inner()).get_mut(tab_id.as_str())
-                    {
-                        st.state = 0;
-                    }
-                    // Fresh session: the first OSC 7 after reconnect follows.
-                    ctx.sftp_last_cwd.lock().unwrap_or_else(|e| e.into_inner()).remove(tab_id.as_str());
-                    if let Some(w) = ctx.weak.upgrade() {
-                        set_terminal_row(&w, tab_id.as_str(), |t| {
-                            t.status =
-                                crate::i18n::t("重连中...", "Reconnecting...").into();
-                        });
-                    }
-                    start_session_in_tab(tab_id.as_str(), session, &ctx);
+                // 断开后回车原地重连（#79）。清理与启动都在 reconnect_tab 里，
+                // 连接失败弹窗的「重试」按钮复用同一段，避免两份逻辑漂移。
+                if crate::app::session_runtime::reconnect_tab(tab_id.as_str(), &ctx) {
                     return;
                 }
             }

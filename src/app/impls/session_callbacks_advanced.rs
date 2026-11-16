@@ -172,5 +172,22 @@ pub(super) fn wire_session_advanced(
             };
             tab_ops::open_session_tab(&env, &connect_ctx, session);
         });
+
+        // 失败弹窗的「重试」：先把 phase 归零（否则下一次 Closed 不再判失败），
+        // 再原地重连弹窗跟踪的那条标签。
+        let weak_retry = window.as_weak();
+        let retry_ctx = ConnectCtx::from_app(window.as_weak(), ctx);
+        window.on_conn_popup_retry(move || {
+            let Some(w) = weak_retry.upgrade() else {
+                return;
+            };
+            let tab_id = w.get_conn_popup_tab().to_string();
+            w.set_conn_popup_detail("".into());
+            w.set_conn_popup_phase(0);
+            if !crate::app::session_runtime::reconnect_tab(&tab_id, &retry_ctx) {
+                // 会话已不存在（如内置会话未在 store 中）：关掉弹窗，别留死按钮。
+                w.set_conn_popup_open(false);
+            }
+        });
     }
 }

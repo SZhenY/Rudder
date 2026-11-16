@@ -17,6 +17,7 @@ import { Theme } from "theme.slint";
 import { ModalCard } from "components/surfaces.slint";
 import { CloseButton } from "components/buttons.slint";
 import { IconText } from "components/text.slint";
+import { DialogActions } from "components/dialog_actions.slint";
 
 export component ConnStatusDialog inherits ModalCard {
     // 常驻 + visible 切换，不用 `if` 包着 —— 在事件派发栈上销毁子树会闪退。
@@ -29,6 +30,7 @@ export component ConnStatusDialog inherits ModalCard {
     in property <string> detail: "";
     in property <bool> lang-en: false;
     callback close-requested();
+    callback retry-requested();
 
     visible: open;
     active: open;                              // 关闭时不吞整窗点击
@@ -109,5 +111,13 @@ export component ConnStatusDialog inherits ModalCard {
             font-size: Theme.fs-sm;
             wrap: word-wrap;
         }
+    }
+
+    // 失败态动作区：关闭 / 重试。重试由 Rust 原地重连，弹窗留在原地显示"连接中"。
+    if root.phase == 2 : DialogActions {
+        cancel-text: root.lang-en ? "Close" : "关闭";
+        ok-text: root.lang-en ? "Retry" : "重试";
+        cancelled => { root.close-requested(); }
+        confirmed => { root.retry-requested(); }
     }
 }

@@ -37,7 +37,7 @@ export component OverviewPanel inherits Rectangle {
     // --- 运行状态页签的数据（原侧栏，由 AppWindow 逐层透传）-----------------
     // 曲线跨度（0..5）由每会话的 TabStatus 播种；两条曲线各自独立。
     in property <[string]> span-labels;
-    in property <bool> stats-ready: true;
+    in property <bool> stats-ready: false;
     in-out property <int> cpu-span-index: 1;
     in-out property <int> net-span-index: 1;
     in-out property <int> mem-span-index: 1;

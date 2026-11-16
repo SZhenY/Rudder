@@ -99,6 +99,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 && let Some(st) = s.get_mut(tab_id)
             {
                 st.state = 1;
+                st.failed = false;
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses);
@@ -136,6 +137,8 @@ pub(crate) fn apply_session_event_to_window<'a>(
             if let Ok(mut s) = statuses.lock()
                 && let Some(st) = s.get_mut(tab_id)
             {
+                // 从未连上就 Closed = 连接失败；连上后 Closed = 掉线。
+                st.failed = closed_means_failure(st.state);
                 st.state = 2;
             }
             // 注意：意外断线（网络 / 远端挂掉）**保留**回滚历史 —— 用户正要看断线前发生了什么，
@@ -177,6 +180,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 // A sample means the channel is alive → treat as connected.
                 if st.state != 1 {
                     st.state = 1;
+                    st.failed = false;
                 }
                 // Append the selected interface's total rate to its sparkline.
                 // 两卡独立抽稀：每卡按自己的步长攒够一拍才入环，互不影响。
@@ -461,5 +465,21 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 t.tunnels = ModelRc::from(std::rc::Rc::new(VecModel::from(items.clone())));
             });
         }
+    }
+}
+
+/// Closed 时判定：从未连上（state != 1）算连接失败，连上后断开算掉线。
+fn closed_means_failure(prev_state: u8) -> bool {
+    prev_state != 1
+}
+
+#[cfg(test)]
+mod tests {
+    use super::closed_means_failure;
+
+    #[test]
+    fn closed_before_connect_counts_as_failure() {
+        assert!(closed_means_failure(0), "握手期 Closed = 连接失败");
+        assert!(!closed_means_failure(1), "连上后 Closed = 掉线");
     }
 }

@@ -11,6 +11,8 @@ pub(crate) struct TabStatus {
     /// 该标签页的传输类型：决定 MCP 的 `run_command` 走 exec 通道还是本地进程。
     pub(crate) kind: crate::config::SessionKind,
     pub(crate) state: u8,
+    /// Closed 时若从未连上（state != 1），标记为连接失败，与掉线区分。
+    pub(crate) failed: bool,
     pub(crate) cpu: f32,
     pub(crate) mem_used_kib: u64,
     pub(crate) mem_total_kib: u64,

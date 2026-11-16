@@ -130,7 +130,7 @@ export component TerminalView inherits Rectangle {
     in property <length> overview-panel-height: 220px * Theme.ui-scale;
     // 曲线时间跨度（0..5）：每会话独立，只存运行时。
     in property <[string]> span-labels;
-    in property <bool> stats-ready: true;
+    in property <bool> stats-ready: false;
     in-out property <int> cpu-span-index: 1;
     in-out property <int> net-span-index: 1;
     in-out property <int> mem-span-index: 1;

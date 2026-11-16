@@ -23,7 +23,6 @@ use crate::terminal::c0_letter_key_down;
 use crate::ui::{AppWindow, TermMatch, TermSpan};
 use crate::app::quick_commands::{all_quick_group_names, quick_cmd_model, reorder_quick_command};
 use crate::app::pane_layout::zoom_term_font;
-use crate::app::session_runtime::start_session_in_tab;
 use crate::app::{AppContext, INTERACTIVE_ECHO_WINDOW, clipboard_set_text, convert_eol, set_terminal_row, term_buf, with_term_buf};
 use crate::app::terminal_ui::{apply_terminal_resize, compute_find_matches, history_model, history_view_models, rebuild_tab_display, refresh_terminal_selection};
 use super::render_tickets::request_tab_render_from_ui;

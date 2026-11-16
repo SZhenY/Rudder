@@ -95,6 +95,25 @@ fn set_procs(win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &s
     }
 }
 
+/// 综合页能否撤掉加载态：只有「连接中」返回 false，其余一律 true。
+/// 宁可显示 "—" 卡片，也不无限转圈。
+fn overview_ready(st: &TabStatus) -> bool {
+    if st.is_local {
+        return true; // 本地 shell 不上报远端资源
+    }
+    match st.state {
+        1 => {
+            let sys_ok = !st.sys.host.name.is_empty() && st.mem_total_kib > 0;
+            let timed_out = st
+                .first_stats_at
+                .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(5));
+            sys_ok || timed_out
+        }
+        2 => true,
+        _ => false,
+    }
+}
+
 /// 系统信息表的一次写入量：把原先逐个透传的 7 个值收成一个参数。
 pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> SidebarStats {
     let mut stats = SidebarStats::default();
@@ -119,20 +138,15 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_connection_state(connection_label(st.state, &st.host).into());
             win.set_conn_host(conn_ip(&st.host).into());
             clear_stats(win);
+            win.set_stats_ready(overview_ready(&st));
         }
         // A live session tab → remote resources + remote NIC on top.
         Some(st) if st.state == 1 => {
             win.set_conn_state(1);
             win.set_connection_state(st.host.clone().into());
             win.set_conn_host(conn_ip(&st.host).into());
-            // 首个完整样本（主机名 + 内存总量）到齐前整页显示加载态；只要 overview
-            // 头卡采到也算就绪，避免资源通道异常时永久转圈。
-            // 主机头卡与资源卡都到齐才算就绪；5 秒兜底防止 SYS_CMD 失败时永久转圈。
-            let sys_ok = !st.sys.host.name.is_empty() && st.mem_total_kib > 0;
-            let timed_out = st
-                .first_stats_at
-                .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(5));
-            win.set_stats_ready(sys_ok || timed_out);
+            // 就绪判据统一走 overview_ready()，见本分支末尾；此处不再提前写入，
+            // 避免 Slint 的 changed 处理读到尚未更新的 host-name。
             win.set_resource_title(t("服务器资源", "Server resources").into());
             // 综合页头卡：字段由 `monitor.rs` 从 /etc/os-release、uname、hostname、
             // uptime、loadavg 采集，结构化存放，不按本地化标签反查。
@@ -178,14 +192,25 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             write_disks(&mut stats, win, &st.disks);
             win.set_proc_available(true);
             set_procs(win, &st.procs, &st.user, &active);
+            // 字段全部落地后再判就绪：Slint 侧 changed 会读 host-name。
+            win.set_stats_ready(overview_ready(&st));
         }
         // Disconnected / timed-out session.
         Some(st) if st.state == 2 => {
-            win.set_conn_state(2);
-            win.set_connection_state(format!("{} {}", st.host, t("已断开", "disconnected")).into());
+            // 从未连上就断开 = 连接失败（红）；连上后断开 = 掉线（灰）。
+            win.set_conn_state(if st.failed { 3 } else { 2 });
+            win.set_connection_state(
+                if st.failed {
+                    format!("{} {}", st.host, t("连接失败", "Connection failed"))
+                } else {
+                    connection_label(2, &st.host)
+                }
+                .into(),
+            );
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
+            win.set_stats_ready(overview_ready(&st));
         }
         // Still connecting.
         Some(st) => {
@@ -194,6 +219,7 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
+            win.set_stats_ready(overview_ready(&st));
         }
         // 欢迎页 / 未知标签：不展示任何资源。
         None => {
@@ -201,6 +227,7 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_connection_state(t("未连接", "Not connected").into());
             win.set_conn_host("".into());
             clear_stats(win);
+            win.set_stats_ready(false);
         }
     }
     stats
@@ -270,6 +297,31 @@ mod tests {
             connection_label(0, "nas"),
             format!("{} nas", t("连接中", "Connecting"))
         );
+    }
+
+    /// 就绪判据：只有"连接中"返回 false；其余宁可显示 "—" 也不无限转圈。
+    #[test]
+    fn overview_ready_only_blocks_while_collecting() {
+        let mut st = TabStatus::default();
+        assert!(!overview_ready(&st), "state=0 连接中");
+
+        st.state = 1;
+        assert!(!overview_ready(&st), "已连接但主机信息未到");
+
+        st.mem_total_kib = 1024;
+        st.sys.host.name = "nas".into();
+        assert!(overview_ready(&st), "主机名 + 内存总量到齐");
+
+        st.sys.host.name.clear();
+        st.first_stats_at = Some(std::time::Instant::now() - std::time::Duration::from_secs(6));
+        assert!(overview_ready(&st), "5 秒兜底放行");
+
+        st.state = 2;
+        assert!(overview_ready(&st), "已断开显示 '—' 卡片");
+
+        st.is_local = true;
+        st.state = 0;
+        assert!(overview_ready(&st), "本地 shell 不上报远端资源");
     }
 
 }

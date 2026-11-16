@@ -4,7 +4,7 @@
 //! 重写；数据全部复用既有链路（本地 `SystemSampler`、远端 `monitor.rs` 的 overview
 //! 采集），本文件不引入新的采集逻辑。
 
-import { Theme } from "theme.slint";
+import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TrendCurve } from "components/trend_curve.slint";
 import { OverviewCard } from "components/overview_card.slint";
@@ -16,6 +16,8 @@ import { StatRow, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
 component HostRow inherits HorizontalLayout {
     in property <string> label;
     in property <string> value;
+    /// 值文本颜色；失败态由 Connection 行传 danger，其余沿用次要色。
+    in property <brush> tone: Theme.text-secondary;
 
     height: 18px * Theme.ui-scale;
     spacing: Theme.sp-6;
@@ -30,7 +32,7 @@ component HostRow inherits HorizontalLayout {
     }
     Text {
         text: root.value;
-        color: Theme.text-secondary;
+        color: root.tone;
         font-size: Theme.fs-xs;
         vertical-alignment: center;
         horizontal-stretch: 1;
@@ -70,7 +72,36 @@ export component OverviewView inherits Rectangle {
     in property <string> net-selected;
     in property <bool> net-show-selector;
     /// 首个完整样本是否已到；false 时整页显示「正在获取系统信息…」。
-    in property <bool> stats-ready: true;
+    in property <bool> stats-ready: false;
+
+    // ── 揭示状态机 ────────────────────────────────────────────────────
+    // 0 = 加载态；1 = 骨架（壳+标题可见、数值空白）；2 = 数值可见。
+    // stats-ready 走上升沿时先骨架再填数，下降沿立即复位。
+    property <int> reveal-phase: root.stats-ready ? 2 : 0;
+    /// 本次进入是否带动画：复位/直接落位时置 false，同一个 animate 因此零时长落定。
+    property <bool> reveal-anim: false;
+    /// 已揭示过的主机名：切回同一主机或重连同一主机时直接落位，不重放。
+    property <string> revealed-host: "";
+
+    property <float> shell-fade: root.reveal-phase >= 1 ? 1.0 : 0.0;
+    property <float> values-fade: root.reveal-phase >= 2 ? 1.0 : 0.0;
+    property <float> load-fade: root.reveal-phase == 0 ? 1.0 : 0.0;
+
+    animate shell-fade {
+        duration: AnimationSettings.medium2();
+        easing: AnimationSettings.e-enter();
+        enabled: AnimationSettings.enabled && root.reveal-anim;
+    }
+    animate values-fade {
+        duration: AnimationSettings.short4();
+        easing: AnimationSettings.e-enter();
+        enabled: AnimationSettings.enabled && root.reveal-anim;
+    }
+    animate load-fade {
+        duration: AnimationSettings.short3();
+        easing: AnimationSettings.e-standard-accelerate();
+        enabled: AnimationSettings.enabled;
+    }
     // 两张曲线卡各自的时间跨度（0..5 → 15s/1m/5m/30m/1h/6h）；只存运行时，不落盘。
     in-out property <int> cpu-span-index: 1;
     in-out property <int> net-span-index: 1;
@@ -89,12 +120,49 @@ export component OverviewView inherits Rectangle {
     property <int> load-dots: 0;
     Timer {
         interval: 400ms;
-        running: !root.stats-ready;
+        running: root.reveal-phase == 0;
         triggered => { root.load-dots = Math.mod(root.load-dots + 1, 4); }
     }
 
+    // 骨架 → 数值：300ms 淡入 + 150ms 停顿；关动画时立即推进，倍速时同步缩放。
+    Timer {
+        interval: AnimationSettings.enabled ? 450ms * AnimationSettings.speed : 1ms;
+        running: root.reveal-phase == 1;
+        triggered => { root.reveal-phase = 2; }
+    }
+
+    // 唯一入口：断开/切到未就绪标签 → 复位；同主机或已揭示过 → 直接落位；否则两段式。
+    changed stats-ready => {
+        if (!root.stats-ready) {
+            root.reveal-anim = false;
+            root.reveal-phase = 0;
+            root.load-dots = 0;
+        } else if (root.host-name == "" || root.host-name == root.revealed-host) {
+            root.reveal-anim = false;
+            root.reveal-phase = 2;
+        } else {
+            root.reveal-anim = true;
+            root.revealed-host = root.host-name;
+            root.reveal-phase = 1;
+        }
+    }
+
     ScrollView {
-        visible: root.stats-ready;
+        visible: root.reveal-phase >= 1;
+        opacity: root.shell-fade;
+        // 只影响渲染、不参与布局：骨架期轻微放大到落位，作为“聚焦”的近似。
+        transform-scale-x: root.reveal-phase >= 1 ? 1.0 : 0.98;
+        transform-scale-y: root.reveal-phase >= 1 ? 1.0 : 0.98;
+        animate transform-scale-x {
+            duration: AnimationSettings.medium2();
+            easing: AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled && root.reveal-anim;
+        }
+        animate transform-scale-y {
+            duration: AnimationSettings.medium2();
+            easing: AnimationSettings.s-soft();
+            enabled: AnimationSettings.enabled && root.reveal-anim;
+        }
         width: 100%;
         height: 100%;
         // 只纵向滚动：横向交给布局自适应，避免 255px 下出现横向滚动条并裁掉右侧。
@@ -138,11 +206,16 @@ export component OverviewView inherits Rectangle {
                         }
                     }
 
-                    HostRow { label: @tr("Connection"); value: root.connection-state != "" ? root.connection-state : "—"; }
-                    HostRow { label: @tr("System"); value: root.host-os != "" ? root.host-os : "—"; }
-                    HostRow { label: @tr("Kernel"); value: root.host-kernel != "" ? root.host-kernel : "—"; }
-                    HostRow { label: @tr("Uptime"); value: root.host-uptime != "" ? root.host-uptime : "—"; }
-                    HostRow { label: @tr("Load"); value: root.host-load != "" ? root.host-load : "—"; }
+                    HostRow {
+                        opacity: root.values-fade;
+                        label: @tr("Connection");
+                        value: root.connection-state != "" ? root.connection-state : "—";
+                        tone: root.conn-state == 3 ? Theme.danger : Theme.text-secondary;
+                    }
+                    HostRow { opacity: root.values-fade; label: @tr("System"); value: root.host-os != "" ? root.host-os : "—"; }
+                    HostRow { opacity: root.values-fade; label: @tr("Kernel"); value: root.host-kernel != "" ? root.host-kernel : "—"; }
+                    HostRow { opacity: root.values-fade; label: @tr("Uptime"); value: root.host-uptime != "" ? root.host-uptime : "—"; }
+                    HostRow { opacity: root.values-fade; label: @tr("Load"); value: root.host-load != "" ? root.host-load : "—"; }
                 }
             }
 
@@ -152,6 +225,7 @@ export component OverviewView inherits Rectangle {
                 title-icon: "\u{E30C}";
 
                 HorizontalLayout {
+                    opacity: root.values-fade;
                     spacing: Theme.sp-10;
                     VerticalLayout {
                         horizontal-stretch: 1;
@@ -173,6 +247,7 @@ export component OverviewView inherits Rectangle {
                     }
                 }
                 HorizontalLayout {
+                    opacity: root.values-fade;
                     spacing: Theme.sp-10;
                     VerticalLayout {
                         horizontal-stretch: 1;
@@ -199,13 +274,14 @@ export component OverviewView inherits Rectangle {
             OverviewCard {
                 title: @tr("CPU load");
                 title-icon: "\u{E30C}";
-                value: floor(root.cpu-percent * 100) + "%";
+                value: root.reveal-phase >= 2 ? floor(root.cpu-percent * 100) + "%" : "";
                 show-span-picker: true;
                 span-labels: root.span-labels;
                 span-index: root.cpu-span-index;
                 span-changed(v) => { root.set-span(0, v); }
 
                 TrendCurve {
+                    opacity: root.values-fade;
                     chart-height: root.cpu-chart-h;
                     commands: root.cpu-path;
                     tone: Theme.accent;
@@ -217,7 +293,7 @@ export component OverviewView inherits Rectangle {
             OverviewCard {
                 title: @tr("Memory usage");
                 title-icon: "\u{E30C}";
-                value: floor(root.mem-percent * 100) + "%";
+                value: root.reveal-phase >= 2 ? floor(root.mem-percent * 100) + "%" : "";
                 show-span-picker: true;
                 span-labels: root.span-labels;
                 span-index: root.mem-span-index;
@@ -226,6 +302,7 @@ export component OverviewView inherits Rectangle {
                 open-proc() => { root.show-processes(); }
 
                 TrendCurve {
+                    opacity: root.values-fade;
                     chart-height: root.cpu-chart-h;
                     commands: root.mem-path;
                     tone: Theme.success;
@@ -237,7 +314,7 @@ export component OverviewView inherits Rectangle {
             OverviewCard {
                 title: @tr("Network");
                 title-icon: "\u{E1AF}";
-                show-iface-picker: root.net-show-selector;
+                show-iface-picker: root.net-show-selector && root.reveal-phase >= 2;
                 iface-labels: root.net-ifaces;
                 iface-selected: root.net-selected;
                 select-iface(v) => { root.select-net-iface(v); }
@@ -247,6 +324,7 @@ export component OverviewView inherits Rectangle {
                 span-changed(v) => { root.set-span(1, v); }
 
                 NetBlock {
+                    opacity: root.values-fade;
                     chart-height: root.net-chart-h;
                     net-top-up: root.net-top-up;
                     net-top-down: root.net-top-down;
@@ -260,6 +338,7 @@ export component OverviewView inherits Rectangle {
                 title-icon: "\u{E1DB}";
 
                 DiskBlock {
+                    opacity: root.values-fade;
                     disks: root.disks;
                 }
             }
@@ -267,8 +346,10 @@ export component OverviewView inherits Rectangle {
         }
     }
 
-    // 首连加载态：信息未到齐时整页占位，避免头卡/曲线先显示空值再跳变。
-    if !root.stats-ready : VerticalLayout {
+    // 首连加载态：常驻 + 淡出，与骨架交叉过渡，避免“文字瞬间消失 → 空白 → 骨架”。
+    VerticalLayout {
+        visible: root.load-fade > 0.001;
+        opacity: root.load-fade;
         vertical-stretch: 1;
         alignment: center;
         spacing: Theme.sp-10;

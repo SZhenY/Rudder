@@ -22,6 +22,82 @@ pub(crate) fn resolve_jump(store: &Rc<RefCell<ConfigStore>>, session: &Session) 
     store.borrow().get(target).cloned()
 }
 
+/// 原地重连：查会话 → 关旧 handle → 清屏 → 清统计 → 置「重连中」。
+/// 返回是否真的发起；Enter 重连与连接失败弹窗的「重试」共用这一段。
+pub(crate) fn reconnect_tab(tab_id: &str, ctx: &ConnectCtx) -> bool {
+    let dead_session = {
+        let statuses = ctx.tab_statuses.lock().unwrap_or_else(|e| e.into_inner());
+        statuses
+            .get(tab_id)
+            .filter(|st| st.state == 2)
+            .map(|st| st.session_id.clone())
+    };
+    let Some(session_id) = dead_session else {
+        return false;
+    };
+    let session = if session_id.starts_with("system:") {
+        builtin_local_sessions(ctx.store.borrow().wsl_profiles())
+            .into_iter()
+            .find(|s| s.id == session_id)
+    } else {
+        ctx.store.borrow().get(&session_id).cloned()
+    };
+    let Some(session) = session else {
+        return false;
+    };
+    // SessionHandle 没有 Drop：只 remove 会漏掉 SSH/PTY 线程，每次重连泄漏一个。
+    if let Some(h) = ctx.handles.borrow_mut().remove(tab_id) {
+        h.close();
+    }
+    if let Some(h) = ctx
+        .sftp_handles
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(tab_id)
+    {
+        h.close();
+    }
+    if let Some(h) = term_buf(&ctx.bufs, tab_id) {
+        let mut b = h.lock().unwrap_or_else(|e| e.into_inner());
+        b.reset(ctx.store.borrow().scrollback_lines());
+    }
+    if let Some(st) = ctx
+        .tab_statuses
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .get_mut(tab_id)
+    {
+        // 重连 = 新一轮采集：不清这些，第一次 refresh 会带着上一轮的 sys / 内存
+        // 直接通过就绪判据，加载态被跳过并闪现旧数据。
+        st.state = 0;
+        st.failed = false;
+        st.sys = Default::default();
+        st.first_stats_at = None;
+        st.last_stats_at = None;
+        st.mem_used_kib = 0;
+        st.mem_total_kib = 0;
+        st.swap_used_kib = 0;
+        st.swap_total_kib = 0;
+        st.cpu = 0.0;
+        st.cpu_ema = None;
+        st.cpu_hist.clear();
+        st.mem_hist.clear();
+        st.net_hist.clear();
+    }
+    // 新会话的首个 OSC 7 重新跟随。
+    ctx.sftp_last_cwd
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .remove(tab_id);
+    if let Some(w) = ctx.weak.upgrade() {
+        set_terminal_row(&w, tab_id, |t| {
+            t.status = crate::i18n::t("重连中...", "Reconnecting...").into();
+        });
+    }
+    start_session_in_tab(tab_id, session, ctx);
+    true
+}
+
 pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &ConnectCtx) {
     let has_sftp = session.kind == SessionKind::Ssh;
     let (initial_cols, initial_rows) = *ctx.last_term_size.lock().unwrap_or_else(|e| e.into_inner());
