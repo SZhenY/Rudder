@@ -33,8 +33,6 @@ export component InterfacePanel inherits Rectangle {
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
     in property <[string]> ui-fonts;        // all font families for UI picker
     in-out property <int> ui-font-index: 0;     // UI font picker selection
-    in-out property <int> chart-span-index: 1;   // 曲线时间范围（0..5）
-    callback set-chart-span(int);
     callback set-ui-font(string);
     callback upload-ui-font();                    // 上传字体（复制进 config/fonts）
     in property <length> term-font-size;
@@ -444,8 +442,6 @@ export component InterfacePanel inherits Rectangle {
                             mount-filter <=> root.mount-filter;
                             renderer-mode <=> root.renderer-mode;
                             ui-font-index <=> root.ui-font-index;
-                            chart-span-index <=> root.chart-span-index;
-                            set-chart-span(v) => { root.set-chart-span(v); }
                             ui-fonts: root.ui-fonts;
                             ui-scale: root.ui-scale;
                             wallpaper-overlay <=> root.wallpaper-overlay;

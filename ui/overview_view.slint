@@ -54,6 +54,8 @@ export component OverviewView inherits Rectangle {
     in property <string> swap-detail;
     /// CPU 使用率历史，0..1（Rust 已按固定 0..100 刻度换算）。
     in property <string> cpu-path;
+    /// 内存占用历史曲线（0..1）。
+    in property <string> mem-path;
     // 主机头卡：远端 overview 的结构化字段。
     in property <string> host-name;
     in property <string> host-ip;
@@ -67,18 +69,32 @@ export component OverviewView inherits Rectangle {
     in property <[string]> net-ifaces;
     in property <string> net-selected;
     in property <bool> net-show-selector;
+    /// 首个完整样本是否已到；false 时整页显示「正在获取系统信息…」。
+    in property <bool> stats-ready: true;
+    // 两张曲线卡各自的时间跨度（0..5 → 15s/1m/5m/30m/1h/6h）；只存运行时，不落盘。
+    in-out property <int> cpu-span-index: 1;
+    in-out property <int> net-span-index: 1;
+    in-out property <int> mem-span-index: 1;
+    in property <[string]> span-labels: ["15s", "1m", "5m", "30m", "1h", "6h"];
+    callback set-span(int /* 0=cpu 1=net */, int /* 0..5 */);
     in property <[DiskInfo]> disks;
-    in property <bool> system-info-available;
     in property <bool> proc-available;
 
     callback select-net-iface(string);
-    callback show-system-info();
     callback show-processes();
     callback copy-host(string);
 
     background: transparent;
 
+    property <int> load-dots: 0;
+    Timer {
+        interval: 400ms;
+        running: !root.stats-ready;
+        triggered => { root.load-dots = Math.mod(root.load-dots + 1, 4); }
+    }
+
     ScrollView {
+        visible: root.stats-ready;
         width: 100%;
         height: 100%;
         // 只纵向滚动：横向交给布局自适应，避免 255px 下出现横向滚动条并裁掉右侧。
@@ -91,7 +107,7 @@ export component OverviewView inherits Rectangle {
             alignment: start;
 
             // --- 主机头卡 -------------------------------------------------
-            if root.host-name != "" : Rectangle {
+            Rectangle {
                 vertical-stretch: 0;
                 border-radius: Theme.radius-md;
                 background: Theme.bg-elevated;
@@ -112,7 +128,7 @@ export component OverviewView inherits Rectangle {
                             vertical-alignment: center;
                         }
                         Text {
-                            text: root.host-name;
+                            text: root.host-name != "" ? root.host-name : "—";
                             font-size: Theme.fs-md;
                             font-weight: 600;
                             color: Theme.text-primary;
@@ -122,11 +138,11 @@ export component OverviewView inherits Rectangle {
                         }
                     }
 
-                    HostRow { label: @tr("Connection"); value: root.connection-state; }
-                    HostRow { label: @tr("System"); value: root.host-os; }
-                    HostRow { label: @tr("Kernel"); value: root.host-kernel; }
-                    HostRow { label: @tr("Uptime"); value: root.host-uptime; }
-                    HostRow { label: @tr("Load"); value: root.host-load; }
+                    HostRow { label: @tr("Connection"); value: root.connection-state != "" ? root.connection-state : "—"; }
+                    HostRow { label: @tr("System"); value: root.host-os != "" ? root.host-os : "—"; }
+                    HostRow { label: @tr("Kernel"); value: root.host-kernel != "" ? root.host-kernel : "—"; }
+                    HostRow { label: @tr("Uptime"); value: root.host-uptime != "" ? root.host-uptime : "—"; }
+                    HostRow { label: @tr("Load"); value: root.host-load != "" ? root.host-load : "—"; }
                 }
             }
 
@@ -179,11 +195,15 @@ export component OverviewView inherits Rectangle {
                 }
             }
 
-            // --- CPU 趋势 -------------------------------------------------
+            // --- CPU 负载 -------------------------------------------------
             OverviewCard {
-                title: @tr("CPU trend");
+                title: @tr("CPU load");
                 title-icon: "\u{E30C}";
                 value: floor(root.cpu-percent * 100) + "%";
+                show-span-picker: true;
+                span-labels: root.span-labels;
+                span-index: root.cpu-span-index;
+                span-changed(v) => { root.set-span(0, v); }
 
                 TrendCurve {
                     chart-height: root.cpu-chart-h;
@@ -193,20 +213,44 @@ export component OverviewView inherits Rectangle {
                 }
             }
 
+            // --- 内存占用 -------------------------------------------------
+            OverviewCard {
+                title: @tr("Memory usage");
+                title-icon: "\u{E30C}";
+                value: floor(root.mem-percent * 100) + "%";
+                show-span-picker: true;
+                span-labels: root.span-labels;
+                span-index: root.mem-span-index;
+                span-changed(v) => { root.set-span(2, v); }
+                show-proc-button: root.proc-available;
+                open-proc() => { root.show-processes(); }
+
+                TrendCurve {
+                    chart-height: root.cpu-chart-h;
+                    commands: root.mem-path;
+                    tone: Theme.success;
+                    last: clamp(root.mem-percent, 0.0, 1.0);
+                }
+            }
+
             // --- 网络 -----------------------------------------------------
             OverviewCard {
                 title: @tr("Network");
                 title-icon: "\u{E1AF}";
+                show-iface-picker: root.net-show-selector;
+                iface-labels: root.net-ifaces;
+                iface-selected: root.net-selected;
+                select-iface(v) => { root.select-net-iface(v); }
+                show-span-picker: true;
+                span-labels: root.span-labels;
+                span-index: root.net-span-index;
+                span-changed(v) => { root.set-span(1, v); }
 
                 NetBlock {
                     chart-height: root.net-chart-h;
                     net-top-up: root.net-top-up;
                     net-top-down: root.net-top-down;
                     net-top-path: root.net-top-path;
-                    net-show-selector: root.net-show-selector;
-                    net-ifaces: root.net-ifaces;
-                    net-selected: root.net-selected;
-                    select-net-iface(i) => { root.select-net-iface(i); }
                 }
             }
 
@@ -220,6 +264,19 @@ export component OverviewView inherits Rectangle {
                 }
             }
 
+        }
+    }
+
+    // 首连加载态：信息未到齐时整页占位，避免头卡/曲线先显示空值再跳变。
+    if !root.stats-ready : VerticalLayout {
+        vertical-stretch: 1;
+        alignment: center;
+        spacing: Theme.sp-10;
+        Text {
+            text: @tr("Loading system information") + ["", ".", "..", "..."][root.load-dots];
+            color: Theme.text-muted;
+            font-size: Theme.fs-sm;
+            horizontal-alignment: center;
         }
     }
 }

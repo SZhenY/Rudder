@@ -118,8 +118,6 @@ pub struct AppearanceSettings {
     /// 激进内存回收：更早归还空闲堆页、清可重建缓存，并缩短工作集裁剪门槛。
     /// 启动期读一次，重启生效。
     pub aggressive_memory_reclaim: bool,
-    /// overview 曲线的时间跨度（秒）：15 / 60 / 300 / 1800 / 3600 / 21600。
-    pub chart_span_secs: u32,
 }
 
 impl Default for AppearanceSettings {
@@ -139,7 +137,6 @@ impl Default for AppearanceSettings {
             mount_filter: String::new(),
             animations_disabled: false,
             aggressive_memory_reclaim: false,
-            chart_span_secs: 60,
         }
     }
 }

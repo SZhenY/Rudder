@@ -65,6 +65,9 @@ fn clear_host_card(win: &AppWindow) {
     if !win.get_cpu_path().is_empty() {
         win.set_cpu_path("".into());
     }
+    if !win.get_mem_path().is_empty() {
+        win.set_mem_path("".into());
+    }
     if !win.get_net_top_path().is_empty() {
         win.set_net_top_path("".into());
     }
@@ -93,78 +96,10 @@ fn set_procs(win: &AppWindow, procs: &[ProcInfo], current_user: &str, tab_id: &s
 }
 
 /// 系统信息表的一次写入量：把原先逐个透传的 7 个值收成一个参数。
-struct SystemModelValues {
-    cpu: f32,
-    mem: f32,
-    swap: f32,
-    mem_detail: SharedString,
-    swap_detail: SharedString,
-    nets: Vec<SysNetRow>,
-    sys: SystemDetails,
-}
-
-impl SystemModelValues {
-    fn empty() -> Self {
-        Self {
-            cpu: 0.0,
-            mem: 0.0,
-            swap: 0.0,
-            mem_detail: "".into(),
-            swap_detail: "".into(),
-            nets: Vec::new(),
-            sys: SystemDetails::default(),
-        }
-    }
-}
-
-fn set_system_models(win: &AppWindow, v: SystemModelValues) {
-    let SystemModelValues {
-        cpu,
-        mem,
-        swap,
-        mem_detail,
-        swap_detail,
-        nets,
-        sys,
-    } = v;
-    if let Some(vm) = win.get_sys_metrics().as_any().downcast_ref::<VecModel<SysMetricRow>>() {
-        apply_rows(vm, metric_rows(cpu, mem, swap, mem_detail, swap_detail));
-    }
-    if let Some(vm) = win.get_sys_net_rows().as_any().downcast_ref::<VecModel<SysNetRow>>() {
-        apply_rows(vm, nets);
-    }
-    if let Some(vm) = win.get_sys_overview_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, pairs_to_overview_rows(&sys.overview));
-    }
-    if let Some(vm) = win.get_sys_cpu_info_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, pairs_to_one_row(&sys.cpu_info));
-    }
-    if let Some(vm) = win.get_sys_gpu_info_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, pairs_to_rows(&sys.gpu_info, 4));
-    }
-    if let Some(vm) = win.get_sys_cpu_usage_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, cpu_usage_detail_rows(&sys.cpu_usage));
-    }
-    if let Some(vm) = win.get_sys_memory_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, pairs_to_one_row(&sys.memory));
-    }
-    if let Some(vm) = win.get_sys_swap_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, pairs_to_one_row(&sys.swap));
-    }
-    if let Some(vm) = win.get_sys_network_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, tuple5_rows(&sys.networks));
-    }
-    if let Some(vm) = win.get_sys_filesystem_rows().as_any().downcast_ref::<VecModel<SysInfoRow>>() {
-        apply_rows(vm, tuple5_rows(&sys.filesystems));
-    }
-}
-
-
 pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> SidebarStats {
     let mut stats = SidebarStats::default();
 
     win.set_proc_available(false);
-    win.set_system_info_available(false);
     set_procs(win, &[], "", "");
 
     let active = win.get_active_tab_id().to_string();
@@ -190,6 +125,14 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_conn_state(1);
             win.set_connection_state(st.host.clone().into());
             win.set_conn_host(conn_ip(&st.host).into());
+            // 首个完整样本（主机名 + 内存总量）到齐前整页显示加载态；只要 overview
+            // 头卡采到也算就绪，避免资源通道异常时永久转圈。
+            // 主机头卡与资源卡都到齐才算就绪；5 秒兜底防止 SYS_CMD 失败时永久转圈。
+            let sys_ok = !st.sys.host.name.is_empty() && st.mem_total_kib > 0;
+            let timed_out = st
+                .first_stats_at
+                .is_some_and(|t| t.elapsed() > std::time::Duration::from_secs(5));
+            win.set_stats_ready(sys_ok || timed_out);
             win.set_resource_title(t("服务器资源", "Server resources").into());
             // 综合页头卡：字段由 `monitor.rs` 从 /etc/os-release、uname、hostname、
             // uptime、loadavg 采集，结构化存放，不按本地化标签反查。
@@ -203,7 +146,11 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             // 空闲机器也会画出满格曲线。
             // 固定 0..100 刻度生成平滑曲线；字符串在 Rust 侧拼好，Slint 只画 Path。
             let cpu_scaled: Vec<f32> = st.cpu_hist.iter().map(|v| v / 100.0).collect();
+            win.set_cpu_span_index(crate::app::resource_ui::span_index(st.cpu_span_secs));
+            win.set_net_span_index(crate::app::resource_ui::span_index(st.net_span_secs));
+            win.set_mem_span_index(crate::app::resource_ui::span_index(st.mem_span_secs));
             win.set_cpu_path(smooth_path(&cpu_scaled, 60).into());
+            win.set_mem_path(smooth_path(&st.mem_hist, 60).into());
             win.set_cpu_percent(st.cpu);
             win.set_mem_percent(usage_pct(st.mem_used_kib, st.mem_total_kib));
             win.set_swap_percent(usage_pct(st.swap_used_kib, st.swap_total_kib));
@@ -230,20 +177,7 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             );
             write_disks(&mut stats, win, &st.disks);
             win.set_proc_available(true);
-            win.set_system_info_available(true);
             set_procs(win, &st.procs, &st.user, &active);
-            set_system_models(
-                win,
-                SystemModelValues {
-                    cpu: st.cpu,
-                    mem: usage_pct(st.mem_used_kib, st.mem_total_kib),
-                    swap: usage_pct(st.swap_used_kib, st.swap_total_kib),
-                    mem_detail: format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into(),
-                    swap_detail: format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
-                    nets: net_rows(&st.net),
-                    sys: st.sys.clone(),
-                },
-            );
         }
         // Disconnected / timed-out session.
         Some(st) if st.state == 2 => {
@@ -252,7 +186,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_system_models(win, SystemModelValues::empty());
         }
         // Still connecting.
         Some(st) => {
@@ -261,7 +194,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_conn_host(conn_ip(&st.host).into());
             win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
-            set_system_models(win, SystemModelValues::empty());
         }
         // 欢迎页 / 未知标签：不展示任何资源。
         None => {
@@ -274,7 +206,7 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
     stats
 }
 /// 使用率：`total == 0` 时不能用 0 除（还没采到样本的本地快照就是这样）。
-fn usage_pct(used: u64, total: u64) -> f32 {
+pub(super) fn usage_pct(used: u64, total: u64) -> f32 {
     if total > 0 {
         used as f32 / total as f32
     } else {

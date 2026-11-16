@@ -35,6 +35,13 @@ export component OverviewPanel inherits Rectangle {
     property <string> tunnel-host: "127.0.0.1";
     property <string> tunnel-host-port: "80";
     // --- 运行状态页签的数据（原侧栏，由 AppWindow 逐层透传）-----------------
+    // 曲线跨度（0..5）由每会话的 TabStatus 播种；两条曲线各自独立。
+    in property <[string]> span-labels;
+    in property <bool> stats-ready: true;
+    in-out property <int> cpu-span-index: 1;
+    in-out property <int> net-span-index: 1;
+    in-out property <int> mem-span-index: 1;
+    callback set-span(int /* 0=cpu 1=net */, int /* 0..5 */);
     in property <string> connection-state: @tr("Not connected");
     in property <string> conn-host;
     in property <int> conn-state;
@@ -52,13 +59,13 @@ export component OverviewPanel inherits Rectangle {
     in property <bool> net-show-selector;
     in property <[DiskInfo]> disks;
     in property <string> cpu-path;
+    in property <string> mem-path;
     in property <string> host-name;
     in property <string> host-ip;
     in property <string> host-os;
     in property <string> host-kernel;
     in property <string> host-uptime;
     in property <string> host-load;
-    in property <bool> system-info-available;
     in property <bool> proc-available;
     in property <bool> collapsed: false;   // when true only the toolbar shows
     in property <bool> show-tree: true;    // 右侧固定竖排时不显示目录树
@@ -107,7 +114,6 @@ export component OverviewPanel inherits Rectangle {
     callback clear-sort();
     // 运行状态页签的交互，全部转给 AppWindow 现有的回调。
     callback select-net-iface(string);
-    callback show-system-info();
     callback show-processes();
     callback copy-host(string);
     callback tunnel-add(string /* name */, string /* kind */, string /* bind */, string /* bind-port */, string /* host */, string /* host-port */);
@@ -222,18 +228,23 @@ export component OverviewPanel inherits Rectangle {
             net-ifaces: root.net-ifaces;
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;
+            span-labels: root.span-labels;
+            stats-ready: root.stats-ready;
+            cpu-span-index <=> root.cpu-span-index;
+            net-span-index <=> root.net-span-index;
+            mem-span-index <=> root.mem-span-index;
+            set-span(k, i) => { root.set-span(k, i); }
             disks: root.disks;
             cpu-path: root.cpu-path;
+            mem-path: root.mem-path;
             host-name: root.host-name;
             host-ip: root.host-ip;
             host-os: root.host-os;
             host-kernel: root.host-kernel;
             host-uptime: root.host-uptime;
             host-load: root.host-load;
-            system-info-available: root.system-info-available;
             proc-available: root.proc-available;
             select-net-iface(i) => { root.select-net-iface(i); }
-            show-system-info() => { root.show-system-info(); }
             show-processes() => { root.show-processes(); }
             copy-host(h) => { root.copy-host(h); }
         }

@@ -24,7 +24,6 @@ import "fonts/JetBrainsMono-ExtraLight.ttf";
 import "fonts/MaterialIcons-Regular.ttf";
 import { Theme } from "theme.slint";
 import { ProcWindow } from "proc_window.slint";
-import { SystemInfoWindow } from "system_info_window.slint";
 import { InterfacePanel } from "interface_panel.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 import { LineEdit, Palette } from "std-widgets.slint";
@@ -133,8 +132,6 @@ export component SettingsWindow inherits Window {
     in-out property <int> term-font-index:0;
     in property <[string]> term-fonts;
     in-out property <int> ui-font-index:0;
-    in-out property <int> chart-span-index:1;
-    callback set-chart-span(int);
     in property <[string]> ui-fonts;
     in-out property <bool> update-check-enabled:true;
     in property <string> update-check-status:"";
@@ -315,8 +312,6 @@ export component SettingsWindow inherits Window {
                 term-font-index <=> term-font-index;
                 ui-fonts: ui-fonts;
                 ui-font-index <=> ui-font-index;
-                chart-span-index <=> chart-span-index;
-                set-chart-span(v) => { root.set-chart-span(v); }
                 term-font-size: Theme.term-font-size;
                 term-font-bold: Theme.term-font-bold;
                 term-cursor-style <=> term-cursor-style;

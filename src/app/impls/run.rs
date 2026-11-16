@@ -6,6 +6,20 @@ pub fn run_renderer_probe(mode: &str) -> Result<()> {
     window::run_renderer_probe(mode)
 }
 
+/// 曲线跨度下拉的显示文案：中文用自然单位，英文用紧凑缩写。
+fn span_labels() -> slint::ModelRc<slint::SharedString> {
+    let zh = !crate::i18n::is_en();
+    let labels: Vec<slint::SharedString> = if zh {
+        vec!["15 秒", "1 分钟", "5 分钟", "30 分钟", "1 小时", "6 小时"]
+    } else {
+        vec!["15s", "1m", "5m", "30m", "1h", "6h"]
+    }
+    .into_iter()
+    .map(slint::SharedString::from)
+    .collect();
+    slint::ModelRc::from(std::rc::Rc::new(slint::VecModel::from(labels)))
+}
+
 pub fn run() -> Result<()> {
     // 启动阶段日志只走 stderr：文件层是 warn，release 又没有控制台。
     tracing::info!(
@@ -23,9 +37,6 @@ pub fn run() -> Result<()> {
 
     // 更新器网络配置（代理开关 / 代理地址）先落一份全局快照：检查更新在后台线程里跑，
     // 拿 store 不方便，直接读这里。证书链恒用系统根证书，不需要配置。
-    // 曲线窗口点数：启动期从配置读一次，设置页改动时再调 set_chart_span。
-    super::resource_ui::set_chart_span(config.chart_span_secs());
-
     update_net::set_current(update_net::NetSettings {
         enabled: config.update_proxy_enabled(),
         proxy: config.update_proxy().to_string(),
@@ -122,26 +133,6 @@ pub fn run() -> Result<()> {
     // it just hides it, so reopening is instant.
     let proc_rows_model: Rc<VecModel<ProcRow>> = Rc::new(VecModel::default());
     window.set_proc_list(ModelRc::from(proc_rows_model.clone()));
-    let sys_metrics_model: Rc<VecModel<SysMetricRow>> = Rc::new(VecModel::default());
-    let sys_net_rows_model: Rc<VecModel<SysNetRow>> = Rc::new(VecModel::default());
-    let sys_overview_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_cpu_info_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_gpu_info_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_cpu_usage_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_memory_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_swap_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_network_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    let sys_filesystem_model: Rc<VecModel<SysInfoRow>> = Rc::new(VecModel::default());
-    window.set_sys_metrics(ModelRc::from(sys_metrics_model.clone()));
-    window.set_sys_net_rows(ModelRc::from(sys_net_rows_model.clone()));
-    window.set_sys_overview_rows(ModelRc::from(sys_overview_model.clone()));
-    window.set_sys_cpu_info_rows(ModelRc::from(sys_cpu_info_model.clone()));
-    window.set_sys_gpu_info_rows(ModelRc::from(sys_gpu_info_model.clone()));
-    window.set_sys_cpu_usage_rows(ModelRc::from(sys_cpu_usage_model.clone()));
-    window.set_sys_memory_rows(ModelRc::from(sys_memory_model.clone()));
-    window.set_sys_swap_rows(ModelRc::from(sys_swap_model.clone()));
-    window.set_sys_network_rows(ModelRc::from(sys_network_model.clone()));
-    window.set_sys_filesystem_rows(ModelRc::from(sys_filesystem_model.clone()));
     // 进程窗也按需创建：行模型留在主窗口，组件树与第二套 wgpu 设备首次点击才建。
     {
         let win_weak = window.as_weak();
@@ -150,29 +141,6 @@ pub fn run() -> Result<()> {
         window.on_open_processes(move || {
             if let Some(main) = win_weak.upgrade() {
                 sub_windows::show_process(&main, &rows, &proc_ctx);
-            }
-        });
-    }
-
-    // 系统信息窗按需创建：这里只登记共享模型与打开回调，组件树首次点击才建。
-    let sys_models = Rc::new(sub_windows::SysModels {
-        metrics: sys_metrics_model.clone(),
-        nets: sys_net_rows_model.clone(),
-        overview: sys_overview_model.clone(),
-        cpu_info: sys_cpu_info_model.clone(),
-        gpu_info: sys_gpu_info_model.clone(),
-        cpu_usage: sys_cpu_usage_model.clone(),
-        memory: sys_memory_model.clone(),
-        swap: sys_swap_model.clone(),
-        network: sys_network_model.clone(),
-        filesystem: sys_filesystem_model.clone(),
-    });
-    {
-        let win_weak = window.as_weak();
-        let models = sys_models.clone();
-        window.on_open_system_info(move || {
-            if let Some(main) = win_weak.upgrade() {
-                sub_windows::show_system_info(&main, &models);
             }
         });
     }
@@ -213,6 +181,7 @@ pub fn run() -> Result<()> {
     }
 
     settings_ui::seed_settings(&window, &ctx);
+    window.set_span_labels(span_labels());
 
 
     // --- Wire callbacks --------------------------------------------------
@@ -247,7 +216,6 @@ pub fn run() -> Result<()> {
         let monitor_store = store.clone();
         let monitor_tab = Rc::new(Cell::new(String::new()));
         let monitor_all = Rc::new(Cell::new(false));
-        let sample_interval = Rc::new(Cell::new(2u32));
         let reclaim_bufs = bufs.clone();
         window.on_refresh_sidebar(move || {
             let Some(w) = weak.upgrade() else { return };
@@ -266,13 +234,19 @@ pub fn run() -> Result<()> {
                     monitor_tab.set(String::new());
                 }
             }
-            // 曲线跨度切到 15 秒时远端采样改成 1 s；变化时对所有活会话下发。
-            let span = monitor_store.borrow().chart_span_secs();
-            let interval = if span == 15 { 1 } else { 2 };
-            if sample_interval.replace(interval) != interval
-                && let Ok(handles) = monitor_handles.try_borrow()
-            {
-                for handle in handles.values() {
+            // 每个会话按自己的两条曲线跨度决定采样间隔（任一要 15 秒 → 1 s）。
+            if let (Ok(handles), Ok(map)) = (monitor_handles.try_borrow(), statuses.lock()) {
+                for (id, handle) in handles.iter() {
+                    let interval = map
+                        .get(id)
+                        .map(|st| {
+                            super::resource_ui::base_step(
+                                st.cpu_span_secs,
+                                st.net_span_secs,
+                                st.mem_span_secs,
+                            )
+                        })
+                        .unwrap_or(2);
                     handle.set_sample_interval(interval);
                 }
             }
@@ -334,6 +308,7 @@ pub fn run() -> Result<()> {
                     }
                 }
                 w.set_lang_en(crate::i18n::is_en());
+                w.set_span_labels(span_labels());
                 w.invoke_refresh_sidebar();
             }
         });
@@ -909,7 +884,6 @@ pub fn run() -> Result<()> {
                 let _ = w.hide();
             }
             sub_windows::hide_process();
-            sub_windows::hide_system_info();
             // 设置窗口是独立 root 窗口 —— 它自己就足以让事件循环继续活着。主窗口关了而它
             // 还开着的话，用户看到的就是"程序关了、设置还挂在桌面上"，所以这里一并收掉。
             settings_window::close_if_open();

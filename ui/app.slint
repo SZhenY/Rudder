@@ -22,7 +22,6 @@ import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "ter
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
 import { DockerPage, DockerContainer } from "docker_page.slint";
-import { SystemInfoWindow, SysInfoRow, SysMetricRow, SysNetRow } from "system_info_window.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
@@ -30,7 +29,7 @@ import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, M
 // 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
 import { SettingsWindow } from "settings_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
-export { ProcWindow, SystemInfoWindow, SettingsWindow }
+export { ProcWindow, SettingsWindow }
 import { LineEdit, Button, Palette } from "std-widgets.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
 // 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
@@ -284,10 +283,6 @@ export component AppWindow inherits Window {
     callback open-processes();
     in property <bool> proc-available;       // a live remote session is active
     in property <[ProcRow]> proc-list;       // top remote processes by CPU
-    callback open-system-info();
-    in property <bool> system-info-available; // connected Linux session only (#268)
-    in property <[SysMetricRow]> sys-metrics;
-    in property <[SysNetRow]> sys-net-rows;
     // Docker 页（仅远端会话，只读容器列表）。
     in property <[DockerContainer]> docker-containers;
     in property <string> docker-status: "idle";
@@ -304,14 +299,7 @@ export component AppWindow inherits Window {
     in property <string> host-load;
     /// CPU 使用率历史（0..100），综合页趋势卡用。
     in property <string> cpu-path;
-    in property <[SysInfoRow]> sys-overview-rows;
-    in property <[SysInfoRow]> sys-cpu-info-rows;
-    in property <[SysInfoRow]> sys-gpu-info-rows;
-    in property <[SysInfoRow]> sys-cpu-usage-rows;
-    in property <[SysInfoRow]> sys-memory-rows;
-    in property <[SysInfoRow]> sys-swap-rows;
-    in property <[SysInfoRow]> sys-network-rows;
-    in property <[SysInfoRow]> sys-filesystem-rows;
+    in property <string> mem-path;
     // Command bar (#55): quick commands + history, fed from Rust.
     in property <[QuickCmd]> quick-commands;
     in-out property <bool> quick-commands-as-sidebar: false;
@@ -418,8 +406,13 @@ export component AppWindow inherits Window {
     in property <[string]> term-fonts;             // installed monospace families
     in property <[string]> ui-fonts;              // all families for UI font picker
     in-out property <int> ui-font-index: 0;           // picker selection into ui-fonts
-    in-out property <int> chart-span-index: 1;        // 曲线时间范围（0..5）
-    callback set-chart-span(int);
+    // 曲线时间跨度（0..5）：仅运行时，不落盘；两条曲线各自独立。
+    in property <[string]> span-labels;                 // 曲线时间跨度下拉的显示文案
+    in property <bool> stats-ready: true;                // 首个样本到齐前整页占位
+    in-out property <int> cpu-span-index: 1;
+    in-out property <int> net-span-index: 1;
+    in-out property <int> mem-span-index: 1;
+    callback set-piece-span(string /* tab-id */, int /* 0=cpu 1=net */, int /* 0..5 */);
     callback set-ui-font(string);
     callback upload-ui-font();                      // 上传字体（复制进 config/fonts）
     // 设置窗口是否打开。它是 Rust 侧的独立 root 窗口，由 `ensure_settings` 首次
@@ -634,7 +627,7 @@ export component AppWindow inherits Window {
     callback webdav-upload();
     callback webdav-download();
     in-out property <length> overview-panel-height: 220px * Theme.ui-scale; // shared; lets Rust locate the drop zone
-    in-out property <length> overview-panel-width: Theme.overview-w;  // 右侧面板宽度
+    in-out property <length> overview-panel-width: 380px;  // 右侧面板宽度（逻辑 px，不随 ui-scale 变）
     callback pick-download-dir();            // open a folder picker
     callback open-download-dir();            // reveal the folder in the OS
     callback clear-transfers();              // wipe the transfer history
@@ -1241,6 +1234,12 @@ export component AppWindow inherits Window {
                         width: parent.width;
                         height: parent.height;
                         tab-id: term.id;
+                        span-labels: root.span-labels;
+                        stats-ready: root.stats-ready;
+                        cpu-span-index <=> root.cpu-span-index;
+                        net-span-index <=> root.net-span-index;
+                        mem-span-index <=> root.mem-span-index;
+                        set-piece-span(id, k, i) => { root.set-piece-span(id, k, i); }
                         spans: term.spans;
                         cursor-row: term.cursor-row;
                         cursor-col: term.cursor-col;
@@ -1291,13 +1290,13 @@ export component AppWindow inherits Window {
                         net-show-selector: root.net-show-selector;
                         disks: root.disks;
                         cpu-path: root.cpu-path;
+                        mem-path: root.mem-path;
                         host-name: root.host-name;
                         host-ip: root.host-ip;
                         host-os: root.host-os;
                         host-kernel: root.host-kernel;
                         host-uptime: root.host-uptime;
                         host-load: root.host-load;
-                        system-info-available: root.system-info-available;
                         proc-available: root.proc-available;
                         quick-commands: root.quick-commands;
                         quick-sidebar-enabled: root.quick-commands-as-sidebar;
@@ -1321,7 +1320,6 @@ export component AppWindow inherits Window {
                         tunnel-stop(id) => { root.tunnel-stop(term.id, id); }
                         copy-text(t) => { root.copy-text(t); }
                         select-net-iface(i) => { root.select-net-iface(i); }
-                        open-system-info() => { root.open-system-info(); }
                         open-processes() => { root.open-processes(); }
                         delete-history(i) => { root.delete-history(i); }
                         delete-history-cmd(c) => { root.delete-history-cmd(c); }

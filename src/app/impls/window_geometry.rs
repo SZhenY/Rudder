@@ -157,6 +157,13 @@ pub(crate) fn handle_macos_terminal_wheel(
 // 主窗口里时，要用它挡住"设置打开期间滚轮喂给终端"。设置页改成**独立窗口**后，滚轮由系统
 // 按指针位置派发到对应窗口，这个守卫反而会让设置开着时主窗口滚不动 —— 已删除。
 
+/// 面板物理宽度 —— 与 `ui/terminal_view.slint` 的 `overview-w-phys` 同一公式：
+/// `clamp(逻辑值 × 缩放, 255 × 缩放, 可用宽 × 45%)`。改一处必须同步另一处。
+fn panel_phys_w(logical: f32, avail: f32, scale: f32) -> f32 {
+    let min = 255.0 * scale;
+    (logical * scale).clamp(min, (avail * 0.45).max(min))
+}
+
 pub(crate) fn terminal_wheel_hit(
     win: &AppWindow,
     bufs: &TermBuffers,
@@ -174,12 +181,14 @@ pub(crate) fn terminal_wheel_hit(
     // SFTP 面板固定在右侧：终端可用宽度直接扣掉它（折叠时只剩 36px 折叠条）。
     // 非 SFTP 会话不扣 —— 与 Slint 的 `sf-taken` 门控保持一致。
     // 面板与终端之间没有间隙（分隔条压在终端的右内边距上），所以不额外加常数。
+    let scale = win.global::<Theme>().get_ui_scale().max(0.8);
     let sftp_take = if !term_state.overview_available {
         0.0
     } else if term_state.overview_collapsed {
-        36.0
+        // 折叠条与 `Theme.overview-strip-w` 一致（36 × 缩放）。
+        36.0 * scale
     } else {
-        term_state.overview_panel_width
+        panel_phys_w(term_state.overview_panel_width, term.w, scale)
     };
     term_w = (term_w - sftp_take).max(0.0);
 
@@ -310,11 +319,13 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
         w: term.w,
         h: term.h,
     };
+    let scale = win.global::<Theme>().get_ui_scale().max(0.8);
+    let panel_w = panel_phys_w(term_state.overview_panel_width, dock_region.w, scale);
     // 面板固定在右侧、不显示目录树：占满 dock-region 的高度，宽度取面板宽。
     let mut panel = LogicalRect {
-        x: dock_region.x + (dock_region.w - term_state.overview_panel_width).max(0.0),
+        x: dock_region.x + (dock_region.w - panel_w).max(0.0),
         y: dock_region.y,
-        w: term_state.overview_panel_width,
+        w: panel_w,
         h: dock_region.h,
     };
 
@@ -322,7 +333,7 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
     // 工具栏高度随 `narrow-toolbar` 变化（`ui/sftp_panel.slint`）：宽度 < 480px
     // （含 255 下限）时是两行 62px，不是 34px。写死 34 会让落点偏高 28px。
     let t = win.global::<Theme>();
-    let toolbar_h = if term_state.overview_panel_width < 480.0 * t.get_ui_scale().max(0.8) {
+    let toolbar_h = if panel_w < 480.0 * scale {
         t.get_toolbar_h_narrow()
     } else {
         t.get_bar_h()

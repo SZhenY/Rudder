@@ -1,26 +1,49 @@
 use super::*;
 use crate::ui::{ Theme };
-use std::sync::atomic::{AtomicUsize, Ordering};
 
-/// 当前曲线窗口的采样点数，由「设置 › 外观 › 曲线时间范围」决定。
-static CHART_POINTS: AtomicUsize = AtomicUsize::new(30);
+/// 预设跨度（秒），索引与 overview 卡片里的下拉一致。
+pub(crate) const SPAN_SECS: [u32; 6] = [15, 60, 300, 1800, 3600, 21600];
 
-/// 15 秒档用 1 s 采样（15 点），其余档维持 2 s（跨度 / 2）。
-pub(crate) fn set_chart_span(secs: u32) {
-    let points = if secs == 15 {
-        secs as usize
-    } else {
-        (secs / 2) as usize
-    };
-    CHART_POINTS.store(points.clamp(15, 10800), Ordering::Relaxed);
+/// 0 表示「未设置」，回落到 1 分钟。
+pub(crate) fn span_or_default(secs: u32) -> u32 {
+    if SPAN_SECS.contains(&secs) { secs } else { 60 }
 }
 
-pub(super) fn chart_points() -> usize {
-    CHART_POINTS.load(Ordering::Relaxed)
+/// 跨度 → 下拉索引（0..5）。
+pub(crate) fn span_index(secs: u32) -> i32 {
+    SPAN_SECS
+        .iter()
+        .position(|v| *v == span_or_default(secs))
+        .unwrap_or(1) as i32
 }
 
-pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32) {
-    let cap = chart_points();
+/// 每条曲线自己的采样步长（秒）：跨度越大越稀，点数恒定 ≤ 60。
+///
+/// 两卡独立——CPU 切 15 秒只改自己的步长，网络仍按原步长累积。
+pub(crate) fn card_step(span_secs: u32) -> u32 {
+    match span_or_default(span_secs) {
+        15 => 1,
+        60 => 2,
+        300 => 5,
+        1800 => 30,
+        3600 => 60,
+        _ => 360,
+    }
+}
+
+/// 一条曲线的窗口点数：15 / 30 / 60 / 60 / 60 / 60。
+pub(super) fn card_points(span_secs: u32) -> usize {
+    (span_or_default(span_secs) / card_step(span_secs)) as usize
+}
+
+/// 远端采样基准：取三条曲线里最快的一档（与原来等价，不额外增加远端开销）。
+pub(crate) fn base_step(cpu_span: u32, net_span: u32, mem_span: u32) -> u32 {
+    card_step(cpu_span)
+        .min(card_step(net_span))
+        .min(card_step(mem_span))
+}
+
+pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32, cap: usize) {
     if buf.len() != cap {
         // 用**首值**回填而不是 0：`smooth_path` 会把缓冲重采样成固定 60 点，
         // 若前半段是 0，真实波动只剩右端一小截、看起来像贴底直线。
@@ -224,135 +247,6 @@ pub(super) fn proc_rows(procs: &[ProcInfo], current_user: &str, tab_id: &str) ->
         .collect()
 }
 
-pub(super) fn metric_rows(
-    cpu: f32,
-    mem: f32,
-    swap: f32,
-    mem_detail: impl Into<SharedString>,
-    swap_detail: impl Into<SharedString>,
-) -> Vec<SysMetricRow> {
-    vec![
-        SysMetricRow {
-            label: "CPU".into(),
-            percent: cpu,
-            detail: "".into(),
-        },
-        SysMetricRow {
-            label: t("内存", "Memory").into(),
-            percent: mem,
-            detail: mem_detail.into(),
-        },
-        SysMetricRow {
-            label: t("交换", "Swap").into(),
-            percent: swap,
-            detail: swap_detail.into(),
-        },
-    ]
-}
-
-pub(super) fn net_rows(net: &[(String, u64, u64)]) -> Vec<SysNetRow> {
-    net.iter()
-        .map(|(name, rx, tx)| SysNetRow {
-            name: name.clone().into(),
-            up: format_bytes_per_sec(*tx).into(),
-            down: format_bytes_per_sec(*rx).into(),
-        })
-        .collect()
-}
-
-pub(super) fn pairs_to_overview_rows(pairs: &[(String, String)]) -> Vec<SysInfoRow> {
-    pairs
-        .chunks(2)
-        .map(|chunk| {
-            let first = &chunk[0];
-            let second = chunk.get(1);
-            SysInfoRow {
-                c1: first.0.clone().into(),
-                c2: first.1.clone().into(),
-                c3: second.map(|p| p.0.clone()).unwrap_or_default().into(),
-                c4: second.map(|p| p.1.clone()).unwrap_or_default().into(),
-                c5: "".into(),
-            }
-        })
-        .collect()
-}
-
-pub(super) fn pairs_to_one_row(pairs: &[(String, String)]) -> Vec<SysInfoRow> {
-    let value = |idx: usize| {
-        pairs
-            .get(idx)
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| "-".to_string())
-    };
-    vec![SysInfoRow {
-        c1: value(0).into(),
-        c2: value(1).into(),
-        c3: value(2).into(),
-        c4: value(3).into(),
-        c5: value(4).into(),
-    }]
-}
-
-pub(super) fn pairs_to_rows(pairs: &[(String, String)], width: usize) -> Vec<SysInfoRow> {
-    pairs
-        .chunks(width)
-        .filter(|chunk| {
-            chunk
-                .iter()
-                .any(|(_, v)| !v.trim().is_empty() && v.trim() != "-")
-        })
-        .map(|chunk| {
-            let value = |idx: usize| {
-                chunk
-                    .get(idx)
-                    .map(|(_, v)| v.clone())
-                    .unwrap_or_else(|| "-".to_string())
-            };
-            SysInfoRow {
-                c1: value(0).into(),
-                c2: value(1).into(),
-                c3: value(2).into(),
-                c4: value(3).into(),
-                c5: value(4).into(),
-            }
-        })
-        .collect()
-}
-
-pub(super) fn cpu_usage_detail_rows(pairs: &[(String, String)]) -> Vec<SysInfoRow> {
-    let value = |idx: usize| {
-        pairs
-            .get(idx)
-            .map(|(_, v)| v.clone())
-            .unwrap_or_else(|| "0.0%".to_string())
-    };
-    let extra = pairs
-        .iter()
-        .skip(4)
-        .map(|(k, v)| format!("{k} {v}"))
-        .collect::<Vec<_>>()
-        .join(" / ");
-    vec![SysInfoRow {
-        c1: value(0).into(),
-        c2: value(2).into(),
-        c3: value(1).into(),
-        c4: value(3).into(),
-        c5: extra.into(),
-    }]
-}
-
-pub(super) fn tuple5_rows(rows: &[(String, String, String, String, String)]) -> Vec<SysInfoRow> {
-    rows.iter()
-        .map(|r| SysInfoRow {
-            c1: r.0.clone().into(),
-            c2: r.1.clone().into(),
-            c3: r.2.clone().into(),
-            c4: r.3.clone().into(),
-            c5: r.4.clone().into(),
-        })
-        .collect()
-}
-
 pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     let t = main.global::<Theme>();
     proc.set_dark_mode(t.get_dark());
@@ -368,19 +262,6 @@ pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     proc.set_wp_base(t.get_wp_base());
 }
 
-pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
-    let t = main.global::<Theme>();
-    sys.set_dark_mode(t.get_dark());
-    sys.set_ui_scale(t.get_ui_scale());
-    sys.global::<Theme>().set_ui_font_px(t.get_ui_font_px());
-    sys.set_ui_font_family(t.get_ui_font_family());
-    sys.set_wallpaper_img(t.get_wallpaper());
-    sys.set_wallpaper_active(t.get_wallpaper_active());
-    sys.set_wp_accent(t.get_wp_accent());
-    sys.set_wp_tint(t.get_wp_tint());
-    sys.set_wp_base(t.get_wp_base());
-}
-
 /// 让子窗口真正画出第一帧。
 ///
 /// 根因：macOS 上新映射的第二个窗口**不会自动产生首次渲染事件**，而 Slint 的布局是
@@ -392,47 +273,6 @@ pub(super) fn sync_system_info_theme(main: &AppWindow, sys: &SystemInfoWindow) {
 /// 所以在随后的两个 tick 里各补一次；三次都只是"请画一帧"，不改尺寸、不看内容。
 pub(super) fn request_first_frame(w: &slint::Window) {
     w.request_redraw();
-}
-
-pub(super) fn place_system_info_window(main: &AppWindow, sys: &SystemInfoWindow) {
-    use i_slint_backend_winit::winit::dpi::LogicalPosition;
-
-    let Some((mon_x, mon_y, mon_w, mon_h, scale)) = main
-        .window()
-        .with_winit_window(|ww| {
-            let scale = ww.scale_factor().max(0.01);
-            let monitor = ww.current_monitor().or_else(|| ww.primary_monitor())?;
-            let pos = monitor.position();
-            let size = monitor.size();
-            Some((
-                pos.x as f64 / scale,
-                pos.y as f64 / scale,
-                size.width as f64 / scale,
-                size.height as f64 / scale,
-                scale,
-            ))
-        })
-        .flatten()
-    else {
-        return;
-    };
-
-    let target_w = (mon_w * 0.5).clamp(760.0, (mon_w - 24.0).max(760.0));
-    let target_h = (mon_h * 0.5).clamp(520.0, (mon_h - 24.0).max(520.0));
-    let x = mon_x + (mon_w - target_w).max(0.0) / 2.0;
-    let y = mon_y + (mon_h - target_h).max(0.0) / 2.0;
-
-    // 位置：只能走 winit（Slint 没有设置窗口位置的 API）。移动不涉及重排，安全。
-    sys.window().with_winit_window(|ww| {
-        ww.set_outer_position(LogicalPosition::new(x, y));
-    });
-    // 尺寸：走 **Slint 自己的 API**。用 `with_winit_window(request_inner_size)` 改尺寸是
-    // 在 Slint 背后动 OS 窗口，首帧布局会被跳过（现场表现：空白窗口，拖动边缘才有内容）。
-    let _ = scale;
-    sys.window().set_size(slint::PhysicalSize::new(
-        (target_w * scale) as u32,
-        (target_h * scale) as u32,
-    ));
 }
 
 pub(super) fn place_process_window(main: &AppWindow, process: &ProcWindow) {

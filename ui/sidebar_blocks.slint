@@ -46,7 +46,7 @@ export component StatRow inherits HorizontalLayout {
         text: label;
         color: Theme.text-secondary;
         font-size: Theme.fs-sm;
-        width: 44px * Theme.ui-scale;          // fits English "Memory" as well as 中文 "内存"
+        width: 40px * Theme.ui-scale;          // fits English "Memory" as well as 中文 "内存"
         vertical-alignment: center;
         overflow: elide;
     }
@@ -56,7 +56,10 @@ export component StatRow inherits HorizontalLayout {
         background: Theme.bg-root;
         border-radius: 2px * Theme.ui-scale;
         horizontal-stretch: 2;
-        min-width: 40px * Theme.ui-scale;
+        min-width: 28px * Theme.ui-scale;
+        // 2×2 布局下行宽只有 ~100px，条内文字必须裁在自己的矩形里，
+        // 否则 `7.2G/7.8G` 会画到行外被硬裁成半截。
+        clip: true;
 
         Rectangle {
             x: 0;
@@ -76,11 +79,13 @@ export component StatRow inherits HorizontalLayout {
 
         Text {
             x: 6px * Theme.ui-scale;
+            width: parent.width - 10px;
             text: root.value != "" ? root.value : Math.round(percent * 100) + "%";
             color: Theme.text-primary;
             font-size: Theme.fs-xs;
             vertical-alignment: center;
             height: parent.height;
+            overflow: elide;
         }
     }
 
@@ -94,10 +99,6 @@ export component NetGraph inherits VerticalLayout {
     in property <string> up-text;
     in property <string> down-text;
     in property <string> path;
-    in property <bool> show-selector: false;
-    in property <[string]> ifaces;
-    in property <string> selected;
-    callback iface-selected(string);
 
     // Stay at preferred height; without this the inherited VerticalLayout grabs
     // a stretch share of the status page and balloons the sparkline into blank space.
@@ -132,79 +133,6 @@ export component NetGraph inherits VerticalLayout {
         }
         Rectangle { horizontal-stretch: 1; } // spacer pushes selector to the right
 
-        if root.show-selector : Rectangle {
-            width: 64px * Theme.ui-scale;
-            height: 18px * Theme.ui-scale;
-            border-radius: Theme.radius-xs;
-            background: sel-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
-            animate background {
-                duration: sel-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                easing: sel-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                enabled: AnimationSettings.enabled;
-            }
-
-            HorizontalLayout {
-                padding-left: Theme.sp-5; padding-right: Theme.sp-4; spacing: Theme.sp-2;
-                Text {
-                    text: root.selected;
-                    color: Theme.text-primary;
-                    font-size: Theme.fs-xs;
-                    vertical-alignment: center;
-                    horizontal-stretch: 1;
-                    overflow: elide;
-                }
-                IconText {
-                    text: "\u{E5CF}";
-                    color: Theme.text-muted;
-                    font-size: 8px * Theme.ui-zoom;
-                    vertical-alignment: center;
-                }
-            }
-
-            sel-ta := TouchArea {
-                mouse-cursor: pointer;
-                clicked => { popup.show(); }
-            }
-
-            popup := PopupWindow {
-                x: 0; y: parent.height + 2px * Theme.ui-scale;
-                width: 96px * Theme.ui-scale;
-                Rectangle {
-                    background: Theme.bg-panel;
-                    border-radius: 4px * Theme.ui-scale;
-                    border-width: 1px;
-                    border-color: Theme.border-strong;
-                    drop-shadow-blur: Theme.shadow-menu-blur;
-                    drop-shadow-color: Theme.shadow-menu-color;
-                    VerticalLayout {
-                        padding: Theme.sp-4;
-                        spacing: 1px;
-                        for iface in root.ifaces : Rectangle {
-                            height: 22px * Theme.ui-scale;
-                            border-radius: Theme.radius-xs;
-                            background: row-ta.has-hover ? Theme.state-hover : transparent;
-                            animate background {
-                                duration: row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                                easing: row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                                enabled: AnimationSettings.enabled;
-                            }
-                            row-ta := TouchArea {
-                                mouse-cursor: pointer;
-                                clicked => { root.iface-selected(iface); }
-                            }
-                            Text {
-                                x: 6px * Theme.ui-scale;
-                                text: iface;
-                                color: Theme.text-primary;
-                                font-size: Theme.fs-xs;
-                                vertical-alignment: center;
-                                height: parent.height;
-                            }
-                        }
-                    }
-                }
-            }
-        }
     }
 
     TrendCurve {
@@ -288,99 +216,17 @@ export component StatusBlock inherits Rectangle {
     }
 }
 
-// Resource title + Processes button + CPU/Memory/Swap rows.
-export component StatsBlock inherits VerticalLayout {
-    in property <string> resource-title;
-    in property <bool> system-info-available;
-    in property <bool> proc-available;
-    in property <float> cpu-percent;
-    in property <float> mem-percent;
-    in property <float> swap-percent;
-    in property <string> mem-detail;
-    in property <string> swap-detail;
-    callback show-system-info();
-    callback show-processes();
-    spacing: Theme.sp-6;
-    HorizontalLayout {
-        spacing: Theme.sp-6;
-        Rectangle {
-            height: 20px * Theme.ui-scale;
-            horizontal-stretch: 1;
-            border-radius: Theme.radius-sm;
-            background: root.system-info-available && sys-ta.has-hover ? Theme.state-hover : transparent;
-            animate background {
-                duration: root.system-info-available && sys-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                easing: root.system-info-available && sys-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                enabled: AnimationSettings.enabled;
-            }
-            sys-ta := TouchArea {
-                enabled: root.system-info-available;
-                mouse-cursor: root.system-info-available ? pointer : default;
-                clicked => { root.show-system-info(); }
-            }
-            Text {
-                x: 4px * Theme.ui-scale;
-                width: parent.width - 8px * Theme.ui-scale;
-                text: root.resource-title;
-                color: Theme.text-secondary;
-                font-size: Theme.fs-sm;
-                vertical-alignment: center;
-                overflow: elide;
-            }
-        }
-        if root.system-info-available : Rectangle {
-            width: 22px * Theme.ui-scale; height: 20px * Theme.ui-scale;
-            border-radius: Theme.radius-sm;
-            background: info-ta.has-hover ? Theme.state-hover : transparent;
-            animate background {
-                duration: info-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                easing: info-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                enabled: AnimationSettings.enabled;
-            }
-            info-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-system-info(); } }
-            IconText {
-                centered: true;
-                text: "\u{E88E}";
-                color: Theme.text-secondary;
-                font-size: Theme.fs-sm;
-            }
-        }
-        if root.proc-available : Rectangle {
-            width: 52px * Theme.ui-scale; height: 20px * Theme.ui-scale;
-            border-radius: Theme.radius-sm;
-            background: proc-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
-            animate background {
-                duration: proc-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                easing: proc-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                enabled: AnimationSettings.enabled;
-            }
-            proc-ta := TouchArea { mouse-cursor: pointer; clicked => { root.show-processes(); } }
-            Text { text: @tr("Processes"); color: Theme.text-secondary; font-size: Theme.fs-xs;
-                   horizontal-alignment: center; vertical-alignment: center; }
-        }
-    }
-    StatRow { label: "CPU"; percent: root.cpu-percent; detail: ""; bar-color: Theme.accent; }
-    StatRow { label: @tr("Memory"); percent: root.mem-percent; detail: root.mem-detail; bar-color: Theme.success; }
-    StatRow { label: @tr("Swap"); percent: root.swap-percent; detail: root.swap-detail; bar-color: Theme.warning; }
-}
-
 // Dual network graph (active tab on top, local below).
 export component NetBlock inherits VerticalLayout {
     in property <length> chart-height: 48px * Theme.ui-scale;
     in property <string> net-top-up;
     in property <string> net-top-down;
     in property <string> net-top-path;
-    in property <bool> net-show-selector;
-    in property <[string]> net-ifaces;
-    in property <string> net-selected;
-    callback select-net-iface(string);
     vertical-stretch: 0;
     spacing: Theme.sp-6;
     NetGraph {
         chart-height: root.chart-height;
         up-text: root.net-top-up; down-text: root.net-top-down; path: root.net-top-path;
-        show-selector: root.net-show-selector; ifaces: root.net-ifaces; selected: root.net-selected;
-        iface-selected(i) => { root.select-net-iface(i); }
     }
 }
 

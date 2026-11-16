@@ -164,18 +164,35 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 st.swap_used_kib = swap_used_kib;
                 st.swap_total_kib = swap_total_kib;
                 st.net = net;
-                st.disks = disks;
+                // `df` 每 5 拍才跑一次（其余拍没有磁盘段）：空值沿用上次，避免列表闪空。
+                if !disks.is_empty() {
+                    st.disks = disks;
+                }
                 if let Some(sys) = *sys {
                     st.sys = sys;
                 }
-                st.last_stats_at = Some(std::time::Instant::now());
+                let now = std::time::Instant::now();
+                st.last_stats_at = Some(now);
+                st.first_stats_at.get_or_insert(now);
                 // A sample means the channel is alive → treat as connected.
                 if st.state != 1 {
                     st.state = 1;
                 }
                 // Append the selected interface's total rate to its sparkline.
+                // 两卡独立抽稀：每卡按自己的步长攒够一拍才入环，互不影响。
+                let base_ms =
+                    base_step(st.cpu_span_secs, st.net_span_secs, st.mem_span_secs) * 1000;
                 let (_, rx, tx) = selected_iface(st);
-                push_ring(&mut st.net_hist, (rx + tx) as f32);
+                st.net_acc = st.net_acc.saturating_add(base_ms);
+                let net_step_ms = card_step(st.net_span_secs) * 1000;
+                if st.net_acc >= net_step_ms {
+                    st.net_acc -= net_step_ms;
+                    push_ring(
+                        &mut st.net_hist,
+                        (rx + tx) as f32,
+                        card_points(st.net_span_secs),
+                    );
+                }
                 // CPU 趋势：先做 EMA(α=0.25) 再入环 —— 1 Hz 的原始百分比抖动太大，
                 // 直接画线会呈锯齿；首拍没有历史时取原值。
                 let raw_cpu = cpu_percent * 100.0;
@@ -184,7 +201,23 @@ pub(crate) fn apply_session_event_to_window<'a>(
                     None => raw_cpu,
                 };
                 st.cpu_ema = Some(ema);
-                push_ring(&mut st.cpu_hist, ema);
+                st.cpu_acc = st.cpu_acc.saturating_add(base_ms);
+                let cpu_step_ms = card_step(st.cpu_span_secs) * 1000;
+                if st.cpu_acc >= cpu_step_ms {
+                    st.cpu_acc -= cpu_step_ms;
+                    push_ring(&mut st.cpu_hist, ema, card_points(st.cpu_span_secs));
+                }
+                // 内存占用曲线：与 CPU / 网络同一套抽稀，各自独立。
+                st.mem_acc = st.mem_acc.saturating_add(base_ms);
+                let mem_step_ms = card_step(st.mem_span_secs) * 1000;
+                if st.mem_acc >= mem_step_ms {
+                    st.mem_acc -= mem_step_ms;
+                    push_ring(
+                        &mut st.mem_hist,
+                        usage_pct(st.mem_used_kib, st.mem_total_kib),
+                        card_points(st.mem_span_secs),
+                    );
+                }
             }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses);

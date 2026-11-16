@@ -4,17 +4,36 @@
 //! 否则富余会被「均分兜底」塞给标题行，标题上下出现大块空白。
 //! 内部 `VerticalLayout` 用 `alignment: start`，标题行与内容各取内容高度。
 //!
+//! 标题行从左到右：图标 + 标题 + 当前值（紧贴标题）+ 弹性空白 + 可选的两个胶囊：
+//! 网卡选择（`show-iface-picker`）与曲线时间跨度（`show-span-picker`）。
+//!
 //! 后续卡片拖拽排序时，只需在 `OverviewView` 里把固定实例换成按 id 渲染的
 //! `for`，卡片内部不需要改。
 
-import { Theme } from "../theme.slint";
+import { Theme, AnimationSettings } from "../theme.slint";
 import { IconText } from "./text.slint";
 
 export component OverviewCard inherits Rectangle {
     in property <string> title;
     in property <string> title-icon;
-    /// 标题右侧的当前值；空串不占位。
+    /// 标题右侧的当前值（如 `99%`）；空串不占位。
     in property <string> value;
+
+    // --- 网卡选择胶囊（原在 NetGraph 速率行）---------------------------
+    in property <bool> show-iface-picker: false;
+    in property <[string]> iface-labels;
+    in property <string> iface-selected;
+    callback select-iface(string);
+
+    // --- 曲线时间跨度胶囊（原在设置 › 外观）---------------------------
+    in property <bool> show-span-picker: false;
+    in property <[string]> span-labels;
+    in property <int> span-index: 1;
+    callback span-changed(int);
+
+    // --- 进程入口（原在旧 StatsBlock 的「服务器资源」行）----------------
+    in property <bool> show-proc-button: false;
+    callback open-proc();
 
     vertical-stretch: 0;
     border-radius: Theme.radius-md;
@@ -40,7 +59,6 @@ export component OverviewCard inherits Rectangle {
                 color: Theme.text-primary;
                 font-size: Theme.fs-sm;
                 vertical-alignment: center;
-                horizontal-stretch: 1;
                 overflow: elide;
             }
             if root.value != "" : Text {
@@ -49,6 +67,180 @@ export component OverviewCard inherits Rectangle {
                 font-size: Theme.fs-xs;
                 font-weight: 600;
                 vertical-alignment: center;
+            }
+            // 富余留在这里，value 才会紧贴标题而不是被推到最右。
+            Rectangle { horizontal-stretch: 1; }
+
+            if root.show-iface-picker : Rectangle {
+                width: 64px * Theme.ui-scale;
+                height: 18px * Theme.ui-scale;
+                border-radius: Theme.radius-xs;
+                background: iface-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                animate background {
+                    duration: iface-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: iface-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
+                HorizontalLayout {
+                    padding-left: Theme.sp-5;
+                    padding-right: Theme.sp-4;
+                    spacing: Theme.sp-2;
+                    Text {
+                        text: root.iface-selected;
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-xs;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    IconText {
+                        text: "\u{E5CF}";
+                        color: Theme.text-muted;
+                        font-size: 8px * Theme.ui-zoom;
+                        vertical-alignment: center;
+                    }
+                }
+                iface-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { iface-popup.show(); }
+                }
+                iface-popup := PopupWindow {
+                    x: 0;
+                    y: parent.height + 2px * Theme.ui-scale;
+                    width: 96px * Theme.ui-scale;
+                    Rectangle {
+                        background: Theme.bg-panel;
+                        border-radius: Theme.radius-sm;
+                        border-width: 1px;
+                        border-color: Theme.border-strong;
+                        drop-shadow-blur: Theme.shadow-menu-blur;
+                        drop-shadow-color: Theme.shadow-menu-color;
+                        VerticalLayout {
+                            padding: Theme.sp-4;
+                            spacing: 1px;
+                            for iface in root.iface-labels : Rectangle {
+                                height: 22px * Theme.ui-scale;
+                                border-radius: Theme.radius-xs;
+                                background: iface-row.has-hover ? Theme.state-hover : transparent;
+                                animate background {
+                                    duration: iface-row.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: iface-row.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
+                                iface-row := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.select-iface(iface); }
+                                }
+                                Text {
+                                    x: Theme.sp-6;
+                                    text: iface;
+                                    color: Theme.text-primary;
+                                    font-size: Theme.fs-xs;
+                                    vertical-alignment: center;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if root.show-proc-button : Rectangle {
+                width: 22px * Theme.ui-scale;
+                height: 20px * Theme.ui-scale;
+                border-radius: Theme.radius-sm;
+                background: proc-ta.has-hover ? Theme.state-hover : transparent;
+                animate background {
+                    duration: proc-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: proc-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
+                proc-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.open-proc(); }
+                }
+                IconText {
+                    centered: true;
+                    text: "\u{E8EF}";
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-sm;
+                }
+            }
+
+            if root.show-span-picker : Rectangle {
+                width: 76px * Theme.ui-scale;
+                height: 18px * Theme.ui-scale;
+                border-radius: Theme.radius-xs;
+                background: span-ta.has-hover ? Theme.state-hover : Theme.bg-elevated;
+                animate background {
+                    duration: span-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                    easing: span-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                    enabled: AnimationSettings.enabled;
+                }
+                HorizontalLayout {
+                    padding-left: Theme.sp-5;
+                    padding-right: Theme.sp-4;
+                    spacing: Theme.sp-2;
+                    Text {
+                        text: root.span-index >= 0 && root.span-index < root.span-labels.length
+                            ? root.span-labels[root.span-index] : "";
+                        color: Theme.text-primary;
+                        font-size: Theme.fs-xs;
+                        vertical-alignment: center;
+                        horizontal-stretch: 1;
+                        overflow: elide;
+                    }
+                    IconText {
+                        text: "\u{E5CF}";
+                        color: Theme.text-muted;
+                        font-size: 8px * Theme.ui-zoom;
+                        vertical-alignment: center;
+                    }
+                }
+                span-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { span-popup.show(); }
+                }
+                span-popup := PopupWindow {
+                    x: 0;
+                    y: parent.height + 2px * Theme.ui-scale;
+                    width: 76px * Theme.ui-scale;
+                    Rectangle {
+                        background: Theme.bg-panel;
+                        border-radius: Theme.radius-sm;
+                        border-width: 1px;
+                        border-color: Theme.border-strong;
+                        drop-shadow-blur: Theme.shadow-menu-blur;
+                        drop-shadow-color: Theme.shadow-menu-color;
+                        VerticalLayout {
+                            padding: Theme.sp-4;
+                            spacing: 1px;
+                            for i in 6 : Rectangle {
+                                visible: i < root.span-labels.length;
+                                height: 22px * Theme.ui-scale;
+                                border-radius: Theme.radius-xs;
+                                background: span-row.has-hover ? Theme.state-hover : transparent;
+                                animate background {
+                                    duration: span-row.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+                                    easing: span-row.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+                                    enabled: AnimationSettings.enabled;
+                                }
+                                span-row := TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => { root.span-changed(i); }
+                                }
+                                Text {
+                                    x: Theme.sp-6;
+                                    text: root.span-labels[i];
+                                    color: i == root.span-index ? Theme.accent : Theme.text-primary;
+                                    font-size: Theme.fs-xs;
+                                    vertical-alignment: center;
+                                    height: parent.height;
+                                }
+                            }
+                        }
+                    }
+                }
             }
         }
 

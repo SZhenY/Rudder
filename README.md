@@ -274,7 +274,6 @@ rudder/
 │   ├── widgets.slint            # 可复用组件
 │   ├── theme.slint              # 设计 tokens（深色/浅色）
 │   ├── proc_window.slint        # 进程管理窗口
-│   ├── system_info_window.slint # 系统信息窗口
 │   ├── confirm_dialog.slint     # 通用确认 / 删除对话框
 │   ├── confirm_overlays.slint   #   删除 / 批量导入 / 粘贴 / 凭据 / MFA / 主机密钥确认
 │   ├── quick_cmd_manage.slint   # 快捷命令管理弹窗（含分组菜单）

@@ -752,3 +752,42 @@ msgstr "Reset to defaults"
 
 msgid "Confirm reset?"
 msgstr "Confirm reset?"
+
+msgid "CPU load"
+msgstr "CPU load"
+
+msgid "Connection"
+msgstr "Connection"
+
+msgid "Kernel"
+msgstr "Kernel"
+
+msgid "Uptime"
+msgstr "Uptime"
+
+msgid "Load"
+msgstr "Load"
+
+msgid "Network"
+msgstr "Network"
+
+msgid "Disk"
+msgstr "Disk"
+
+msgid "Resources"
+msgstr "Resources"
+
+msgid "Retry"
+msgstr "Retry"
+
+msgid "Connect a host on the left first"
+msgstr "Connect a host on the left first"
+
+msgid "The session is disconnected"
+msgstr "The session is disconnected"
+
+msgid "Memory usage"
+msgstr "Memory usage"
+
+msgid "Loading system information"
+msgstr "Loading system information"

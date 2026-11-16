@@ -66,9 +66,8 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
         .map(|w| w.get_active_tab_id().to_string())
         .unwrap_or_default();
     handle.set_resource_monitoring(should_start_monitoring(all, active == tab_id));
-    // 15 秒曲线窗口用 1 s 采样，其余档 2 s；新建会话时按当前配置起 MON 通道。
-    let chart_span = ctx.store.borrow().chart_span_secs();
-    handle.set_sample_interval(if chart_span == 15 { 1 } else { 2 });
+    // 新会话两条曲线都默认 1 分钟 → 2 s 采样；改跨度时由下拉回调重下发。
+    handle.set_sample_interval(2);
     ctx.handles.borrow_mut().insert(tab_id.to_string(), handle);
 
     // 文件面板默认折叠的会话：先不建第二条 SSH 连接，等面板展开/手动刷新再连。

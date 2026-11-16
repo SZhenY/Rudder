@@ -762,8 +762,6 @@ msgstr "规划中"
 msgid "No package for this platform"
 msgstr "本平台暂无安装包"
 
-msgid "CPU trend"
-msgstr "CPU 趋势"
 
 msgid "Connection"
 msgstr "连接"
@@ -806,3 +804,12 @@ msgstr "还原本页默认"
 
 msgid "Confirm reset?"
 msgstr "确认还原？"
+
+msgid "CPU load"
+msgstr "CPU 使用率"
+
+msgid "Memory usage"
+msgstr "内存占用"
+
+msgid "Loading system information"
+msgstr "正在获取系统信息"

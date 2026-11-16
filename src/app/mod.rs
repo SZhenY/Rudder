@@ -62,7 +62,7 @@ use crate::resource::{TabStatus, TabStatuses};
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{SftpHandles, SftpLastCwd, spawn_sftp};
 use crate::ssh::{
-    ProcInfo, SessionCommand, SessionEvent, SessionHandle, SystemDetails, format_mtime,
+    ProcInfo, SessionCommand, SessionEvent, SessionHandle, format_mtime,
     format_size, spawn_session,
 };
 #[cfg(test)]

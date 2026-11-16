@@ -226,7 +226,9 @@ pub(crate) async fn run_session(
     // pid/user/pcpu/pmem/args, each line clipped to 200 chars so a giant command
     // line can't bloat the stream. A host whose `ps` lacks `--sort`/`-o` simply
     // yields nothing (2>/dev/null), degrading to an empty process list.
-    const MON_CMD_TEMPLATE: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; while :; do awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __MSTICK__; sleep 2; done\n";
+    // `df` 单独降频到每 5 拍，并套 `timeout 3` + 排除网络文件系统：远端有挂死的
+    // NFS/CIFS 时，`df` 会阻塞在内核态，把整个 while 循环（连同 CPU/网络）一起拖停。
+    const MON_CMD_TEMPLATE: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; i=0; while :; do i=$((i+1)); awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; if [ $((i % 5)) -eq 1 ]; then timeout 3 df -kP -x nfs -x nfs4 -x cifs -x smbfs 2>/dev/null; fi; echo __MSTICK__; sleep 2; done\n";
 /// 远端监控命令：`sleep` 由设置里的曲线跨度决定（15 秒档 1 s，其余 2 s）。
 fn mon_cmd(interval: u32) -> Vec<u8> {
     String::from_utf8_lossy(MON_CMD_TEMPLATE)
@@ -332,6 +334,11 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
     let mut resource_monitoring = true;
     // 远端采样间隔（秒）；设置切到 15 秒窗口时改为 1，其余保持 2。
     let mut sample_interval: u32 = 2;
+    // 数据停摆看门狗：远端 `while` 卡住（df 挂死）或 exec 通道被回收时靠它重开。
+    // 0.7.8 有过同款，`aux_open_*` 重构时丢了 —— 通道一关就永久停更。
+    let mut last_mon_sample_at = tokio::time::Instant::now();
+    let mut monitor_reopen_pending = false;
+    let mut mon_watchdog = tokio::time::interval(std::time::Duration::from_secs(3));
     let mut first_terminal_output = true;
     // Local (-L) and dynamic (-D) listen client-side; their tasks are aborted
     // on session exit.
@@ -364,6 +371,38 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
         // firehose cannot grow the event queue without bound.
         crate::output_budget::wait_for_drain().await;
         tokio::select! {
+            _ = mon_watchdog.tick() => {
+                // 连续 3 个采样周期没有新样本 → 远端循环卡住或通道被回收。
+                // 主动重开一次（走同一个 `aux_open_in_flight` 互斥，不破坏 #264）。
+                let stale = std::time::Duration::from_secs(sample_interval as u64 * 3 + 2);
+                if resource_monitoring && !aux_open_in_flight && last_mon_sample_at.elapsed() > stale
+                {
+                    tracing::warn!(
+                        "[MON] no sample for {:?} (interval={}s); reopening",
+                        last_mon_sample_at.elapsed(),
+                        sample_interval
+                    );
+                    if let Some(old) = mon_channel.take() {
+                        let _ = old.close().await;
+                    }
+                    mon_buf.clear();
+                    prev_cpu = None;
+                    prev_net.clear();
+                    prev_net_at = std::time::Instant::now();
+                    last_mon_sample_at = tokio::time::Instant::now();
+                    aux_open_in_flight = true;
+                    aux_open_for_startup = false;
+                    aux_open_started = Some(tokio::time::Instant::now());
+                    spawn_auxiliary_open(
+                        handle.clone(),
+                        AuxiliaryChannelKind::Resources,
+                        mon_cmd(sample_interval),
+                        "monitor",
+                        aux_open_tx.clone(),
+                    );
+                    auxiliary_deadline = Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
+                }
+            }
             _ = async {
                 match auxiliary_deadline {
                     Some(deadline) => tokio::time::sleep_until(deadline).await,
@@ -479,6 +518,20 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                 // 整批处理完才恢复轮询主 PTY（#264）。
                 aux_open_in_flight = false;
                 aux_open_started = None;
+                // 切换采样周期时被 in-flight 挡下的重开，在这里补上。
+                if monitor_reopen_pending {
+                    monitor_reopen_pending = false;
+                    aux_open_in_flight = true;
+                    aux_open_started = Some(tokio::time::Instant::now());
+                    spawn_auxiliary_open(
+                        handle.clone(),
+                        AuxiliaryChannelKind::Resources,
+                        mon_cmd(sample_interval),
+                        "monitor",
+                        aux_open_tx.clone(),
+                    );
+                    auxiliary_deadline = Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
+                }
                 // 只有**启动序列**那批才推进序列；重开监控那批不算
                 // （否则会一路推进到 SystemInfo，白白多开一条通道）。
                 if aux_open_for_startup {
@@ -575,28 +628,33 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                             continue;
                         }
                         sample_interval = secs;
-                        // 旧远端循环还在跑：先发 eof 让它退出，再按新周期开一条。
-                        // 会话不断开，只换这一条 exec 通道。
+                        // 用 close() 而不是 eof()：远端是 `while :` 循环，stdin EOF 不会
+                        // 让它退出，不 close 会一直占着一条 exec 通道（撞 MaxSessions）。
                         if let Some(old) = mon_channel.take() {
-                            let _ = old.eof().await;
+                            let _ = old.close().await;
                         }
                         mon_buf.clear();
                         prev_cpu = None;
                         prev_net.clear();
                         prev_net_at = std::time::Instant::now();
-                        if resource_monitoring && !aux_open_in_flight {
-                            aux_open_in_flight = true;
-                            aux_open_for_startup = false;
-                            aux_open_started = Some(tokio::time::Instant::now());
-                            spawn_auxiliary_open(
-                                handle.clone(),
-                                AuxiliaryChannelKind::Resources,
-                                mon_cmd(sample_interval),
-                                "monitor",
-                                aux_open_tx.clone(),
-                            );
-                            auxiliary_deadline =
-                                Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
+                        if resource_monitoring {
+                            if aux_open_in_flight {
+                                // 有别的开通道任务在飞：等它收尾再补，别丢掉这次切换。
+                                monitor_reopen_pending = true;
+                            } else {
+                                aux_open_in_flight = true;
+                                aux_open_for_startup = false;
+                                aux_open_started = Some(tokio::time::Instant::now());
+                                spawn_auxiliary_open(
+                                    handle.clone(),
+                                    AuxiliaryChannelKind::Resources,
+                                    mon_cmd(sample_interval),
+                                    "monitor",
+                                    aux_open_tx.clone(),
+                                );
+                                auxiliary_deadline =
+                                    Some(tokio::time::Instant::now() + AUX_OPEN_WATCHDOG);
+                            }
                         }
                     }
                     Some(SessionCommand::AddTunnel { id, forward }) => {
@@ -1088,6 +1146,7 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
             } => {
                 match mon {
                     Some(ChannelMsg::Data { data }) => {
+                        last_mon_sample_at = tokio::time::Instant::now();
                         mon_buf.push_str(&String::from_utf8_lossy(&data));
                         // Process every complete sample terminated by the marker.
                         while let Some(idx) = mon_buf.find("__MSTICK__") {
@@ -1120,6 +1179,7 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                         }
                     }
                     Some(ChannelMsg::Close) | None => {
+                        tracing::warn!("[MON] resource channel closed; watchdog will reopen");
                         mon_channel = None;
                     }
                     _ => {}

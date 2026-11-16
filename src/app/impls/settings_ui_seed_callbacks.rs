@@ -30,6 +30,55 @@ pub(super) fn wire_seed_callbacks(window: &AppWindow, ctx: &AppContext) {
         });
     }
 
+    // 曲线跨度下拉（overview 卡片内）：只改运行时，不落盘；新会话仍是 1 分钟。
+    {
+        let weak = window.as_weak();
+        let statuses = ctx.tab_statuses.clone();
+        let handles = ctx.handles.clone();
+        window.on_set_piece_span(
+            move |tab_id: slint::SharedString, kind: i32, index: i32| {
+                let secs = crate::app::resource_ui::SPAN_SECS
+                    .get(index.max(0) as usize)
+                    .copied()
+                    .unwrap_or(60);
+                if let Ok(mut map) = statuses.lock()
+                    && let Some(st) = map.get_mut(tab_id.as_str())
+                {
+                    match kind {
+                        0 => {
+                            st.cpu_span_secs = secs;
+                            st.cpu_hist.clear();
+                            st.cpu_acc = 0;
+                        }
+                        1 => {
+                            st.net_span_secs = secs;
+                            st.net_hist.clear();
+                            st.net_acc = 0;
+                        }
+                        _ => {
+                            st.mem_span_secs = secs;
+                            st.mem_hist.clear();
+                            st.mem_acc = 0;
+                        }
+                    }
+                    let interval = crate::app::resource_ui::base_step(
+                        st.cpu_span_secs,
+                        st.net_span_secs,
+                        st.mem_span_secs,
+                    );
+                    if let Ok(h) = handles.try_borrow()
+                        && let Some(handle) = h.get(tab_id.as_str())
+                    {
+                        handle.set_sample_interval(interval);
+                    }
+                }
+                if let Some(w) = weak.upgrade() {
+                    let _ = refresh_sidebar(&w, &statuses);
+                }
+            },
+        );
+    }
+
     window.set_wsl_profiles(wsl_profile_model(&store.borrow()));
     {
         let weak = window.as_weak();
