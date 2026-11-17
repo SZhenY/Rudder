@@ -173,6 +173,10 @@ pub(crate) async fn run_session(
     // setup echo split across chunk boundaries is still caught even if the
     // suppression state machine never engaged.
     let mut guard_tail = String::new();
+    // 注入 setup 的时刻：`guard_tail` 的窗口判据从这里起算（重连会重建泵，自然复位）。
+    let mut setup_injected_at: Option<tokio::time::Instant> = None;
+    // 扣留兜底：`guard_tail` 非空时置为 now + GUARD_HOLD，到点原样放出。
+    let mut guard_flush_at: Option<tokio::time::Instant> = None;
     // After a ZMODEM transfer finishes we briefly ignore ZMODEM detection so the
     // sender's lingering close frames can't spawn a spurious second receive (#76).
     let mut zmodem_done_at: Option<std::time::Instant> = None;
@@ -773,6 +777,28 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                     let _ = crate::output_budget::emit_output(&events, buf);
                 }
             }
+            // 扣留兜底：块尾最多被压 GUARD_HOLD，到点原样放出。
+            // 少了这条，单独敲下的 `t` 要等下一条输出才显示（没有下一条就永不显示）。
+            _ = async {
+                match guard_flush_at {
+                    Some(d) => tokio::time::sleep_until(d).await,
+                    None => std::future::pending::<()>().await,
+                }
+            }, if guard_flush_at.is_some() => {
+                guard_flush_at = None;
+                if !guard_tail.is_empty() {
+                    let tail = std::mem::take(&mut guard_tail);
+                    // 放出的只是前缀的真前缀（纯 ASCII、无 ESC），既不会再被
+                    // `final_setup_guard` 命中，也不需要走 OSC 697 扫描。
+                    debug_assert!(tail.len() < PROMPT_SETUP_PREFIX.len());
+                    tracing::debug!(
+                        "[SETUP] id={} guard tail flushed ({} bytes)",
+                        session.id,
+                        tail.len()
+                    );
+                    let _ = crate::output_budget::emit_output(&events, tail);
+                }
+            }
             // ⚠️ #264：后台任务正在开 exec 通道时**不能**轮询主 PTY 的
             // `channel.wait()` —— 严格的服务端会据此断开传输（侧边栏反复收展
             // 就会反复触发这条路径，连接于是"自己断开"）。
@@ -894,6 +920,7 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                         {
                             prompt_injected = true;
                             suppress_echo = true;
+                            setup_injected_at = Some(tokio::time::Instant::now());
                             tracing::info!(
                                 "[SETUP] id={} injected prompt_setup bytes={} suppress_echo=true",
                                 session.id,
@@ -1071,10 +1098,21 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                         // the setup command (a split echo arriving next block);
                         // anything else is rendered immediately, so normal
                         // output is never delayed or dropped.
-                        let keep = PROMPT_SETUP_PREFIX.len().saturating_sub(1).min(guarded.len());
-                        let split = guarded.floor_char_boundary(guarded.len() - keep);
-                        if PROMPT_SETUP_PREFIX.starts_with(&guarded[split..]) {
-                            guard_tail = guarded.split_off(split);
+                        //
+                        // 但**只在注入后的窗口内**允许扣留：`t` / `te` / `tes` /
+                        // `test` 都是该命令的真前缀，无条件扣留会让键盘回显卡死
+                        // （单独敲 `t` 要等下一条输出才显示）。
+                        let may_hold = may_hold_tail(
+                            suppress_echo,
+                            late_prompt_echo_pending,
+                            setup_injected_at.map(|t| t.elapsed()),
+                        );
+                        match guard_tail_split(&guarded, may_hold) {
+                            Some(split) => {
+                                guard_tail = guarded.split_off(split);
+                                guard_flush_at = Some(tokio::time::Instant::now() + GUARD_HOLD);
+                            }
+                            None => guard_flush_at = None,
                         }
                         let text = guarded;
 

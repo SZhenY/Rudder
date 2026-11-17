@@ -1,10 +1,10 @@
 #[cfg(test)]
 mod prompt_setup_echo_tests {
     use super::super::{
-        PROMPT_BODY, PROMPT_SETUP_HISTORY_MARKER, PROMPT_SETUP_PREFIX, accumulate_late_echo,
-        discard_prompt_setup_tail, final_setup_guard, prompt_setup_echo_end,
-        prompt_setup_supported, release_after_window_expiry, strip_late_prompt_setup_echo,
-        strip_prompt_setup_echo,
+        GUARD_WINDOW, PROMPT_BODY, PROMPT_SETUP_HISTORY_MARKER, PROMPT_SETUP_PREFIX,
+        accumulate_late_echo, discard_prompt_setup_tail, final_setup_guard, guard_tail_split,
+        may_hold_tail, prompt_setup_echo_end, prompt_setup_supported, release_after_window_expiry,
+        strip_late_prompt_setup_echo, strip_prompt_setup_echo,
     };
 
     #[test]
@@ -296,6 +296,47 @@ mod prompt_setup_echo_tests {
         // can't be distinguished), so compare trimmed.
         assert_eq!(lines.first().map(|s| s.trim_end()), Some(prompt.trim_end()));
         assert_eq!(crate::terminal::cursor_pos(&term), (0, prompt.len() as u16));
+    }
+
+    /// 缺陷现场：注入窗口外单独敲 `t` 必须立刻上屏，不能被当成待拼接的
+    /// setup 回显前缀扣下（`t` / `te` / `test` 都是该命令的真前缀）。
+    #[test]
+    fn guard_only_holds_inside_the_injection_window() {
+        use std::time::Duration;
+        let table = [
+            (false, false, None, false),
+            (false, false, Some(Duration::ZERO), false),
+            (true, false, Some(Duration::from_millis(100)), true),
+            (false, true, Some(Duration::from_millis(100)), true),
+            (false, true, Some(Duration::from_secs(5)), false),
+            (true, false, Some(GUARD_WINDOW), false),
+        ];
+        for (suppress, late, since, want) in table {
+            assert_eq!(
+                may_hold_tail(suppress, late, since),
+                want,
+                "suppress={suppress} late={late} since={since:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn single_letter_t_is_held_only_when_the_window_is_open() {
+        assert_eq!(guard_tail_split("t", false), None);
+        assert_eq!(guard_tail_split("t", true), Some(0));
+        assert_eq!(guard_tail_split("tes", true), Some(0));
+        assert_eq!(guard_tail_split("test", true), Some(0));
+        assert_eq!(guard_tail_split("test -z", true), Some(0));
+        assert_eq!(guard_tail_split("tst", true), None);
+        assert_eq!(guard_tail_split("", true), None);
+        // 只扣"末尾恰好是前缀"的那一段；前面的正常内容照常渲染。
+        let suffix = &PROMPT_SETUP_PREFIX[..PROMPT_SETUP_PREFIX.len() - 1];
+        let block = format!("{}{}", "x".repeat(5), suffix);
+        assert_eq!(guard_tail_split(&block, true), Some(5));
+        // 末尾不是前缀（哪怕以 t 结尾）时一律不扣。
+        let not_prefix = format!("{}test", "x".repeat(40));
+        assert_eq!(guard_tail_split(&not_prefix, true), None);
+        assert_eq!(guard_tail_split(&format!("{}t", "中".repeat(20)), true), None);
     }
 }
 

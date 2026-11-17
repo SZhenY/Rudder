@@ -22,3 +22,6 @@ ui/fonts/MapleMono*.ttf
 *.mp4
 *.mkv
 *.avi
+
+# Windows 快捷方式（本地文件，不入库）
+*.lnk

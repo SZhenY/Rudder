@@ -7,7 +7,10 @@ use super::*;
 pub(crate) const OUTPUT_MERGE_BYTE_CAP: usize = 64 * 1024;
 
 /// Output parsed between UI-flush checkpoints during sustained traffic.
-pub(crate) const INGEST_FRAME_BUDGET: usize = 64 * 1024;
+///
+/// 决定"一次 flush 前允许解析多少字节"，也就是一帧画面代表多少输出。
+/// 64 MiB 积压在 120Hz 下：64 KiB/帧 ⇒ 1024 帧 ≈ 9 s；256 KiB/帧 ⇒ 256 帧 ≈ 2.3 s。
+pub(crate) const INGEST_FRAME_BUDGET: usize = 256 * 1024;
 
 
 pub(crate) const INTERACTIVE_ECHO_WINDOW: std::time::Duration = std::time::Duration::from_millis(180);

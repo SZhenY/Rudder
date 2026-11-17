@@ -12,7 +12,7 @@ component PanelTab inherits Rectangle {
     in property <string> label;
     callback activate();
 
-    width: root.narrow ? 28px * Theme.ui-scale : root.tab-width;
+    width: root.tab-width;
     height: Theme.control-h-xs;
     border-radius: Theme.radius-sm;
     // 选中标记由 `SftpToolbar` 的共享滑块画（与左侧导航同款），这里只留 hover。
@@ -49,6 +49,49 @@ export component SftpToolbar inherits Rectangle {
     callback delete-selected();
     callback toggle-collapsed();
 
+    // --- 页签几何（唯一来源）---------------------------------------------
+    // 宽态 64/48/58、窄态三格等宽 28，间距统一 sp-4。页签宽度、滑块位置、
+    // 容器宽度三处都从这两个函数派生，改一处不会再有第二处对不上。
+    pure function tab-w(index: int, narrow: bool) -> length {
+        return narrow
+            ? 28px * Theme.ui-scale
+            : (index == 0 ? 64px : index == 1 ? 48px : 58px) * Theme.ui-scale;
+    }
+    pure function tab-x(index: int, narrow: bool) -> length {
+        return narrow
+            ? (index == 0 ? 0px : index == 1 ? 32px : 64px) * Theme.ui-scale
+            : (index == 0 ? 0px
+                : index == 1 ? 64px * Theme.ui-scale + Theme.sp-4
+                : 112px * Theme.ui-scale + 2 * Theme.sp-4);
+    }
+    pure function mode-index(mode: string) -> int {
+        return mode == "sftp" ? 1 : (mode == "tunnels" ? 2 : 0);
+    }
+
+    /// 页签条总宽：宽态 178px、图标态 92px（3×28 + 2×4）。
+    property <length> strip-w:
+        root.tab-x(2, root.narrow-toolbar) + root.tab-w(2, root.narrow-toolbar);
+
+    in-out property <length> ind-x:
+        root.tab-x(root.mode-index(root.panel-mode), root.narrow-toolbar);
+    in-out property <length> ind-w:
+        root.tab-w(root.mode-index(root.panel-mode), root.narrow-toolbar);
+    /// 本次写入是否允许动画：只有切换页签允许滑动，重排一律瞬时落位。
+    property <bool> ind-anim: true;
+    /// `narrow-toolbar` / `Theme.ui-scale` 的本地镜像：只为拿 `changed`。
+    property <bool> obs-narrow: root.narrow-toolbar;
+    property <float> obs-scale: Theme.ui-scale;
+
+    function place(animate: bool) {
+        if (!animate) { root.ind-anim = false; }   // 先关动画再写值
+        root.ind-x = root.tab-x(root.mode-index(root.panel-mode), root.narrow-toolbar);
+        root.ind-w = root.tab-w(root.mode-index(root.panel-mode), root.narrow-toolbar);
+        if (!animate) { anim-restore.running = true; }
+    }
+    changed panel-mode => { root.place(true); }    // 切页签：滑动
+    changed obs-narrow => { root.place(false); }   // 跨 480 阈值：重排，不滑
+    changed obs-scale => { root.place(false); }    // 缩放：不滑
+
     // 目录在别处变化（树点击、双击、终端 cd）时同步两个路径输入框（#54）。
     changed current-path => {
         path-input.text = root.current-path;
@@ -56,6 +99,13 @@ export component SftpToolbar inherits Rectangle {
     }
     height: root.narrow-toolbar && root.panel-mode == "sftp" ? Theme.toolbar-h-narrow : Theme.bar-h;
     background: Theme.bg-panel-alt;
+
+    // 瞬时落位后恢复动画：16ms 足够，Slint 在本次回调结束时就决定了要不要动画。
+    anim-restore := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => { anim-restore.running = false; root.ind-anim = true; }
+    }
 
     VerticalLayout {
         spacing: Theme.sp-6;
@@ -71,32 +121,35 @@ export component SftpToolbar inherits Rectangle {
         // 三个页签 + 共享滑动块：位置/宽度按 mode 固定，块在 layout 之外绝对定位。
         Rectangle {
             horizontal-stretch: 0;
-            width: 64px * Theme.ui-scale + 48px * Theme.ui-scale + 58px * Theme.ui-scale
-                + 2 * Theme.sp-4;
+            // 宽度跟着几何派生：宽态 178、图标态 92。原来写死 178 在图标态
+            // 多占 86px，会把右侧的 ⋮ 和收起按钮挤出面板。
+            width: root.strip-w;
             height: Theme.control-h-xs;
 
             Rectangle {
-                x: root.panel-mode == "overview" ? 0px
-                    : root.panel-mode == "sftp" ? 64px * Theme.ui-scale + Theme.sp-4
-                    : 64px * Theme.ui-scale + 48px * Theme.ui-scale + 2 * Theme.sp-4;
+                x: root.ind-x;
                 y: 0;
-                width: root.panel-mode == "overview" ? 64px * Theme.ui-scale
-                    : root.panel-mode == "sftp" ? 48px * Theme.ui-scale
-                    : 58px * Theme.ui-scale;
+                width: root.ind-w;
                 height: parent.height;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
                 border-color: Theme.state-selected-border;
                 background: Theme.state-selected;
-                visible: !root.narrow-toolbar;
+                // 图标态也常驻：原来 `visible: !narrow` 让窄态既没有高亮也没有滑动感。
+                opacity: root.ind-w > 0px ? 1 : 0;
                 animate x {
                     duration: AnimationSettings.enter-container();
                     easing: AnimationSettings.s-default();
-                    enabled: AnimationSettings.enabled;
+                    enabled: AnimationSettings.enabled && root.ind-anim;
                 }
                 animate width {
                     duration: AnimationSettings.enter-container();
                     easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled && root.ind-anim;
+                }
+                animate opacity {
+                    duration: AnimationSettings.short2();
+                    easing: AnimationSettings.e-standard-decelerate();
                     enabled: AnimationSettings.enabled;
                 }
             }
@@ -109,7 +162,7 @@ export component SftpToolbar inherits Rectangle {
             mode: "overview";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 64px * Theme.ui-scale;
+            tab-width: root.tab-w(0, root.narrow-toolbar);
             glyph: "\u{E871}";
             label: @tr("Overview");
             activate() => { root.panel-mode = "overview"; }
@@ -118,7 +171,7 @@ export component SftpToolbar inherits Rectangle {
             mode: "sftp";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 48px * Theme.ui-scale;
+            tab-width: root.tab-w(1, root.narrow-toolbar);
             glyph: "\u{E2C7}";
             label: "SFTP";
             activate() => { root.panel-mode = "sftp"; }
@@ -127,7 +180,7 @@ export component SftpToolbar inherits Rectangle {
             mode: "tunnels";
             panel-mode: root.panel-mode;
             narrow: root.narrow-toolbar;
-            tab-width: 58px * Theme.ui-scale;
+            tab-width: root.tab-w(2, root.narrow-toolbar);
             glyph: "\u{E0B6}";
             label: @tr("Tunnels");
             activate() => { root.panel-mode = "tunnels"; }

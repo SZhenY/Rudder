@@ -52,6 +52,11 @@ pub(crate) fn saturated() -> bool {
     PENDING.load(Ordering::Acquire) > OUTPUT_QUEUE_BYTE_BUDGET
 }
 
+/// 当前未释放的队列字节数（只读，供 `rudder::perf` 观测排空进度）。
+pub(crate) fn pending() -> usize {
+    PENDING.load(Ordering::Acquire)
+}
+
 /// Pause a session pump until the UI has caught up.
 pub(crate) async fn wait_for_drain() {
     let mut last_seq = RELEASE_SEQ.load(Ordering::Acquire);

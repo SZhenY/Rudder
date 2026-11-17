@@ -476,6 +476,40 @@ pub(crate) fn release_after_window_expiry(buf: &mut String, chunk: &str) -> Stri
 /// (or the block end).  False positives would require the user to type a
 /// command literally starting with `test -z "$FISH_VERSION"` — essentially
 /// impossible, and exactly the case #289 wanted stripped anyway.
+/// 只允许在「注入 setup 之后」的这段窗口内扣留块尾。
+/// 窗口外任何以 `t` 开头的输入都必须立刻上屏（见 `guard_tail_split`）。
+pub(crate) const GUARD_WINDOW: std::time::Duration = std::time::Duration::from_millis(3000);
+/// 单次扣留的硬上限：这是键盘回显延迟的上界。
+pub(crate) const GUARD_HOLD: std::time::Duration = std::time::Duration::from_millis(50);
+
+/// 是否允许把块尾扣住等下一块拼接。三个条件缺一不可：
+/// 注入过 setup、回显仍可能在路上、且距注入不超过 `GUARD_WINDOW`。
+/// `late_prompt_echo_pending` 的生命期是 10 秒，单靠它会把 `t` 扣 10 秒。
+pub(crate) fn may_hold_tail(
+    suppress: bool,
+    late_pending: bool,
+    since_inject: Option<std::time::Duration>,
+) -> bool {
+    let Some(since) = since_inject else {
+        return false;
+    };
+    since < GUARD_WINDOW && (suppress || late_pending)
+}
+
+/// 块尾切分：`Some(n)` 表示 `block[n..]` 是 `PROMPT_SETUP_PREFIX` 的真前缀，
+/// 应扣留；`None` 表示整块可立即渲染。
+pub(crate) fn guard_tail_split(block: &str, may_hold: bool) -> Option<usize> {
+    if !may_hold || block.is_empty() {
+        return None;
+    }
+    let keep = PROMPT_SETUP_PREFIX
+        .len()
+        .saturating_sub(1)
+        .min(block.len());
+    let split = block.floor_char_boundary(block.len() - keep);
+    PROMPT_SETUP_PREFIX.starts_with(&block[split..]).then_some(split)
+}
+
 pub(crate) fn final_setup_guard(text: &mut String) -> bool {
     let Some(p) = text.find(PROMPT_SETUP_PREFIX) else {
         return false;

@@ -277,13 +277,17 @@ pub(crate) struct TabDisplay {
 /// （CJK 一格占 2），与 `spans` 的绘制单位一致 —— 这两者必须同源，否则高亮会偏移。
 pub(crate) fn compute_tab_display(buf: &mut TermBuffer) -> TabDisplay {
     let cols = crate::terminal::term_size(&buf.term).1;
+    let started = std::time::Instant::now();
     let b = buf.render(); // also refreshes buf.displayed_text
+    let render_us = started.elapsed().as_micros();
     // 阶段 0 的观测点：默认不打印，RUST_LOG=rudder::perf=debug 时每帧一行。
     tracing::debug!(
         target: "rudder::perf",
         rebuilt = buf.frame_stats.rebuilt,
         reused = buf.frame_stats.reused,
         spans = b.spans.len(),
+        render_us = render_us,
+        pending = crate::output_budget::pending(),
         "frame"
     );
     let matches = compute_find_matches(&buf.displayed_text, &buf.find_query);

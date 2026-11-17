@@ -604,4 +604,38 @@ mod tests {
         let area: f32 = panes.iter().map(|p| p.w * p.h).sum();
         assert!(area > 0.0 && area <= 1006.0 * 606.0);
     }
+
+    /// 标签条高亮依赖 `leaf.active`：新建的标签必须立刻成为 active，
+    /// 否则 `pane.active-id` 不变，滑块拿不到几何（表现为"没有高亮"）。
+    #[test]
+    fn add_tab_appends_and_selects_the_new_tab() {
+        let mut l = Layout::new(vec!["welcome".into()], "welcome".into());
+        l.add_tab("t1".into());
+        let leaf = l.leaf(l.focused).unwrap();
+        assert_eq!(leaf.tabs, vec!["welcome".to_string(), "t1".to_string()]);
+        assert_eq!(leaf.active, "t1");
+    }
+
+    #[test]
+    fn flatten_reports_the_layouts_active_tab() {
+        let mut l = Layout::new(vec!["welcome".into()], "welcome".into());
+        l.add_tab("t1".into());
+        let (panes, _) = l.flatten_scaled(0.0, 0.0, 1000.0, 600.0, 1.0);
+        assert_eq!(panes.len(), 1);
+        assert_eq!(panes[0].active, "t1", "PaneInfo.active_id 直接取这个值");
+    }
+
+    #[test]
+    fn remove_tab_keeps_active_when_another_tab_is_closed() {
+        let mut l = Layout::new(vec!["a".into(), "b".into(), "c".into()], "b".into());
+        l.remove_tab("c");
+        assert_eq!(l.leaf(l.focused).unwrap().active, "b");
+    }
+
+    #[test]
+    fn remove_tab_rehomes_active_to_the_last_remaining_tab() {
+        let mut l = Layout::new(vec!["a".into(), "b".into()], "b".into());
+        l.remove_tab("b");
+        assert_eq!(l.leaf(l.focused).unwrap().active, "a");
+    }
 }

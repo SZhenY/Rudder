@@ -46,14 +46,54 @@ component SingleTab inherits Rectangle {
         enabled: AnimationSettings.enabled;
     }
 
-    /// 把自己在 `strip` 里的位置报给 TabBar 的滑动块（只在成为 active 时上报）。
-    callback report-geometry(length, length);
+    /// 把自己在 `strip` 里的位置报给 TabBar 的滑动块。
+    /// `animate` 只在"因切换而成为 active"时为 true —— 决定滑块是滑动还是瞬时落位。
+    callback report-geometry(length, length, bool /* animate */);
 
-    // Slint 不能监听布局属性（`changed root.x` 不合法），所以只在成为 active 时
-    // 上报一次：此时布局已完成，x/width 是最终值。切换标签即刷新滑块。
-    changed active => {
-        if (root.active) { root.report-geometry(root.x, root.width); }
+    // Slint 不允许 `changed root.x`（布局属性），而 `init` 执行时布局还没算完
+    // （读到的 width 是 0）。因此绑一个本地属性观察它，再用 1ms 单次 Timer 把
+    // 上报推迟到布局完成之后 —— 创建、切换、改名、重排、缩放五条路径都靠这套。
+    property <length> obs-x: root.x;
+    property <length> obs-w: root.width;
+    property <length> sent-x: -1px;
+    property <length> sent-w: -1px;
+    property <bool> animate-hint: false;
+    property <int> report-retry: 0;
+
+    function queue-report(animate: bool) {
+        if (!root.active) { return; }          // 只有 active 的几何有意义
+        if (animate) { root.animate-hint = true; }
+        report-timer.running = true;
     }
+
+    report-timer := Timer {
+        interval: 1ms;
+        running: false;
+        triggered => {
+            report-timer.running = false;
+            if (!root.active) { return; }
+            if (root.width <= 0px) {            // 布局尚未完成：再来一拍，最多 3 次
+                if (root.report-retry < 3) {
+                    root.report-retry += 1;
+                    report-timer.running = true;
+                }
+                return;
+            }
+            root.report-retry = 0;
+            if (root.sent-x == root.x && root.sent-w == root.width && !root.animate-hint) {
+                return;                         // 值没变：不打扰 TabBar
+            }
+            root.sent-x = root.x;
+            root.sent-w = root.width;
+            root.report-geometry(root.x, root.width, root.animate-hint);
+            root.animate-hint = false;
+        }
+    }
+
+    init => { root.queue-report(false); }                            // 启动 / 新建 / 改名 / 重排
+    changed active => { if (root.active) { root.queue-report(true); } } // 普通切换 → 允许滑动
+    changed obs-x => { root.queue-report(false); }                   // 邻居关闭导致位移
+    changed obs-w => { root.queue-report(false); }                   // ui-scale / 字体缩放
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
     // a higher z-order and receive their own click events.
@@ -204,9 +244,23 @@ export component TabBar inherits Rectangle {
     // 写它不会回灌布局（与 `tab-overflow` 的箭头覆盖层同一套做法）。
     in-out property <length> ind-x: 0px;
     in-out property <length> ind-w: 0px;
+    /// 已有过几何：控制滑块 opacity（首次是淡入，不是滑动）。
     property <bool> ind-ready: false;
-    changed tabs => { root.ind-ready = false; }
-    changed active-id => { root.ind-ready = false; }
+    /// 当前几何可信：只有它成立时才允许"切换标签"的滑动。
+    property <bool> ind-primed: false;
+    /// 本次写入是否允许动画：首次落位 / 改名 / 重排 / 缩放时临时关掉。
+    property <bool> ind-anim: true;
+    /// `Theme.ui-scale` 的本地镜像：只为拿 `changed` 回调（主题是全局单例）。
+    property <float> obs-scale: Theme.ui-scale;
+
+    // 结构性变化（增删 / 改名 / 重排都会换掉 tabs 子模型）→ 下一次上报瞬时落位；
+    // 只有整个标签栏空了才把滑块藏掉，避免留下孤儿高亮。
+    changed tabs => {
+        root.ind-primed = false;
+        if (root.tabs.length == 0) { root.ind-ready = false; }
+    }
+    // 缩放按比例改所有宽度：同样瞬时落位，否则滑块会从旧位置滑过去。
+    changed obs-scale => { root.ind-primed = false; }
 
     // Right-click context-menu state.
     property <length> menu-x;
@@ -225,6 +279,13 @@ export component TabBar inherits Rectangle {
     property <bool> tab-overflow:
         strip.preferred-width > root.width - root.reserve-right
             - (2 * 3px * Theme.ui-scale) - root.right-chrome-w - root.arrows-w;
+
+    // 瞬时落位后恢复动画。16ms 足够：Slint 在本次回调结束时就决定了要不要动画。
+    anim-restore := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => { anim-restore.running = false; root.ind-anim = true; }
+    }
 
     HorizontalLayout {
         padding: Theme.sp-3;
@@ -256,12 +317,12 @@ export component TabBar inherits Rectangle {
                 animate x {
                     duration: AnimationSettings.enter-container();
                     easing: AnimationSettings.s-default();
-                    enabled: AnimationSettings.enabled;
+                    enabled: AnimationSettings.enabled && root.ind-anim;
                 }
                 animate width {
                     duration: AnimationSettings.enter-container();
                     easing: AnimationSettings.s-default();
-                    enabled: AnimationSettings.enabled;
+                    enabled: AnimationSettings.enabled && root.ind-anim;
                 }
                 animate opacity {
                     duration: AnimationSettings.short2();
@@ -279,10 +340,19 @@ export component TabBar inherits Rectangle {
                     selected => { root.tab-selected(tab.id); }
                     closed => { root.tab-closed(tab.id); }
                     reorder(dir) => { root.tab-reorder(i, dir); }
-                    report-geometry(x, w) => {
-                        root.ind-x = x;
-                        root.ind-w = w;
-                        root.ind-ready = true;
+                    report-geometry(x, w, animate) => {
+                        if (animate && root.ind-primed && root.ind-ready) {
+                            root.ind-x = x;
+                            root.ind-w = w;
+                        } else {
+                            // 先关动画再写值：Slint 按语句顺序求值，写在前面才生效。
+                            root.ind-anim = false;
+                            root.ind-x = x;
+                            root.ind-w = w;
+                            root.ind-ready = true;
+                            anim-restore.running = true;
+                        }
+                        root.ind-primed = true;
                     }
                     context-requested(ax, ay) => {
                         root.menu-target = tab.id;

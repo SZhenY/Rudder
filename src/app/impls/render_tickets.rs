@@ -99,9 +99,20 @@ pub(crate) fn request_tab_render_from_ui(
 
 pub(crate) fn wait_for_ui_flush(ticket: Option<TabRenderTicket>) {
     if let Some(ticket) = ticket {
+        let started = std::time::Instant::now();
         let _ = ticket
             .gate
             .wait_for(ticket.generation, UI_FLUSH_ACK_TIMEOUT);
+        let waited = started.elapsed();
+        if waited >= UI_FLUSH_ACK_TIMEOUT {
+            // 超时说明 UI 这一帧没在 50ms 内交付：继续 ingest，但这条最值得看。
+            tracing::debug!(
+                target: "rudder::perf",
+                waited_us = waited.as_micros(),
+                pending = crate::output_budget::pending(),
+                "flush timeout"
+            );
+        }
     }
 }
 
