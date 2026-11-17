@@ -58,6 +58,9 @@ pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32, cap: usize) {
 }
 
 /// 折线图归一化：除以峰值（峰值从 1.0 起算，所以低流量不会被拉满整图）。
+///
+/// 仅测试路径使用：生产侧已改成 `smooth_path` + 上下行共用峰值。
+#[cfg(test)]
 pub(super) fn normalize(buf: &[f32]) -> Vec<f32> {
     let max = buf.iter().cloned().fold(1.0_f32, f32::max);
     buf.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect()
@@ -77,19 +80,25 @@ pub(super) fn graph_model(scaled: &[f32]) -> ModelRc<f32> {
 ///
 /// 输入按 0..1 处理（CPU 百分比先除 100）；末尾收口到基线形成面积填充。
 pub(super) fn smooth_path(values: &[f32], npts: usize) -> String {
-    let n = npts.max(2);
     if values.is_empty() {
         return String::new();
     }
+    // 禁止升采样：历史点数少于目标分辨率时按实际点数画。硬拉到 60 点会让相邻 x
+    // 重复同一个值，曲线上出现「平台 + 陡降」的台阶（15 秒档最明显）。
+    let n = npts.min(values.len()).max(2);
     let take = values.len().min(n);
     let offset = values.len() - take;
+    // 线性插值重采样：n == take 时取原值；降采样时按小数部分混合相邻两点。
     let sample = |k: usize| -> f32 {
         if take == 1 {
-            values[offset]
-        } else {
-            let idx = offset + k * (take - 1) / (n - 1);
-            values[idx.min(values.len() - 1)]
+            return values[offset];
         }
+        let t = k as f32 * (take - 1) as f32 / (n - 1) as f32;
+        let i = (t.floor() as usize).min(take - 1);
+        let f = t - i as f32;
+        let a = values[offset + i];
+        let b = values[offset + (i + 1).min(take - 1)];
+        a + (b - a) * f
     };
     let vx = |k: usize| -> f32 { k as f32 * 100.0 / (n - 1) as f32 };
     let vy = |v: f32| -> f32 { 100.0 * (1.0 - v.clamp(0.0, 1.0)) };

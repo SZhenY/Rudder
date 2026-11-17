@@ -15,10 +15,11 @@ component PanelTab inherits Rectangle {
     width: root.narrow ? 28px * Theme.ui-scale : root.tab-width;
     height: Theme.control-h-xs;
     border-radius: Theme.radius-sm;
-    background: root.panel-mode == root.mode ? Theme.accent : (tab-ta.has-hover ? Theme.state-hover : transparent);
+    // 选中标记由 `SftpToolbar` 的共享滑块画（与左侧导航同款），这里只留 hover。
+    background: tab-ta.has-hover ? Theme.state-hover : transparent;
     animate background {
-        duration: root.panel-mode == root.mode ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-        easing: root.panel-mode == root.mode ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
         enabled: AnimationSettings.enabled;
     }
     tab-ta := TouchArea {
@@ -28,7 +29,7 @@ component PanelTab inherits Rectangle {
     Text {
         text: root.narrow ? root.glyph : root.label;
         font-family: root.narrow ? "Material Icons" : Theme.ui-font-family;
-        color: root.panel-mode == root.mode ? #ffffff : Theme.text-secondary;
+        color: root.panel-mode == root.mode ? Theme.text-primary : Theme.text-secondary;
         font-size: Theme.fs-xs;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -67,6 +68,43 @@ export component SftpToolbar inherits Rectangle {
         padding-bottom: Theme.sp-6;
         spacing: Theme.sp-4;
 
+        // 三个页签 + 共享滑动块：位置/宽度按 mode 固定，块在 layout 之外绝对定位。
+        Rectangle {
+            horizontal-stretch: 0;
+            width: 64px * Theme.ui-scale + 48px * Theme.ui-scale + 58px * Theme.ui-scale
+                + 2 * Theme.sp-4;
+            height: Theme.control-h-xs;
+
+            Rectangle {
+                x: root.panel-mode == "overview" ? 0px
+                    : root.panel-mode == "sftp" ? 64px * Theme.ui-scale + Theme.sp-4
+                    : 64px * Theme.ui-scale + 48px * Theme.ui-scale + 2 * Theme.sp-4;
+                y: 0;
+                width: root.panel-mode == "overview" ? 64px * Theme.ui-scale
+                    : root.panel-mode == "sftp" ? 48px * Theme.ui-scale
+                    : 58px * Theme.ui-scale;
+                height: parent.height;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.state-selected-border;
+                background: Theme.state-selected;
+                visible: !root.narrow-toolbar;
+                animate x {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate width {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled;
+                }
+            }
+
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                spacing: Theme.sp-4;
         PanelTab {
             mode: "overview";
             panel-mode: root.panel-mode;
@@ -93,6 +131,8 @@ export component SftpToolbar inherits Rectangle {
             glyph: "\u{E0B6}";
             label: @tr("Tunnels");
             activate() => { root.panel-mode = "tunnels"; }
+        }
+            }
         }
 
         // 窄工具栏：状态、SFTP、隧道三个页签在左，操作按钮靠右；路径占第二行。

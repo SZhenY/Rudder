@@ -147,48 +147,9 @@ pub(super) fn wire_key_keys(window: &AppWindow, app: &AppContext) {
                 }
 
             // ── Windows: filter synthetic Ctrl+char injections ──────────────
-            // Some keyboards / IME drivers (e.g. Aula F99 + Baidu Pinyin)
-            // inject a synthetic WM_CHAR 0x11 (Ctrl+Q) when Left Ctrl is
-            // briefly tapped, WITHOUT sending a WM_KEYDOWN VK_Q beforehand.
-            //
-            // FinalShell avoids this because it builds Ctrl+letter from
-            // WM_KEYDOWN (virtual-key codes).  Slint uses WM_CHAR, so it
-            // sees the injected byte and forwards it straight to us.
-            //
-            // Fix: for C0 control chars (Ctrl+A…Ctrl+Z, i.e. 0x01–0x1A),
-            // use GetKeyState — which returns the key state *as of the last
-            // processed message*, not the live hardware state — to verify
-            // the corresponding letter VK was actually queued as a keydown
-            // before this WM_CHAR arrived.  If Q was never keyed down,
-            // GetKeyState(VK_Q) = 0 → the event is synthetic → drop it.
-            #[cfg(windows)]
-            if ctrl
-                && let Some(ch) = key.as_str().chars().next() {
-                    let cp = ch as u32;
-                    // Always let Enter / Tab pass through regardless of Ctrl
-                    // state.  These C0 codes (0x09 Tab, 0x0a LF, 0x0d CR) are
-                    // "double-duty" keys: pressing Enter while Ctrl is still
-                    // physically held (e.g. just after Ctrl+O in nano) generates
-                    // Ctrl+M (0x0d) with ctrl=true — but GetKeyState(VK_M) is 0
-                    // because the user never pressed M.  Without this exemption
-                    // the filter would silently drop the Enter, making it
-                    // impossible to confirm nano's "File Name to Write:" prompt.
-                    let always_pass = matches!(cp, 0x09 | 0x0a | 0x0d);
-                    if !always_pass
-                        && key.as_str().chars().count() == 1
-                        && (0x01..=0x1a).contains(&cp)
-                        && !c0_letter_key_down(cp)
-                    {
-                        tracing::debug!(
-                            "send_key: dropped synthetic Ctrl+{} \
-                             (VK_{:02X} not down per GetKeyState)",
-                            (0x40u8 + cp as u8) as char,
-                            cp + 0x40
-                        );
-                        return;
-                    }
-                }
-
+            // C0 控制码（含 Ctrl+C 的 0x03）不再用 GetKeyState 校验：那是「已处理
+            // 到最后一条消息」的快照，UI 线程繁忙时会与真实按键状态不一致，把真的
+            // Ctrl+C 当成合成事件丢掉。同类判定在 #319 里已从 Backspace 上删掉。
             // ── Filter synthetic Backspace injected by Chinese IME ────────────
             // Baidu Pinyin (and similar Chinese IMEs) hooks the keyboard at the
             // driver level via WH_KEYBOARD_LL, below Win32's ImmDisableIME.

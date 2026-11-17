@@ -9,6 +9,9 @@ export component TrendCurve inherits Rectangle {
     /// SVG path，坐标 0..100（带包围盒锚点，`fit: fill` 不会失真）。
     in property <string> commands;
     in property <brush> tone: Theme.accent;
+    /// 可选的第二条曲线（网络上行）：与主曲线同尺寸、同样式，只换色。
+    in property <string> second-commands;
+    in property <brush> second-tone: Theme.success;
     /// 末端当前值（0..1），用于画「现在」圆点。
     /// 末端当前值（0..1）；-1 表示不画圆点（网络图不需要）。
     in property <float> last: -1.0;
@@ -47,6 +50,19 @@ export component TrendCurve inherits Rectangle {
         width: parent.width;
         height: 1px;
         background: Theme.border-subtle;
+    }
+
+    // 第二条曲线先画、主曲线后画；两条都是半透明填充，叠加对顺序不敏感。
+    if root.second-commands != "" : Path {
+        x: 0;
+        y: 0;
+        width: parent.width;
+        height: parent.height;
+        fit: fill;
+        stroke: root.second-tone;
+        stroke-width: 1.5px;
+        fill: root.second-tone.with-alpha(0.16);
+        commands: root.second-commands;
     }
 
     if root.commands != "" : Path {

@@ -21,6 +21,8 @@ pub(crate) struct TabStatus {
     pub(crate) net: Vec<(String, u64, u64)>,
     pub(crate) selected_iface: String,
     pub(crate) net_hist: Vec<f32>,
+    /// 网络上行（tx）历史；`net_hist` 存下行（rx）。
+    pub(crate) net_up_hist: Vec<f32>,
     /// CPU 使用率历史（0..100，环形缓冲）。综合页趋势卡用它；与 `net_hist` 同长度。
     pub(crate) cpu_hist: Vec<f32>,
     /// 曲线时间跨度（秒）：15/60/300/1800/3600/21600；0 = 默认 60。只存运行时。
@@ -35,6 +37,8 @@ pub(crate) struct TabStatus {
     pub(crate) mem_acc: u32,
     /// 首个资源样本的时刻：就绪判据的 5 秒兜底用它，避免系统信息通道失败时永久转圈。
     pub(crate) first_stats_at: Option<std::time::Instant>,
+    /// 快照版本号：每写一次采样/进程/连接状态就 +1，UI 侧据此跳过无变化的整趟刷新。
+    pub(crate) stats_seq: u64,
     /// CPU 使用率的指数平滑值（α=0.25）：先平滑再入环，曲线不会随单拍抖动。
     pub(crate) cpu_ema: Option<f32>,
     pub(crate) disks: Vec<(String, u64, u64)>,

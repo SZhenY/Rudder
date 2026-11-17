@@ -219,6 +219,9 @@ pub fn run() -> Result<()> {
         let reclaim_bufs = bufs.clone();
         window.on_refresh_sidebar(move || {
             let Some(w) = weak.upgrade() else { return };
+            // 活动标签可能变了：清掉 seq 缓存，强制下一趟走全量刷新，
+            // 否则切回看过的标签会被 `stats_seq` 门控跳过、界面留着上一个标签的数据。
+            super::sidebar::invalidate_sidebar_cache();
             // 远端监控默认只开活动标签：3 条 exec 通道（750ms/1.5s/2.5s）在非活动标签
             // 上纯属浪费。MCP 启用时保持全量 —— 它的工具可能读任意标签的状态。
             let active = w.get_active_tab_id().to_string();
@@ -312,6 +315,24 @@ pub fn run() -> Result<()> {
                 w.invoke_refresh_sidebar();
             }
         });
+    }
+
+    // 侧栏 500ms 定时拉取：刷屏时 UI 线程被终端渲染占满，事件驱动的全量刷新会排
+    // 在渲染任务后面（看起来卡顿）。采集只写 `TabStatus` 快照，这里按固定节奏应用。
+    {
+        let weak = window.as_weak();
+        let statuses = tab_statuses.clone();
+        let timer = slint::Timer::default();
+        timer.start(
+            slint::TimerMode::Repeated,
+            std::time::Duration::from_millis(500),
+            move || {
+                if let Some(w) = weak.upgrade() {
+                    refresh_sidebar(&w, &statuses);
+                }
+            },
+        );
+        std::mem::forget(timer);
     }
 
     // Theme toggle: flip dark ↔ light, persist the preference, and re-render

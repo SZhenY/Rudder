@@ -115,13 +115,21 @@ pub(crate) fn wire_tab_lifecycle(window: &AppWindow, ctx: &AppContext) {
             }
             {
                 let mut lay = layout.borrow_mut();
-                if let Some(owner) = lay.leaf_of_tab("welcome") {
-                    lay.focused = owner;
-                    if let Some(l) = lay.leaf_mut(owner) {
-                        l.active = "welcome".into();
+                // 已经显示着会话标签时只是让主区域拿回焦点，不把 active 改成欢迎页
+                // —— 否则「会话 → 设置 → 主机」会丢掉当前会话。
+                let focused_active = lay
+                    .leaf(lay.focused)
+                    .map(|l| l.active.clone())
+                    .unwrap_or_default();
+                if focused_active.is_empty() || focused_active == "welcome" {
+                    if let Some(owner) = lay.leaf_of_tab("welcome") {
+                        lay.focused = owner;
+                        if let Some(l) = lay.leaf_mut(owner) {
+                            l.active = "welcome".into();
+                        }
+                    } else {
+                        lay.add_tab("welcome".into());
                     }
-                } else {
-                    lay.add_tab("welcome".into());
                 }
             }
             if let Some(w) = weak.upgrade() {

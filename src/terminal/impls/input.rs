@@ -420,19 +420,6 @@ pub(crate) fn key_to_pty_bytes(key: &str, ctrl: bool, alt: bool, app_cursor: boo
     key.as_bytes().to_vec()
 }
 
-#[cfg(windows)]
-pub(crate) fn c0_letter_key_down(codepoint: u32) -> bool {
-    if !(0x01..=0x1a).contains(&codepoint) {
-        return true;
-    }
-    let virtual_key = (codepoint + 0x40) as i32;
-    #[allow(non_snake_case)]
-    unsafe extern "system" {
-        fn GetKeyState(nVirtKey: i32) -> i16;
-    }
-    unsafe { (GetKeyState(virtual_key) as u16) & 0x8000 != 0 }
-}
-
 #[cfg(test)]
 mod interrupt_tests {
     use super::{encode_mouse_event, key_to_pty_bytes, should_drop_bare_ctrl_marker};

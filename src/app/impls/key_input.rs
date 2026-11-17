@@ -18,8 +18,6 @@ use crate::terminal::{
     scrollback_key_from_text, should_drop_bare_ctrl_marker, store_pending_paste,
     take_pending_paste, terminal_uses_bracketed_paste, PendingPaste, BACK_TAB_BYTES,
 };
-#[cfg(windows)]
-use crate::terminal::c0_letter_key_down;
 use crate::ui::{AppWindow, TermMatch, TermSpan};
 use crate::app::quick_commands::{all_quick_group_names, quick_cmd_model, reorder_quick_command};
 use crate::app::pane_layout::zoom_term_font;

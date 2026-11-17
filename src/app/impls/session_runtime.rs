@@ -338,10 +338,9 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                             ui_batch.push(SessionEvent::CwdChanged(cwd));
                         }
                         SessionEvent::Output(chunk) => {
-                            // Bytes leave the budget when the event leaves the
-                            // channel, not after ingest: a render gate stuck
-                            // during shutdown must not strand the accounting.
-                            crate::output_budget::release(chunk.len());
+                            // 预算在 `ingest_terminal_output` 之后才释放（见下面的
+                            // 批内循环）：只按「已真正画进 TermBuffer 的字节」记账，
+                            // `wait_for_drain` 才能反映端到端积压。
                             // Merge with the immediately preceding Output so the
                             // whole run is one vt100 ingest + one render. Only
                             // *adjacent* chunks merge, so byte order (and any
@@ -381,6 +380,9 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                                 &tab_id_pump,
                                 chunk.as_bytes(),
                             );
+                            // 已进模型，释放预算（`RELEASE_SEQ` 随之前进，
+                            // `STALL_LIMIT` 不会再被误触发）。
+                            crate::output_budget::release(chunk_len);
                             if !reply.is_empty() {
                                 let _ = terminal_reply_tx.send(SessionCommand::RawInput(reply));
                             }
@@ -427,7 +429,28 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
                 let gates_evt = render_gates_pump.clone();
                 let _ = slint::invoke_from_event_loop(move || {
                     if let Some(win) = weak_evt.upgrade() {
-                        for evt in ui_only {
+                        // 采样事件先应用，再处理终端输出：侧栏快照不再排在几十 MB
+                        // 输出的 ingest 之后，`TabStatus` 的更新时间只受本批调度影响。
+                        let (stats, rest): (Vec<_>, Vec<_>) = ui_only.into_iter().partition(|e| {
+                            matches!(
+                                e,
+                                SessionEvent::ResourceStats { .. }
+                                    | SessionEvent::ProcessStats { .. }
+                            )
+                        });
+                        for evt in stats {
+                            apply_session_event_to_window(
+                                &win,
+                                &tid,
+                                evt,
+                                &SessionResources {
+                                    bufs: &bufs_evt,
+                                    gates: &gates_evt,
+                                    statuses: &st_evt,
+                                },
+                            );
+                        }
+                        for evt in rest {
                             apply_session_event_to_window(
                                 &win,
                                 &tid,

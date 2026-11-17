@@ -71,6 +71,9 @@ fn clear_host_card(win: &AppWindow) {
     if !win.get_net_top_path().is_empty() {
         win.set_net_top_path("".into());
     }
+    if !win.get_net_up_path().is_empty() {
+        win.set_net_up_path("".into());
+    }
 }
 
 fn clear_stats(win: &AppWindow) {
@@ -114,12 +117,19 @@ fn overview_ready(st: &TabStatus) -> bool {
     }
 }
 
-/// 系统信息表的一次写入量：把原先逐个透传的 7 个值收成一个参数。
+thread_local! {
+    // 每个标签最近一次已应用到 UI 的 `stats_seq`。
+    static APPLIED_SEQ: std::cell::RefCell<std::collections::HashMap<String, u64>> =
+        std::cell::RefCell::new(std::collections::HashMap::new());
+}
+
+/// 活动标签变化时清掉 seq 缓存，强制下一次刷新按全量走。
+pub(super) fn invalidate_sidebar_cache() {
+    APPLIED_SEQ.with(|m| m.borrow_mut().clear());
+}
+
 pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> SidebarStats {
     let mut stats = SidebarStats::default();
-
-    win.set_proc_available(false);
-    set_procs(win, &[], "", "");
 
     let active = win.get_active_tab_id().to_string();
     let status = if active == "welcome" {
@@ -127,6 +137,27 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
     } else {
         statuses.lock().ok().and_then(|s| s.get(&active).cloned())
     };
+
+    // 快照没变就只刷新连接状态行：空闲时不再重新栅格化三条曲线、不再重建进程列表。
+    if let Some(st) = status.as_ref() {
+        let unchanged = APPLIED_SEQ.with(|m| m.borrow().get(&active).copied() == Some(st.stats_seq));
+        if unchanged {
+            win.set_conn_state(conn_state_code(st.state));
+            win.set_connection_state(connection_label(st.state, &st.host).into());
+            win.set_conn_host(conn_ip(&st.host).into());
+            win.set_stats_ready(overview_ready(st));
+            return stats;
+        }
+        APPLIED_SEQ.with(|m| {
+            m.borrow_mut().insert(active.clone(), st.stats_seq);
+        });
+    }
+
+    // 非已连接态先清掉进程入口（`apply_rows` 在列表已空时是 no-op，不重复标脏）。
+    if status.as_ref().is_none_or(|st| st.state != 1) {
+        win.set_proc_available(false);
+        set_procs(win, &[], "", "");
+    }
 
     match status {
         // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
@@ -175,8 +206,24 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             let (name, rx, tx) = selected_iface(&st);
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());
-            let hist = normalize(&st.net_hist);
-            win.set_net_top_path(smooth_path(&hist, 60).into());
+            // 上下行共用同一个峰值：两条线画在同一刻度上才可比。
+            let peak = st
+                .net_hist
+                .iter()
+                .chain(st.net_up_hist.iter())
+                .fold(1.0_f32, |m, v| m.max(*v));
+            let down: Vec<f32> = st
+                .net_hist
+                .iter()
+                .map(|v| (v / peak).clamp(0.0, 1.0))
+                .collect();
+            let up: Vec<f32> = st
+                .net_up_hist
+                .iter()
+                .map(|v| (v / peak).clamp(0.0, 1.0))
+                .collect();
+            win.set_net_top_path(smooth_path(&down, 60).into());
+            win.set_net_up_path(smooth_path(&up, 60).into());
             win.set_net_show_selector(!st.net.is_empty());
             win.set_net_selected(name.into());
             let ifaces: Vec<SharedString> = st.net.iter().map(|e| e.0.clone().into()).collect();

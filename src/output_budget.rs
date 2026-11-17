@@ -47,6 +47,11 @@ pub(crate) fn release(len: usize) {
     DRAINED.notify_waiters();
 }
 
+/// 队列是否已顶到预算上限：泵只在饱和时停读 PTY，输入仍可竞争。
+pub(crate) fn saturated() -> bool {
+    PENDING.load(Ordering::Acquire) > OUTPUT_QUEUE_BYTE_BUDGET
+}
+
 /// Pause a session pump until the UI has caught up.
 pub(crate) async fn wait_for_drain() {
     let mut last_seq = RELEASE_SEQ.load(Ordering::Acquire);

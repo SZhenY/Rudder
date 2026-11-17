@@ -116,6 +116,7 @@ export component TerminalView inherits Rectangle {
     in property <[DiskInfo]> disks;
     in property <string> cpu-path;
     in property <string> mem-path;
+    in property <string> net-up-path;
     in property <string> host-name;
     in property <string> host-ip;
     in property <string> host-os;
@@ -1356,6 +1357,7 @@ export component TerminalView inherits Rectangle {
             net-top-up: root.net-top-up;
             net-top-down: root.net-top-down;
             net-top-path: root.net-top-path;
+            net-up-path: root.net-up-path;
             span-labels: root.span-labels;
             stats-ready: root.stats-ready;
             cpu-span-index <=> root.cpu-span-index;

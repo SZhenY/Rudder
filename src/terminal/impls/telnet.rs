@@ -165,8 +165,10 @@ async fn run_telnet(
     let mut buf = [0u8; 4096];
 
     loop {
-        crate::output_budget::wait_for_drain().await;
         tokio::select! {
+            // 饱和时读分支被 guard 关掉，必须留一个唤醒源，否则本循环除了用户
+            // 按键再也没有定时器，预算回落也回不来（永久停读输出）。
+            _ = crate::output_budget::wait_for_drain(), if crate::output_budget::saturated() => {}
             cmd = commands.recv() => {
                 match cmd {
                     Some(SessionCommand::RawInput(bytes)) => {
@@ -204,7 +206,7 @@ async fn run_telnet(
                     Some(SessionCommand::Close) | None => break,
                 }
             }
-            r = rd.read(&mut buf) => {
+            r = rd.read(&mut buf), if !crate::output_budget::saturated() => {
                 match r {
                     Ok(0) => break, // peer closed
                     Ok(n) => {

@@ -36,15 +36,23 @@ component SingleTab inherits Rectangle {
     max-width: 320px * Theme.ui-scale;
     horizontal-stretch: 0;
     border-radius: Theme.radius-sm;
-    border-width: active ? 2px * Theme.ui-scale : 0px;
-    border-color: active ? Theme.accent : transparent;
+    // 选中标记不再画在标签里：`TabBar` 用一个共享的滑动块（见 `ind-x` / `ind-w`），
+    // 这里只保留 hover / 按下反馈。
     background: dragging ? Theme.state-press
-        : (active ? Theme.tab-active-bg
-        : (touch.has-hover ? Theme.state-hover : transparent));
+        : (touch.has-hover ? Theme.state-hover : transparent);
     animate background {
-        duration: (dragging || active || touch.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-        easing: (dragging || active || touch.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        duration: AnimationSettings.short2();
+        easing: AnimationSettings.e-standard-decelerate();
         enabled: AnimationSettings.enabled;
+    }
+
+    /// 把自己在 `strip` 里的位置报给 TabBar 的滑动块（只在成为 active 时上报）。
+    callback report-geometry(length, length);
+
+    // Slint 不能监听布局属性（`changed root.x` 不合法），所以只在成为 active 时
+    // 上报一次：此时布局已完成，x/width 是最终值。切换标签即刷新滑块。
+    changed active => {
+        if (root.active) { root.report-geometry(root.x, root.width); }
     }
 
     // Declared FIRST so the HorizontalLayout's children (close button) are at
@@ -192,6 +200,14 @@ export component TabBar inherits Rectangle {
     callback tab-rename-request(string /* tab-id */);
     callback merge-pane();
 
+    // 选中高亮块：由 SingleTab 上报自身的 x/width，滑块放在任何 layout 之外，
+    // 写它不会回灌布局（与 `tab-overflow` 的箭头覆盖层同一套做法）。
+    in-out property <length> ind-x: 0px;
+    in-out property <length> ind-w: 0px;
+    property <bool> ind-ready: false;
+    changed tabs => { root.ind-ready = false; }
+    changed active-id => { root.ind-ready = false; }
+
     // Right-click context-menu state.
     property <length> menu-x;
     property <length> menu-y;
@@ -224,6 +240,36 @@ export component TabBar inherits Rectangle {
             horizontal-stretch: 1;
             content-height: self.height;
             content-width: max(self.width, strip.preferred-width);
+
+            // 滑动高亮块：与左侧导航的滑轨同款（state-selected + 1px 描边 + radius），
+            // 位置/宽度听 SingleTab 上报，切换标签时平滑滑动。
+            Rectangle {
+                x: root.ind-x;
+                y: 0;
+                width: root.ind-w;
+                height: parent.height;
+                border-radius: Theme.radius-sm;
+                border-width: 1px;
+                border-color: Theme.state-selected-border;
+                background: Theme.state-selected;
+                opacity: root.ind-ready ? 1 : 0;
+                animate x {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate width {
+                    duration: AnimationSettings.enter-container();
+                    easing: AnimationSettings.s-default();
+                    enabled: AnimationSettings.enabled;
+                }
+                animate opacity {
+                    duration: AnimationSettings.short2();
+                    easing: AnimationSettings.e-standard-decelerate();
+                    enabled: AnimationSettings.enabled;
+                }
+            }
+
             strip := HorizontalLayout {
                 spacing: Theme.sp-2;
                 alignment: start;
@@ -233,6 +279,11 @@ export component TabBar inherits Rectangle {
                     selected => { root.tab-selected(tab.id); }
                     closed => { root.tab-closed(tab.id); }
                     reorder(dir) => { root.tab-reorder(i, dir); }
+                    report-geometry(x, w) => {
+                        root.ind-x = x;
+                        root.ind-w = w;
+                        root.ind-ready = true;
+                    }
                     context-requested(ax, ay) => {
                         root.menu-target = tab.id;
                         root.menu-x = ax - root.absolute-position.x;

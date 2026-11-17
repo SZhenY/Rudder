@@ -60,6 +60,7 @@ export component OverviewPanel inherits Rectangle {
     in property <[DiskInfo]> disks;
     in property <string> cpu-path;
     in property <string> mem-path;
+    in property <string> net-up-path;
     in property <string> host-name;
     in property <string> host-ip;
     in property <string> host-os;
@@ -225,6 +226,7 @@ export component OverviewPanel inherits Rectangle {
             net-top-up: root.net-top-up;
             net-top-down: root.net-top-down;
             net-top-path: root.net-top-path;
+            net-up-path: root.net-up-path;
             net-ifaces: root.net-ifaces;
             net-selected: root.net-selected;
             net-show-selector: root.net-show-selector;

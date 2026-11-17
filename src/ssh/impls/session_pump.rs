@@ -367,10 +367,11 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
 
     // --- Main pump ------------------------------------------------------
     loop {
-        // Stop pulling from the PTY while the UI is behind, so a `yes`/`cat`
-        // firehose cannot grow the event queue without bound.
-        crate::output_budget::wait_for_drain().await;
         tokio::select! {
+            // 饱和时数据分支被 guard 关掉，这里必须留一个**唤醒源**：等预算回落
+            // 就回到循环，数据分支重新可用。否则只剩 `mon_watchdog` 的 3 秒脉冲，
+            // 读取会退化成每 3 秒一小批，`STALL_LIMIT` 自愈也再不可达。
+            _ = crate::output_budget::wait_for_drain(), if crate::output_budget::saturated() => {}
             _ = mon_watchdog.tick() => {
                 // 连续 3 个采样周期没有新样本 → 远端循环卡住或通道被回收。
                 // 主动重开一次（走同一个 `aux_open_in_flight` 互斥，不破坏 #264）。
@@ -702,6 +703,14 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                         );
                     }
                     Some(SessionCommand::Close) | None => {
+                        // 先让远端 shell 正常退出：bash 走 SIGHUP 的路径不写
+                        // HISTFILE，直接 eof 会让本次会话的历史整段丢掉。
+                        // alt-screen 里（vim/less）`exit` 不生效，300ms 后照样 eof。
+                        let _ = tokio::time::timeout(
+                            std::time::Duration::from_millis(300),
+                            channel.data(&b"exit\r"[..]),
+                        )
+                        .await;
                         let _ = tokio::time::timeout(CLOSE_GRACE, channel.eof()).await;
                         break;
                     }
@@ -774,7 +783,9 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                 } else {
                     channel.wait().await
                 }
-            } => {
+            },
+                if !crate::output_budget::saturated()
+            => {
                 match msg {
                     Some(ChannelMsg::Data { data }) => {
                         // Route the two ZMODEM handshakes in opposite directions:

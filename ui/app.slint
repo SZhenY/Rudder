@@ -245,7 +245,9 @@ export component AppWindow inherits Window {
     property <float> nav-fade: 1.0;
     property <bool> nav-swapping: false;
     /// 导航高亮跟点击即时走。`NavPanel` 的 `current-page` 绑这个值。
-    property <int> nav-highlight: root.nav-page;
+    /// 会话页（1）在左侧导航里没有对应行：高亮留在「主机」，会话自己的标签页
+    /// 用同款实心块表示选中。
+    property <int> nav-highlight: root.nav-page == 1 ? 0 : root.nav-page;
 
     function nav-goto(p: int) {
         // 与已落位的 nav-page 比较：连点两个不同项时第二次不会被吞掉。
@@ -300,6 +302,7 @@ export component AppWindow inherits Window {
     /// CPU 使用率历史（0..100），综合页趋势卡用。
     in property <string> cpu-path;
     in property <string> mem-path;
+    in property <string> net-up-path;
     // Command bar (#55): quick commands + history, fed from Rust.
     in property <[QuickCmd]> quick-commands;
     in-out property <bool> quick-commands-as-sidebar: false;
@@ -1287,6 +1290,7 @@ export component AppWindow inherits Window {
                         net-top-up: root.net-top-up;
                         net-top-down: root.net-top-down;
                         net-top-path: root.net-top-path;
+                        net-up-path: root.net-up-path;
                                                             net-ifaces: root.net-ifaces;
                         net-selected: root.net-selected;
                         net-show-selector: root.net-show-selector;

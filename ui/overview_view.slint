@@ -58,6 +58,8 @@ export component OverviewView inherits Rectangle {
     in property <string> cpu-path;
     /// 内存占用历史曲线（0..1）。
     in property <string> mem-path;
+    /// 网络上行（tx）曲线。
+    in property <string> net-up-path;
     // 主机头卡：远端 overview 的结构化字段。
     in property <string> host-name;
     in property <string> host-ip;
@@ -329,6 +331,7 @@ export component OverviewView inherits Rectangle {
                     net-top-up: root.net-top-up;
                     net-top-down: root.net-top-down;
                     net-top-path: root.net-top-path;
+                    net-up-path: root.net-up-path;
                 }
             }
 

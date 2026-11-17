@@ -99,6 +99,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 && let Some(st) = s.get_mut(tab_id)
             {
                 st.state = 1;
+                st.stats_seq = st.stats_seq.wrapping_add(1);
                 st.failed = false;
             }
             if win.get_active_tab_id().as_str() == tab_id {
@@ -140,6 +141,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 // 从未连上就 Closed = 连接失败；连上后 Closed = 掉线。
                 st.failed = closed_means_failure(st.state);
                 st.state = 2;
+                st.stats_seq = st.stats_seq.wrapping_add(1);
             }
             // 注意：意外断线（网络 / 远端挂掉）**保留**回滚历史 —— 用户正要看断线前发生了什么，
             // 此时清掉是最不该做的事。释放只发生在用户**主动关标签页**时
@@ -177,6 +179,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 let now = std::time::Instant::now();
                 st.last_stats_at = Some(now);
                 st.first_stats_at.get_or_insert(now);
+                st.stats_seq = st.stats_seq.wrapping_add(1);
                 // A sample means the channel is alive → treat as connected.
                 if st.state != 1 {
                     st.state = 1;
@@ -191,11 +194,9 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 let net_step_ms = card_step(st.net_span_secs) * 1000;
                 if st.net_acc >= net_step_ms {
                     st.net_acc -= net_step_ms;
-                    push_ring(
-                        &mut st.net_hist,
-                        (rx + tx) as f32,
-                        card_points(st.net_span_secs),
-                    );
+                    let net_cap = card_points(st.net_span_secs);
+                    push_ring(&mut st.net_up_hist, tx as f32, net_cap);
+                    push_ring(&mut st.net_hist, rx as f32, net_cap);
                 }
                 // CPU 趋势：先做 EMA(α=0.25) 再入环 —— 1 Hz 的原始百分比抖动太大，
                 // 直接画线会呈锯齿；首拍没有历史时取原值。
@@ -223,9 +224,8 @@ pub(crate) fn apply_session_event_to_window<'a>(
                     );
                 }
             }
-            if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses);
-            }
+            // 快照已写进 `TabStatus`；UI 由 500ms 的定时器拉取（`run.rs`），
+            // 刷屏时不再与终端渲染争 UI 线程。
         }
         SessionEvent::ProcessStats {
             current_user,
@@ -238,9 +238,7 @@ pub(crate) fn apply_session_event_to_window<'a>(
                     st.user = current_user;
                 }
                 st.procs = procs;
-            }
-            if win.get_active_tab_id().as_str() == tab_id {
-                refresh_sidebar(win, statuses);
+                st.stats_seq = st.stats_seq.wrapping_add(1);
             }
         }
         // --- SFTP events ---------------------------------------------------

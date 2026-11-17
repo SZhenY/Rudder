@@ -47,11 +47,11 @@ pub(crate) struct AppContext {
 
 impl AppContext {
     pub(crate) fn new(config: ConfigStore, window: AppWindow) -> anyhow::Result<Self> {
-        // SSH / SFTP / MCP 都是 I/O 型任务，2 个 worker 足够；默认按核数起线程会
-        // 多预留数份 2 MiB 栈。真遇到并发传输瓶颈再调大。
+        // SSH / SFTP / MCP 都是 I/O 型任务，但单个刷屏会话的泵 + russh 传输就会
+        // 占满两个 worker，导致 SFTP/MCP 与输入一起被推迟。给 4 个留出余量。
         let runtime = Arc::new(
             tokio::runtime::Builder::new_multi_thread()
-                .worker_threads(2)
+                .worker_threads(4)
                 .enable_all()
                 .build()
                 .context("failed to start tokio runtime")?,
