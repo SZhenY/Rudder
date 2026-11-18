@@ -14,10 +14,13 @@ case "$ref" in
     *) tag_name="v$ref" ;;
 esac
 
-root=$(git rev-parse --show-toplevel 2>/dev/null) || {
-    echo "不在 git 仓库内" >&2
+# 容器作业里工作区归属与 checkout 时不同，git rev-parse 会被 safe.directory 拒绝；
+# 失败时回退到 GITHUB_WORKSPACE（或当前目录），只要求能读到 CHANGELOG.md。
+root=$(git rev-parse --show-toplevel 2>/dev/null || printf '%s' "${GITHUB_WORKSPACE:-$PWD}")
+if [ ! -f "$root/CHANGELOG.md" ]; then
+    echo "找不到 CHANGELOG.md: $root" >&2
     exit 1
-}
+fi
 cd "$root"
 
 section=$(bash scripts/changelog-section.sh "$ver" 2>/dev/null || true)
