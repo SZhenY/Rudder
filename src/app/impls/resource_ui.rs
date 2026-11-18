@@ -57,21 +57,6 @@ pub(super) fn push_ring(buf: &mut Vec<f32>, val: f32, cap: usize) {
     }
 }
 
-/// 折线图归一化：除以峰值（峰值从 1.0 起算，所以低流量不会被拉满整图）。
-///
-/// 仅测试路径使用：生产侧已改成 `smooth_path` + 上下行共用峰值。
-#[cfg(test)]
-pub(super) fn normalize(buf: &[f32]) -> Vec<f32> {
-    let max = buf.iter().cloned().fold(1.0_f32, f32::max);
-    buf.iter().map(|v| (v / max).clamp(0.0, 1.0)).collect()
-}
-
-/// 仅测试用：归一化结果对应的新模型（生产路径已改成 `smooth_path` 字符串）。
-#[cfg(test)]
-pub(super) fn graph_model(scaled: &[f32]) -> ModelRc<f32> {
-    ModelRc::from(Rc::new(VecModel::from(scaled.to_vec())))
-}
-
 /// 把样本画成「中点二次贝塞尔」的 SVG path，坐标系固定 0..100。
 ///
 /// 节点取相邻采样点的中点、数据点只作控制点 —— 直连数据点的折线太生硬，这样
@@ -173,33 +158,35 @@ pub(super) fn try_write_rows_changed<T: Clone + PartialEq + 'static>(
     Some(apply_rows_slice(vm, next))
 }
 
+/// 挂载点过滤串（空格 / 逗号 / 分号分隔）→ 白名单；空串表示不过滤。
+fn mount_filters(mount_filter: &str) -> Vec<&str> {
+    if mount_filter.is_empty() {
+        return Vec::new();
+    }
+    mount_filter
+        .split([' ', ',', ';'])
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .collect()
+}
+
+/// 一行磁盘是否要显示：隐藏伪文件系统与用户指定挂载点。
+fn disk_kept(mount: &str, filters: &[&str], hide_special: bool) -> bool {
+    if hide_special && is_special_partition(mount) {
+        return false;
+    }
+    filters.is_empty() || filters.contains(&mount)
+}
+
 pub(super) fn disk_rows(
     disks: &[(String, u64, u64)],
     mount_filter: &str,
     hide_special: bool,
 ) -> Vec<DiskInfo> {
-    let filters: Vec<&str> = if mount_filter.is_empty() {
-        vec![]
-    } else {
-        mount_filter
-            .split([' ', ',', ';'])
-            .map(|s| s.trim())
-            .filter(|s| !s.is_empty())
-            .collect()
-    };
+    let filters = mount_filters(mount_filter);
     disks
         .iter()
-        .filter(|(mount, _, _)| {
-            // Hide pseudo-filesystems and tiny special partitions when enabled.
-            if hide_special && is_special_partition(mount) {
-                return false;
-            }
-            if filters.is_empty() {
-                true
-            } else {
-                filters.contains(&mount.as_str())
-            }
-        })
+        .filter(|(mount, _, _)| disk_kept(mount, &filters, hide_special))
         .map(|(mount, avail, total)| {
             let used = total.saturating_sub(*avail);
             let percent = if *total > 0 {
@@ -214,6 +201,28 @@ pub(super) fn disk_rows(
             }
         })
         .collect()
+}
+
+/// 系统盘用量：优先挂载点 `/`，否则取过滤后的第一块盘。
+/// 返回 `(percent, used_bytes, total_bytes)`；没有可用行时 `None`。
+pub(super) fn system_disk_usage(
+    disks: &[(String, u64, u64)],
+    mount_filter: &str,
+    hide_special: bool,
+) -> Option<(f32, u64, u64)> {
+    let filters = mount_filters(mount_filter);
+    let kept = |mount: &str| disk_kept(mount, &filters, hide_special);
+    let (_, avail, total) = disks
+        .iter()
+        .find(|(mount, _, _)| mount == "/" && kept(mount))
+        .or_else(|| disks.iter().find(|(mount, _, _)| kept(mount)))?;
+    let used = total.saturating_sub(*avail);
+    let percent = if *total > 0 {
+        used as f32 / *total as f32
+    } else {
+        0.0
+    };
+    Some((percent, used, *total))
 }
 
 pub(super) fn disk_model(

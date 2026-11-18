@@ -109,34 +109,6 @@ mod tests {
         assert_eq!(base_step(1800, 21600, 21600), 30);
     }
 
-    // ---------- normalize / graph_model：折线图归一化 ----------
-
-    #[test]
-    fn normalize_scales_by_max() {
-        let m = graph_model(&normalize(&[2.0, 4.0]));
-        assert_eq!(m.row_count(), 2);
-        assert_eq!(m.row_data(0).unwrap(), 0.5);
-        assert_eq!(m.row_data(1).unwrap(), 1.0);
-    }
-
-    /// 峰值不超过 1.0 时**不放大**（`max` 从 1.0 起算）：低流量不该被拉满整个图。
-    #[test]
-    fn normalize_does_not_amplify_sub_unit_values() {
-        let m = graph_model(&normalize(&[0.25, 1.0]));
-        assert_eq!(m.row_data(0).unwrap(), 0.25, "小值保持原样");
-    }
-
-    #[test]
-    fn normalize_clamps_negatives_and_tolerates_empty() {
-        let m = graph_model(&normalize(&[-3.0, 0.0]));
-        assert_eq!(m.row_data(0).unwrap(), 0.0, "负数压到 0");
-        assert_eq!(
-            graph_model(&normalize(&[])).row_count(),
-            0,
-            "空输入不 panic"
-        );
-    }
-
     // ---------- disk_rows ----------
 
     fn disks() -> Vec<(String, u64, u64)> {
@@ -181,6 +153,34 @@ mod tests {
         let rows = disk_rows(&disks(), "", true);
         assert_eq!(rows.len(), 2);
         assert!(rows.iter().all(|r| r.path.as_str() != "/proc"));
+    }
+
+    // ---------- system_disk_usage ----------
+
+    #[test]
+    fn system_disk_prefers_root_mount() {
+        // `/` 不在第一行也要选中它，返回「已用/总量」而不是「可用/总量」。
+        let disks = vec![
+            ("/data".to_string(), 1, 4),
+            ("/".to_string(), 25, 100),
+        ];
+        let (percent, used, total) = system_disk_usage(&disks, "", false).unwrap();
+        assert_eq!((percent, used, total), (0.75, 75, 100));
+    }
+
+    #[test]
+    fn system_disk_falls_back_to_first_kept_row() {
+        let only_data = vec![("/data".to_string(), 1u64, 4u64)];
+        let (percent, used, total) = system_disk_usage(&only_data, "", false).unwrap();
+        assert_eq!((percent, used, total), (0.75, 3, 4));
+    }
+
+    #[test]
+    fn system_disk_respects_filters_and_empty_input() {
+        let disks = vec![("/".to_string(), 50, 100), ("/data".to_string(), 1, 4)];
+        let (percent, _, total) = system_disk_usage(&disks, "/data", false).unwrap();
+        assert_eq!((percent, total), (0.75, 4));
+        assert!(system_disk_usage(&[], "", false).is_none());
     }
 
     // ---------- 进程列表 ----------

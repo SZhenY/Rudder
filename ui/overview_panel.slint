@@ -2,7 +2,7 @@
 import { TabInfo } from "tabs.slint";
 import { VDivider } from "components/surfaces.slint";
 import { OverviewView } from "overview_view.slint";
-import { DiskInfo } from "sidebar_blocks.slint";
+import { DiskInfo, ResourceSnapshot } from "sidebar_blocks.slint";
 import { SftpToolbar } from "sftp_panel/toolbar.slint";
 import { SftpTree, SftpTreeNode } from "sftp_panel/tree.slint";
 export { SftpTreeNode }
@@ -43,14 +43,11 @@ export component OverviewPanel inherits Rectangle {
     in-out property <int> mem-span-index: 1;
     callback set-span(int /* 0=cpu 1=net */, int /* 0..5 */);
     in property <string> connection-state: @tr("Not connected");
-    in property <string> conn-host;
     in property <int> conn-state;
-    in property <string> resource-title: @tr("Local resources");
     in property <float> cpu-percent;
     in property <float> mem-percent;
-    in property <float> swap-percent;
-    in property <string> mem-detail;
-    in property <string> swap-detail;
+    /// 2×2 资源卡快照。
+    in property <ResourceSnapshot> resources;
     in property <string> net-top-up;
     in property <string> net-top-down;
     in property <string> net-top-path;
@@ -62,7 +59,6 @@ export component OverviewPanel inherits Rectangle {
     in property <string> mem-path;
     in property <string> net-up-path;
     in property <string> host-name;
-    in property <string> host-ip;
     in property <string> host-os;
     in property <string> host-kernel;
     in property <string> host-uptime;
@@ -116,7 +112,6 @@ export component OverviewPanel inherits Rectangle {
     // 运行状态页签的交互，全部转给 AppWindow 现有的回调。
     callback select-net-iface(string);
     callback show-processes();
-    callback copy-host(string);
     callback tunnel-add(string /* name */, string /* kind */, string /* bind */, string /* bind-port */, string /* host */, string /* host-port */);
     callback tunnel-stop(string /* id */);
     // Context-menu extensions (#69). The *-request callbacks open dialogs in
@@ -215,14 +210,10 @@ export component OverviewPanel inherits Rectangle {
         if root.panel-mode == "overview" : OverviewView {
             vertical-stretch: 1;
             connection-state: root.connection-state;
-            conn-host: root.conn-host;
             conn-state: root.conn-state;
-            resource-title: root.resource-title;
             cpu-percent: root.cpu-percent;
             mem-percent: root.mem-percent;
-            swap-percent: root.swap-percent;
-            mem-detail: root.mem-detail;
-            swap-detail: root.swap-detail;
+            resources: root.resources;
             net-top-up: root.net-top-up;
             net-top-down: root.net-top-down;
             net-top-path: root.net-top-path;
@@ -240,7 +231,6 @@ export component OverviewPanel inherits Rectangle {
             cpu-path: root.cpu-path;
             mem-path: root.mem-path;
             host-name: root.host-name;
-            host-ip: root.host-ip;
             host-os: root.host-os;
             host-kernel: root.host-kernel;
             host-uptime: root.host-uptime;
@@ -248,7 +238,6 @@ export component OverviewPanel inherits Rectangle {
             proc-available: root.proc-available;
             select-net-iface(i) => { root.select-net-iface(i); }
             show-processes() => { root.show-processes(); }
-            copy-host(h) => { root.copy-host(h); }
         }
 
         if root.panel-mode == "tunnels" : TunnelForm {

@@ -13,7 +13,7 @@ import "fonts/MaterialIcons-Regular.ttf";
 // (src/fonts.rs), making them selectable in Settings after a restart.
 
 import { Theme } from "theme.slint";
-import { DiskInfo } from "sidebar_blocks.slint";
+import { DiskInfo, ResourceSnapshot } from "sidebar_blocks.slint";
 import { TabBar, TabInfo } from "tabs.slint";
 import { Welcome, SessionInfo } from "welcome.slint";
 import { SessionDialog, SessionDraft, PortFwd, TriggerDraft } from "session_dialog.slint";
@@ -158,16 +158,12 @@ export component AppWindow inherits Window {
 
     // --- Resource status data（运行状态页与连接状态点）---------------------
     in property <string> connection-state: @tr("Not connected");
-    in property <string> conn-host;             // clean IP/host for click-to-copy (#192)
     in property <int> conn-state;                       // 0 gray / 1 green / 2 yellow / 3 red(连接失败)
-    in property <string> resource-title: @tr("Local resources");    // @tr("Local resources") | @tr("Server resources")
     in property <float> cpu-percent;
     in property <float> mem-percent;
-    in property <float> swap-percent;
-    in property <string> mem-detail;
-    in property <string> swap-detail;
-    // Dual network panel.  "top" follows the active tab (remote NIC on a
-    // session tab, local on the welcome tab); "bot" is always the local machine.
+    /// 2×2 资源卡快照（CPU / 内存 / 系统盘 / 网络）。
+    in property <ResourceSnapshot> resources;
+    // 当前会话所选网卡的上下行速率与曲线（远端监控通道提供）。
     in property <string> net-top-up;        // ↑ tx rate text
     in property <string> net-top-down;      // ↓ rx rate text
     in property <string> net-top-path;
@@ -294,7 +290,6 @@ export component AppWindow inherits Window {
     callback refresh-docker();
     // 综合页头卡：结构化字段，Rust 从远端 overview 直接写入，不按本地化标签反查。
     in property <string> host-name;
-    in property <string> host-ip;
     in property <string> host-os;
     in property <string> host-kernel;
     in property <string> host-uptime;
@@ -1279,14 +1274,10 @@ export component AppWindow inherits Window {
                         sftp-sort-dir: term.sftp-sort-dir;
                         overview-available: term.overview-available;
                         connection-state: root.connection-state;
-                        conn-host: root.conn-host;
                         conn-state: root.conn-state;
-                        resource-title: root.resource-title;
                         cpu-percent: root.cpu-percent;
                         mem-percent: root.mem-percent;
-                        swap-percent: root.swap-percent;
-                        mem-detail: root.mem-detail;
-                        swap-detail: root.swap-detail;
+                        resources: root.resources;
                         net-top-up: root.net-top-up;
                         net-top-down: root.net-top-down;
                         net-top-path: root.net-top-path;
@@ -1298,7 +1289,6 @@ export component AppWindow inherits Window {
                         cpu-path: root.cpu-path;
                         mem-path: root.mem-path;
                         host-name: root.host-name;
-                        host-ip: root.host-ip;
                         host-os: root.host-os;
                         host-kernel: root.host-kernel;
                         host-uptime: root.host-uptime;

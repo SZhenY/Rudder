@@ -152,11 +152,14 @@ pub(crate) fn apply_session_event_to_window<'a>(
         }
         SessionEvent::ResourceStats {
             cpu_percent,
+            cpu_user_percent,
+            cpu_sys_percent,
             mem_used_kib,
             mem_total_kib,
-            swap_used_kib,
-            swap_total_kib,
             net,
+            gateway,
+            disk_used_bytes,
+            disk_total_bytes,
             disks,
             sys,
         } => {
@@ -164,10 +167,19 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 && let Some(st) = s.get_mut(tab_id)
             {
                 st.cpu = cpu_percent;
+                st.cpu_user = cpu_user_percent;
+                st.cpu_sys = cpu_sys_percent;
                 st.mem_used_kib = mem_used_kib;
                 st.mem_total_kib = mem_total_kib;
-                st.swap_used_kib = swap_used_kib;
-                st.swap_total_kib = swap_total_kib;
+                // `ip route` 每 5 拍才跑一次：空值沿用上次，避免网关在界面上闪烁。
+                if let Some(gw) = gateway {
+                    st.gateway = gw;
+                }
+                // 整盘口径 5 拍才采一次：0 = 沿用上次。
+                if disk_total_bytes > 0 {
+                    st.disk_used_bytes = disk_used_bytes;
+                    st.disk_total_bytes = disk_total_bytes;
+                }
                 st.net = net;
                 // `df` 每 5 拍才跑一次（其余拍没有磁盘段）：空值沿用上次，避免列表闪空。
                 if !disks.is_empty() {

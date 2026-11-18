@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="docs/screenshots/01-welcome.png" alt="欢迎页 / 会话管理" width="800"><br>
-  <em>欢迎页：会话管理 + 左侧本机资源监控</em>
+  <em>欢迎页：会话管理与快速连接</em>
 </p>
 
 <p align="center">
@@ -85,7 +85,7 @@ open /Applications/rudder.app
 ### 已实现
 
 - [x] FinalShell 风格 UI，深色 / 浅色 / 跟随系统主题
-- [x] 本机 + 远端资源监控（CPU / 内存 / 交换 / 网络 / 磁盘）
+- [x] 远端资源监控（CPU 使用率含 User/Sys 分项、内存、系统盘整盘用量、网络上下行与默认网关）
 - [x] 远端进程监控（按 CPU 排序、PID 复制与权限确认后结束进程）
 - [x] 完整 VT/ANSI 终端模拟（btop / htop / vim 全屏正常渲染）
 - [x] 彩色 emoji（支持肤色、旗帜及 ZWJ 组合序列）
@@ -325,7 +325,7 @@ rudder/
     ├── sftp/                    # SFTP 文件浏览 + 上传/下载
     ├── session/                 # 会话管理（JSON 持久化、加密存储）
     ├── tunnel/                  # SSH 端口转发（-L/-R/-D）
-    ├── resource/                # 系统资源监控（CPU/内存/交换/磁盘/网络）
+    ├── resource/                # 远端资源采集（CPU/内存/磁盘/网络）
     ├── config/                  # 配置管理
     ├── i18n/                    # 国际化
     ├── layout/                  # 窗口布局 / 分屏

@@ -215,10 +215,11 @@ pub(crate) async fn run_session(
     // wraps — we never substring-match it.
     let prompt_setup = format!(" {}\r", PROMPT_BODY);
     // --- Remote resource monitor (separate exec channel) ----------------
-    // A tiny remote loop streams /proc/stat + /proc/meminfo every 2s; we parse
-    // it into CPU% / mem / swap for the sidebar.  Best-effort: if the channel
-    // or exec fails (e.g. a non-Linux host without /proc), monitoring is
-    // silently skipped and the interactive shell is unaffected.
+    // A tiny remote loop streams /proc/stat, /proc/meminfo and /proc/net/dev,
+    // plus df / ip-route / lsblk every 5th tick; we parse it into CPU, memory,
+    // network, gateway and disk figures for the overview panel.  Best-effort:
+    // if the channel or exec fails (e.g. a non-Linux host without /proc),
+    // monitoring is silently skipped and the interactive shell is unaffected.
     // Reset PATH to the standard system directories first (#27): the monitor
     // runs over an exec channel, so a server with a hijacked PATH (or a
     // BASH_ENV pointing at a malicious file) could otherwise shadow awk/cat/df/
@@ -232,7 +233,7 @@ pub(crate) async fn run_session(
     // yields nothing (2>/dev/null), degrading to an empty process list.
     // `df` 单独降频到每 5 拍，并套 `timeout 3` + 排除网络文件系统：远端有挂死的
     // NFS/CIFS 时，`df` 会阻塞在内核态，把整个 while 循环（连同 CPU/网络）一起拖停。
-    const MON_CMD_TEMPLATE: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; i=0; while :; do i=$((i+1)); awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; if [ $((i % 5)) -eq 1 ]; then timeout 3 df -kP -x nfs -x nfs4 -x cifs -x smbfs 2>/dev/null; fi; echo __MSTICK__; sleep 2; done\n";
+    const MON_CMD_TEMPLATE: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; i=0; while :; do i=$((i+1)); awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; if [ $((i % 5)) -eq 1 ]; then timeout 3 df -kP -x nfs -x nfs4 -x cifs -x smbfs 2>/dev/null; fi; echo __GW__; if [ $((i % 5)) -eq 1 ]; then ip -4 route show default 2>/dev/null | awk '/^default/{print \"GW=\"$3; exit}'; fi; echo __LSBLK__; if [ $((i % 5)) -eq 1 ]; then timeout 3 lsblk -b -P -o NAME,PKNAME,TYPE,SIZE,MOUNTPOINT 2>/dev/null; fi; echo __MSTICK__; sleep 2; done\n";
 /// 远端监控命令：`sleep` 由设置里的曲线跨度决定（15 秒档 1 s，其余 2 s）。
 fn mon_cmd(interval: u32) -> Vec<u8> {
     String::from_utf8_lossy(MON_CMD_TEMPLATE)
@@ -243,7 +244,7 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
     // Detailed system information is intentionally one-shot and last priority.
     // It includes commands such as lspci/hostname that may be slow on some hosts
     // and must never delay either the terminal or the lightweight sidebar sample.
-    const SYS_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|SwapTotal|SwapFree|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __SYS__; { . /etc/os-release 2>/dev/null; echo OS=${PRETTY_NAME:-$(uname -o 2>/dev/null)}; }; echo KERNEL=$(uname -s 2>/dev/null); echo KERNEL_RELEASE=$(uname -r 2>/dev/null); echo ARCH=$(uname -m 2>/dev/null); echo HOSTNAME=$(hostname 2>/dev/null); echo IPS=$(hostname -I 2>/dev/null); echo UPTIME=$(uptime -p 2>/dev/null); echo LOAD=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null); awk -F: '/model name|Hardware/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_MODEL=\"$2; exit}' /proc/cpuinfo 2>/dev/null; echo CPU_CORES=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null); awk -F: '/cache size/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_CACHE=\"$2; exit}' /proc/cpuinfo 2>/dev/null; awk -F: '/bogomips/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_BOGO=\"$2; exit}' /proc/cpuinfo 2>/dev/null; lspci 2>/dev/null | awk -F': ' '/VGA|3D|Display/{print \"GPU=\" $2; exit}'; echo __MSTICK__\n";
+    const SYS_CMD: &[u8] = b"PATH=/usr/bin:/bin:/usr/sbin:/sbin; export PATH; awk '/^cpu /{print}' /proc/stat; awk '/^(MemTotal|MemAvailable|Buffers|Cached):/{print}' /proc/meminfo; cat /proc/net/dev; echo __DF__; df -kP 2>/dev/null; echo __SYS__; { . /etc/os-release 2>/dev/null; echo OS=${PRETTY_NAME:-$(uname -o 2>/dev/null)}; }; echo KERNEL=$(uname -s 2>/dev/null); echo KERNEL_RELEASE=$(uname -r 2>/dev/null); echo ARCH=$(uname -m 2>/dev/null); echo HOSTNAME=$(hostname 2>/dev/null); echo IPS=$(hostname -I 2>/dev/null); echo UPTIME=$(uptime -p 2>/dev/null); echo LOAD=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null); awk -F: '/model name|Hardware/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_MODEL=\"$2; exit}' /proc/cpuinfo 2>/dev/null; echo CPU_CORES=$(grep -c '^processor' /proc/cpuinfo 2>/dev/null); awk -F: '/cache size/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_CACHE=\"$2; exit}' /proc/cpuinfo 2>/dev/null; awk -F: '/bogomips/{gsub(/^[ \\t]+/,\"\",$2); print \"CPU_BOGO=\"$2; exit}' /proc/cpuinfo 2>/dev/null; lspci 2>/dev/null | awk -F': ' '/VGA|3D|Display/{print \"GPU=\" $2; exit}'; echo __MSTICK__\n";
     // Skip the resource monitor entirely when shell integration is off (a
     // non-POSIX / Windows server) — the /proc-based loop only spews errors there
     // (#140).
@@ -254,7 +255,7 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
     let mut last_resource: Option<SessionEvent> = None;
     let mut last_process: Option<SessionEvent> = None;
     let mut sys_buf = String::new();
-    let mut prev_cpu: Option<(u64, u64)> = None; // (total jiffies, idle jiffies)
+    let mut prev_cpu: Option<CpuPrev> = None; // 上一次的累计 jiffies（total / idle / user / sys）
     let mut prev_net: std::collections::HashMap<String, (u64, u64)> =
         std::collections::HashMap::new(); // iface -> (rx_bytes, tx_bytes)
     let mut prev_net_at = std::time::Instant::now();

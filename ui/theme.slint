@@ -92,9 +92,6 @@ export global Theme {
     // grey labels stay legible even at a low wallpaper overlay (user request).
     out property <brush> bg-panel-strong: frost(base-bg-panel, min(1.0, root.panel-alpha + 0.20));
 
-    // 活动标签底色：由**主题色**轻微染色（不再是壁纸色 —— 换「配色」时标签条也要跟着变），
-    // 与 tabs.slint 那条 2px 的 accent 边框同源。保持很淡：真正标记"当前标签"的是那条边框。
-    out property <brush> tab-active-bg: root.accent-solid.mix(dark ? #171a20 : #ffffff, 0.86);
     // 主题色淡底：hover 与「这个面板正开着」这类常亮态共用这一档；选中比它更深
     //（见下面的 state-* 层）。
     out property <brush> accent-tint: root.accent-solid.with-alpha(dark ? 0.20 : 0.16);

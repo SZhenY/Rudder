@@ -66,7 +66,7 @@
     },
     {
         "name": "get_tab_status",
-        "description": "Resource snapshot of the host behind one tab: CPU, memory, swap, network totals, per-filesystem usage, the top 10 processes, and `sys` with the full system details (overview, cpu_info, gpu_info, cpu_usage, memory, swap, networks, filesystems). `sys` is a one-shot probe taken shortly after the session connects and never refreshed, so it is null on a tab that just opened — that is not an error. For local shell tabs the machine's own figures are under `local`. To read this machine without opening a tab, use get_host_info instead.",
+        "description": "Resource snapshot of the host behind one tab: CPU (total, user and system split), memory, network totals with the default gateway, per-filesystem usage, the top 10 processes, and `sys` with the full system details (overview, cpu_info, gpu_info, cpu_usage, memory, networks, filesystems). `sys` is a one-shot probe taken shortly after the session connects and never refreshed, so it is null on a tab that just opened — that is not an error. For local shell tabs the machine's own figures are under `local`. To read this machine without opening a tab, use get_host_info instead.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -89,7 +89,7 @@
     },
     {
         "name": "get_host_info",
-        "description": "Report the local machine — the computer running Rudder — not a remote host, and no tab_id is needed. Returns CPU, memory, swap, per-filesystem usage and network throughput with the sample time. Figures come from the app's own 1 Hz sampler when it is running (source=snapshot); when that sampler is paused, for example because the sidebar is collapsed or the window is hidden, one sample is taken on demand (source=on_demand) and may take a moment. For a host behind an open tab use get_tab_status instead.",
+        "description": "Report the local machine — the computer running Rudder — not a remote host, and no tab_id is needed. Returns CPU, memory, per-filesystem usage and network throughput with the sample time. Figures come from the app's own 1 Hz sampler when it is running (source=snapshot); when that sampler is paused, for example because the sidebar is collapsed or the window is hidden, one sample is taken on demand (source=on_demand) and may take a moment. For a host behind an open tab use get_tab_status instead.",
         "inputSchema": {
             "type": "object",
             "properties": {},

@@ -57,7 +57,7 @@ use crate::i18n::t;
 
 // Dependency versions baked in by build.rs → $OUT_DIR/deps.rs.
 include!(concat!(env!("OUT_DIR"), "/deps.rs"));
-use crate::resource::system::{format_bytes_per_sec, format_mem};
+use crate::resource::system::format_bytes_per_sec;
 use crate::resource::{TabStatus, TabStatuses};
 use crate::session::{ConnectCtx, PendingCred, PendingHostKey, PendingMfa};
 use crate::sftp::{SftpHandles, SftpLastCwd, spawn_sftp};

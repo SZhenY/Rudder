@@ -1,16 +1,14 @@
-//! 综合页：连接状态 + 主机头卡 + 资源卡 + CPU 趋势 + 磁盘 / 网络。
+//! 综合页：主机头卡 + 2×2 资源卡 + CPU / 内存趋势 + 网络 + 磁盘分区。
 //!
-//! 由 `overview_panel.slint` 的「运行状态」页签挂载。排版按当前分支的 token 与组件
-//! 重写；数据全部复用既有链路（本地 `SystemSampler`、远端 `monitor.rs` 的 overview
-//! 采集），本文件不引入新的采集逻辑。
+//! 由 `overview_panel.slint` 的「运行状态」页签挂载。数据全部来自远端 `monitor.rs`
+//! 的采样通道，本文件不引入采集逻辑。
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { ScrollView } from "std-widgets.slint";
 import { TrendCurve } from "components/trend_curve.slint";
 import { OverviewCard } from "components/overview_card.slint";
-import { Divider } from "components/surfaces.slint";
 import { IconText } from "components/text.slint";
-import { StatRow, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
+import { ResourceSnapshot, ResourceTile, NetBlock, DiskBlock, DiskInfo } from "sidebar_blocks.slint";
 
 // 头卡的一行：label 固定宽 + value 占满剩余并省略，保证「一行一个数据」。
 component HostRow inherits HorizontalLayout {
@@ -46,14 +44,11 @@ export component OverviewView inherits Rectangle {
     property <length> net-chart-h: 150px * Theme.ui-scale;
 
     in property <string> connection-state: @tr("Not connected");
-    in property <string> conn-host;
     in property <int> conn-state;
-    in property <string> resource-title: @tr("Local resources");
     in property <float> cpu-percent;
     in property <float> mem-percent;
-    in property <float> swap-percent;
-    in property <string> mem-detail;
-    in property <string> swap-detail;
+    /// 2×2 资源卡的整份快照（CPU / 内存 / 系统盘 / 网络）。
+    in property <ResourceSnapshot> resources;
     /// CPU 使用率历史，0..1（Rust 已按固定 0..100 刻度换算）。
     in property <string> cpu-path;
     /// 内存占用历史曲线（0..1）。
@@ -62,7 +57,6 @@ export component OverviewView inherits Rectangle {
     in property <string> net-up-path;
     // 主机头卡：远端 overview 的结构化字段。
     in property <string> host-name;
-    in property <string> host-ip;
     in property <string> host-os;
     in property <string> host-kernel;
     in property <string> host-uptime;
@@ -115,7 +109,6 @@ export component OverviewView inherits Rectangle {
 
     callback select-net-iface(string);
     callback show-processes();
-    callback copy-host(string);
 
     background: transparent;
 
@@ -222,53 +215,69 @@ export component OverviewView inherits Rectangle {
             }
 
             // --- 资源（2×2） -----------------------------------------------
-            OverviewCard {
-                title: @tr("Resources");
-                title-icon: "\u{E30C}";
+            // CPU 使用占比 | 内存使用占比
+            // 系统盘占比   | 网络上下行
+            //
+            // 两列等分：宽度按父宽直接算，不依赖内容的首选宽度 —— 否则
+            // 「用户/系统」这类长文本会把左列撑得比右列宽。
+            Rectangle {
+                height: Math.max(cpu-tile.preferred-height, mem-tile.preferred-height);
+                opacity: root.values-fade;
 
-                HorizontalLayout {
-                    opacity: root.values-fade;
-                    spacing: Theme.sp-10;
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        StatRow {
-                            label: "CPU";
-                            percent: root.cpu-percent;
-                            value: "";
-                            bar-color: Theme.accent;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        StatRow {
-                            label: @tr("Memory");
-                            percent: root.mem-percent;
-                            value: root.mem-detail;
-                            bar-color: Theme.success;
-                        }
-                    }
+                cpu-tile := ResourceTile {
+                    x: 0;
+                    width: (parent.width - Theme.sp-6) / 2;
+                    height: parent.height;
+                    title: "CPU";
+                    glyph: "\u{E322}";   // memory（芯片）
+                    tone: Theme.accent;
+                    value: Math.round(root.resources.cpu_percent * 100) + "%";
+                    percent: clamp(root.resources.cpu_percent, 0.0, 1.0);
+                    foot-left: root.resources.cpu_foot_left;
+                    foot-right: root.resources.cpu_foot_right;
                 }
-                HorizontalLayout {
-                    opacity: root.values-fade;
-                    spacing: Theme.sp-10;
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        StatRow {
-                            label: @tr("Swap");
-                            percent: root.swap-percent;
-                            value: root.swap-detail;
-                            bar-color: Theme.warning;
-                        }
-                    }
-                    VerticalLayout {
-                        horizontal-stretch: 1;
-                        StatRow {
-                            label: @tr("Disk");
-                            percent: root.disks.length > 0 ? root.disks[0].percent : 0;
-                            value: root.disks.length > 0 ? root.disks[0].detail : "-";
-                            bar-color: Theme.accent;
-                        }
-                    }
+                mem-tile := ResourceTile {
+                    x: (parent.width + Theme.sp-6) / 2;
+                    width: (parent.width - Theme.sp-6) / 2;
+                    height: parent.height;
+                    title: @tr("Memory");
+                    glyph: "\u{E30C}";
+                    tone: Theme.success;
+                    value: Math.round(root.resources.mem_percent * 100) + "%";
+                    percent: clamp(root.resources.mem_percent, 0.0, 1.0);
+                    foot-left: root.resources.mem_foot_left;
+                    foot-right: root.resources.mem_foot_right;
+                }
+            }
+            Rectangle {
+                height: Math.max(disk-tile.preferred-height, net-tile.preferred-height);
+                opacity: root.values-fade;
+
+                disk-tile := ResourceTile {
+                    x: 0;
+                    width: (parent.width - Theme.sp-6) / 2;
+                    height: parent.height;
+                    title: @tr("Disk");
+                    glyph: "\u{E1DB}";
+                    tone: Theme.warning;
+                    value: Math.round(root.resources.disk_percent * 100) + "%";
+                    percent: clamp(root.resources.disk_percent, 0.0, 1.0);
+                    foot-left: root.resources.disk_foot_left;
+                    foot-right: root.resources.disk_foot_right;
+                }
+                net-tile := ResourceTile {
+                    x: (parent.width + Theme.sp-6) / 2;
+                    width: (parent.width - Theme.sp-6) / 2;
+                    height: parent.height;
+                    title: @tr("Network");
+                    glyph: "\u{E63E}";
+                    tone: Theme.success;
+                    // 网络卡没有百分比与进度条：percent < 0 让速率行取代进度条。
+                    percent: -1;
+                    net-down: root.resources.net_down;
+                    net-up: root.resources.net_up;
+                    foot-left: @tr("Default gateway");
+                    foot-right: root.resources.net_gateway;
                 }
             }
 

@@ -34,18 +34,46 @@ pub(crate) fn parse_process_block(block: &str) -> (String, Vec<ProcInfo>) {
 struct MonitorSample {
     cpu_total: u64,
     cpu_idle: u64,
+    /// user + nice 的累计 jiffies，与 `cpu_total` 同一时刻，用于 User 分项差分。
+    cpu_user: u64,
+    /// system + irq + softirq 的累计 jiffies，用于 Sys 分项差分。
+    cpu_sys: u64,
     have_cpu: bool,
     mem_total: u64,
     mem_avail: u64,
     mem_buffers: u64,
     mem_cached: u64,
-    swap_total: u64,
-    swap_free: u64,
     cpu_nums: Vec<u64>,
     net_now: Vec<(String, u64, u64)>,
+    /// 默认网关（`__GW__` 段，5 拍采一次；其余拍为空）。
+    gw: String,
     disks: Vec<(String, u64, u64)>,
+    /// `lsblk -P` 原始行：用来把「/ 所在分区」上溯到整块物理盘并汇总用量。
+    lsblk: Vec<LsblkRow>,
     seen_fs: std::collections::HashSet<(u64, u64)>,
     sys_kv: std::collections::HashMap<String, String>,
+}
+
+/// `lsblk -b -P -o NAME,PKNAME,TYPE,SIZE,MOUNTPOINT` 的一行。
+#[derive(Default)]
+pub(crate) struct LsblkRow {
+    name: String,
+    pkname: String,
+    kind: String,
+    size: u64,
+    /// 可能是逗号分隔的多个挂载点（btrfs 子卷）。
+    mounts: String,
+}
+
+/// 上一次 `/proc/stat` 的累计 jiffies：总、空闲、user、system 四路。
+///
+/// 只存总量算不出 User/Sys 分项，所以四路一起留。
+#[derive(Clone, Copy, Default)]
+pub(crate) struct CpuPrev {
+    total: u64,
+    idle: u64,
+    user: u64,
+    sys: u64,
 }
 
 /// Cap interfaces / filesystems per sample so a hostile server cannot flood
@@ -59,12 +87,22 @@ fn collect_monitor_sample(block: &str) -> MonitorSample {
     enum Section {
         Top,
         Df,
+        Gw,
+        Lsblk,
         Sys,
     }
     let mut section = Section::Top;
     for line in block.lines() {
         if line == "__DF__" {
             section = Section::Df;
+            continue;
+        }
+        if line == "__GW__" {
+            section = Section::Gw;
+            continue;
+        }
+        if line == "__LSBLK__" {
+            section = Section::Lsblk;
             continue;
         }
         if line == "__SYS__" {
@@ -82,6 +120,20 @@ fn collect_monitor_sample(block: &str) -> MonitorSample {
                     if s.seen_fs.insert((total, avail)) {
                         s.disks.push((mount, avail, total));
                     }
+                }
+                continue;
+            }
+            Section::Gw => {
+                if let Some(v) = line.trim().strip_prefix("GW=") {
+                    s.gw = v.trim().to_string();
+                }
+                continue;
+            }
+            Section::Lsblk => {
+                if s.lsblk.len() < MAX_MON_ENTRIES
+                    && let Some(row) = parse_lsblk_line(line)
+                {
+                    s.lsblk.push(row);
                 }
                 continue;
             }
@@ -104,6 +156,11 @@ fn collect_monitor_sample(block: &str) -> MonitorSample {
                 // values, and a plain sum/add would panic on overflow in debug.
                 s.cpu_total = nums.iter().copied().fold(0u64, u64::saturating_add);
                 s.cpu_idle = nums[3].saturating_add(nums.get(4).copied().unwrap_or(0)); // idle + iowait
+                // top 的 us 含 nice、sy 含 irq/softirq；缺列按 0 处理。
+                s.cpu_user = nums[0].saturating_add(nums.get(1).copied().unwrap_or(0));
+                s.cpu_sys = nums[2]
+                    .saturating_add(nums.get(5).copied().unwrap_or(0))
+                    .saturating_add(nums.get(6).copied().unwrap_or(0));
                 s.have_cpu = true;
                 s.cpu_nums = nums;
             }
@@ -115,10 +172,6 @@ fn collect_monitor_sample(block: &str) -> MonitorSample {
             s.mem_buffers = parse_meminfo_kib(v);
         } else if let Some(v) = line.strip_prefix("Cached:") {
             s.mem_cached = parse_meminfo_kib(v);
-        } else if let Some(v) = line.strip_prefix("SwapTotal:") {
-            s.swap_total = parse_meminfo_kib(v);
-        } else if let Some(v) = line.strip_prefix("SwapFree:") {
-            s.swap_free = parse_meminfo_kib(v);
         } else if s.net_now.len() < MAX_MON_ENTRIES
             && let Some((iface, counters)) = parse_net_dev_line(line)
         {
@@ -133,27 +186,29 @@ fn collect_monitor_sample(block: &str) -> MonitorSample {
 /// fields) into a [`SessionEvent::ResourceStats`].
 ///
 /// CPU usage needs two consecutive `/proc/stat` snapshots; `prev` carries the
-/// previous (total, idle) jiffies across calls.  The first sample therefore
-/// reports 0% (no baseline yet).
+/// previous jiffies split (total / idle / user / system) across calls.  The
+/// first sample therefore reports 0% (no baseline yet).
 pub(crate) fn parse_monitor_block(
     block: &str,
-    prev: &mut Option<(u64, u64)>,
+    prev: &mut Option<CpuPrev>,
     prev_net: &mut std::collections::HashMap<String, (u64, u64)>,
     prev_net_at: &mut std::time::Instant,
 ) -> Option<SessionEvent> {
     let MonitorSample {
         cpu_total,
         cpu_idle,
+        cpu_user,
+        cpu_sys,
         have_cpu,
         mem_total,
         mem_avail,
         mem_buffers,
         mem_cached,
-        swap_total,
-        swap_free,
         cpu_nums,
         net_now,
+        gw,
         disks,
+        lsblk,
         seen_fs: _,
         sys_kv,
     } = collect_monitor_sample(block);
@@ -180,29 +235,45 @@ pub(crate) fn parse_monitor_block(
         net.sort_by_key(|a| std::cmp::Reverse(a.1 + a.2));
     }
 
-    let cpu_percent = if have_cpu {
+    // 三路百分比共用同一个总 jiffies 增量：User / Sys 是总占用里的分项，
+    // 分母必须是 CPU 的全部时间片，不能各自归一化。
+    let (cpu_percent, cpu_user_percent, cpu_sys_percent) = if have_cpu {
         let result = match *prev {
-            Some((ptotal, pidle)) => {
-                let dt = cpu_total.saturating_sub(ptotal);
-                let di = cpu_idle.saturating_sub(pidle);
+            Some(p) => {
+                let dt = cpu_total.saturating_sub(p.total);
                 if dt > 0 {
-                    (1.0 - di as f32 / dt as f32).clamp(0.0, 1.0)
+                    let dt = dt as f32;
+                    (
+                        (1.0 - cpu_idle.saturating_sub(p.idle) as f32 / dt).clamp(0.0, 1.0),
+                        (cpu_user.saturating_sub(p.user) as f32 / dt).clamp(0.0, 1.0),
+                        (cpu_sys.saturating_sub(p.sys) as f32 / dt).clamp(0.0, 1.0),
+                    )
                 } else {
-                    0.0
+                    (0.0, 0.0, 0.0)
                 }
             }
-            None => 0.0,
+            None => (0.0, 0.0, 0.0),
         };
-        *prev = Some((cpu_total, cpu_idle));
+        *prev = Some(CpuPrev {
+            total: cpu_total,
+            idle: cpu_idle,
+            user: cpu_user,
+            sys: cpu_sys,
+        });
         result
     } else {
-        0.0
+        (0.0, 0.0, 0.0)
     };
 
     // Need at least memory numbers to be a useful sample.
     if mem_total == 0 {
         return None;
     }
+
+    // 整块系统盘口径：`/` 所在分区上溯到物理盘，总量取整盘容量，
+    // 已用按该盘上每个已挂载分区的用量汇总（同一设备的多个挂载点只计一次，
+    // 否则 btrfs 子卷会把同一份占用重复累加）。
+    let disk_bytes = system_disk_bytes(&disks, &lsblk);
 
     let sys = (!sys_kv.is_empty()).then(|| {
         build_system_details(SystemDetailsInput {
@@ -212,8 +283,6 @@ pub(crate) fn parse_monitor_block(
             mem_avail,
             mem_buffers,
             mem_cached,
-            swap_total,
-            swap_free,
             net_counters: &net_counters,
             disks: &disks,
         })
@@ -221,11 +290,16 @@ pub(crate) fn parse_monitor_block(
 
     Some(SessionEvent::ResourceStats {
         cpu_percent,
+        cpu_user_percent,
+        cpu_sys_percent,
         mem_used_kib: mem_total.saturating_sub(mem_avail),
         mem_total_kib: mem_total,
-        swap_used_kib: swap_total.saturating_sub(swap_free),
-        swap_total_kib: swap_total,
         net,
+        // 网关 5 拍才采一次：其余拍留 None，由消费端沿用上一次的值。
+        gateway: (!gw.is_empty()).then_some(gw),
+        // 整块系统盘口径（0 = 本轮没采到，沿用上一次）。
+        disk_used_bytes: disk_bytes.map(|d| d.0).unwrap_or(0),
+        disk_total_bytes: disk_bytes.map(|d| d.1).unwrap_or(0),
         disks,
         sys: Box::new(sys),
     })
@@ -284,8 +358,6 @@ pub(crate) struct SystemDetailsInput<'a> {
     pub(crate) mem_avail: u64,
     pub(crate) mem_buffers: u64,
     pub(crate) mem_cached: u64,
-    pub(crate) swap_total: u64,
-    pub(crate) swap_free: u64,
     pub(crate) net_counters: &'a [(String, u64, u64)],
     pub(crate) disks: &'a [(String, u64, u64)],
 }
@@ -298,13 +370,10 @@ pub(crate) fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
         mem_avail,
         mem_buffers,
         mem_cached,
-        swap_total,
-        swap_free,
         net_counters,
         disks,
     } = input;
     let mem_used = mem_total.saturating_sub(mem_avail);
-    let swap_used = swap_total.saturating_sub(swap_free);
     let cpu_model = sys_value(sys, "CPU_MODEL");
     let gpu = sys.get("GPU").cloned().unwrap_or_default();
     let gpu_info = if gpu.trim().is_empty() {
@@ -321,7 +390,6 @@ pub(crate) fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
     SystemDetails {
         host: HostCard {
             name: sys_value(sys, "HOSTNAME"),
-            ip: sys_value(sys, "IPS"),
             os: sys_value(sys, "OS"),
             kernel: sys_value(sys, "KERNEL_RELEASE"),
             uptime: sys_value(sys, "UPTIME"),
@@ -372,15 +440,6 @@ pub(crate) fn build_system_details(input: SystemDetailsInput) -> SystemDetails {
             ),
             (t("缓冲", "Buffers").to_string(), kib_size(mem_buffers)),
             (t("缓存", "Cached").to_string(), kib_size(mem_cached)),
-        ],
-        swap: vec![
-            (t("总计", "Total").to_string(), kib_size(swap_total)),
-            (t("已使用", "Used").to_string(), kib_size(swap_used)),
-            (t("剩余", "Free").to_string(), kib_size(swap_free)),
-            (
-                t("已用", "Usage").to_string(),
-                percent_text(swap_used, swap_total),
-            ),
         ],
         networks: net_counters
             .iter()
@@ -454,6 +513,86 @@ pub(crate) fn parse_df_line(line: &str) -> Option<(String, u64, u64)> {
         avail_kb.saturating_mul(1024),
         total_kb.saturating_mul(1024),
     ))
+}
+
+/// Parse one `lsblk -b -P` line (`NAME="sda" PKNAME="" TYPE="disk" SIZE="…"`).
+/// 这些列都不含空格；`MOUNTPOINT` 为逗号分隔的多挂载点。
+fn parse_lsblk_line(line: &str) -> Option<LsblkRow> {
+    let mut row = LsblkRow::default();
+    for kv in line.split_whitespace() {
+        let Some((key, value)) = kv.split_once('=') else {
+            continue;
+        };
+        let value = value.trim_matches('"');
+        match key {
+            "NAME" => row.name = value.to_string(),
+            "PKNAME" => row.pkname = value.to_string(),
+            "TYPE" => row.kind = value.to_string(),
+            "SIZE" => row.size = value.parse().unwrap_or(0),
+            "MOUNTPOINT" | "MOUNTPOINTS" => row.mounts = value.to_string(),
+            _ => {}
+        }
+    }
+    if row.name.is_empty() { None } else { Some(row) }
+}
+
+/// 把一行上溯到它所属的物理盘（`TYPE="disk"`）。LVM / dm 可能有多层。
+fn disk_of<'a>(row: &'a LsblkRow, rows: &'a [LsblkRow]) -> Option<&'a LsblkRow> {
+    if row.kind == "disk" {
+        return Some(row);
+    }
+    let mut name = row.pkname.clone();
+    for _ in 0..8 {
+        let cur = rows.iter().find(|r| r.name == name)?;
+        if cur.kind == "disk" {
+            return Some(cur);
+        }
+        if cur.pkname.is_empty() {
+            return None;
+        }
+        name = cur.pkname.clone();
+    }
+    None
+}
+
+/// 系统盘用量 `(used_bytes, total_bytes)`：`/` 所在分区所属的整块物理盘。
+///
+/// `used` 按该盘上**每个已挂载分区**的已用量求和；同一分区的多个挂载点
+/// （btrfs 子卷、bind mount）取最大值，不重复累加。
+/// 任一环节缺数据（无 `lsblk`、`/` 在 overlay/tmpfs 上、md/RAID 无父盘）→ `None`，
+/// 调用方回退到 `/` 分区口径。
+fn system_disk_bytes(
+    disks: &[(String, u64, u64)],
+    rows: &[LsblkRow],
+) -> Option<(u64, u64)> {
+    let root = rows
+        .iter()
+        .find(|r| r.mounts.split(',').any(|m| m.trim() == "/"))?;
+    let disk = disk_of(root, rows)?;
+    if disk.size == 0 {
+        return None;
+    }
+    let mut per_device: std::collections::HashMap<&str, u64> =
+        std::collections::HashMap::new();
+    for (mount, avail, total) in disks {
+        let Some(row) = rows
+            .iter()
+            .find(|r| r.mounts.split(',').any(|m| m.trim() == mount))
+        else {
+            continue;
+        };
+        if disk_of(row, rows).map(|d| d.name.as_str()) != Some(disk.name.as_str()) {
+            continue;
+        }
+        let used = total.saturating_sub(*avail);
+        let slot = per_device.entry(row.name.as_str()).or_insert(0);
+        *slot = (*slot).max(used);
+    }
+    let used = per_device
+        .values()
+        .copied()
+        .fold(0u64, u64::saturating_add);
+    Some((used, disk.size))
 }
 
 /// Extract the leading integer (KiB) from a `/proc/meminfo` value like

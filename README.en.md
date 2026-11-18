@@ -19,7 +19,7 @@
 
 <p align="center">
   <img src="docs/screenshots/01-welcome-en.png" alt="Welcome / session management" width="800"><br>
-  <em>Welcome page: session management + local resource monitor sidebar</em>
+  <em>Welcome page: session management and quick connect</em>
 </p>
 
 <p align="center">
@@ -89,7 +89,7 @@ open /Applications/rudder.app
 ### Done
 
 - [x] FinalShell-style UI with dark / light / follow-system themes
-- [x] Local + remote resource monitoring (CPU / memory / swap / network / disk)
+- [x] Remote resource monitoring (CPU with user/sys split, memory, whole-disk system usage, network up/down with default gateway)
 - [x] Remote process monitor (CPU-sorted table with PID copy and permission-aware termination)
 - [x] Full VT/ANSI terminal emulation (btop / htop / vim render correctly)
 - [x] Color emoji, including skin tones, flags, and ZWJ sequences

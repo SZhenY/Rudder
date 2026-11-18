@@ -669,10 +669,6 @@ pub(super) fn selected_iface(st: &TabStatus) -> (String, u64, u64) {
     st.net.first().cloned().unwrap_or_default()
 }
 
-pub(super) fn conn_ip(host: &str) -> String {
-    host.rsplit('@').next().unwrap_or(host).trim().to_string()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -819,15 +815,6 @@ mod tests {
         assert_eq!(hit.len(), 2, "空白应忽略、大小写不敏感");
         assert_eq!(hit[0].as_str(), "ls -la");
         assert_eq!(hit[1].as_str(), "LS /tmp");
-    }
-
-    #[test]
-    fn conn_ip_strips_the_user_part() {
-        assert_eq!(conn_ip("root@10.0.0.5"), "10.0.0.5");
-        assert_eq!(conn_ip("10.0.0.5"), "10.0.0.5");
-        assert_eq!(conn_ip("a@b@c"), "c", "只取最后一段");
-        assert_eq!(conn_ip("  root@10.0.0.5  "), "10.0.0.5", "两端空白应去掉");
-        assert_eq!(conn_ip(""), "");
     }
 }
 

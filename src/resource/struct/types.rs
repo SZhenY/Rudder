@@ -14,10 +14,17 @@ pub(crate) struct TabStatus {
     /// Closed 时若从未连上（state != 1），标记为连接失败，与掉线区分。
     pub(crate) failed: bool,
     pub(crate) cpu: f32,
+    /// CPU 总占用里的 user(+nice) 分项，0..1。
+    pub(crate) cpu_user: f32,
+    /// CPU 总占用里的 system(+irq/softirq) 分项，0..1。
+    pub(crate) cpu_sys: f32,
+    /// 默认网关（IPv4）；空 = 尚未采到或远端没有 `ip` 命令。
+    pub(crate) gateway: String,
+    /// 整块系统盘的已用 / 总容量（字节）；0 = 尚未采到。
+    pub(crate) disk_used_bytes: u64,
+    pub(crate) disk_total_bytes: u64,
     pub(crate) mem_used_kib: u64,
     pub(crate) mem_total_kib: u64,
-    pub(crate) swap_used_kib: u64,
-    pub(crate) swap_total_kib: u64,
     pub(crate) net: Vec<(String, u64, u64)>,
     pub(crate) selected_iface: String,
     pub(crate) net_hist: Vec<f32>,

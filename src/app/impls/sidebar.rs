@@ -49,14 +49,12 @@ fn write_disks(stats: &mut SidebarStats, win: &AppWindow, disks: &[(String, u64,
 /// 重建 `VecModel`（换模型会让 Repeater 重建整条曲线）。
 fn clear_host_card(win: &AppWindow) {
     if !win.get_host_name().is_empty()
-        || !win.get_host_ip().is_empty()
         || !win.get_host_os().is_empty()
         || !win.get_host_kernel().is_empty()
         || !win.get_host_uptime().is_empty()
         || !win.get_host_load().is_empty()
     {
         win.set_host_name("".into());
-        win.set_host_ip("".into());
         win.set_host_os("".into());
         win.set_host_kernel("".into());
         win.set_host_uptime("".into());
@@ -80,9 +78,21 @@ fn clear_stats(win: &AppWindow) {
     clear_host_card(win);
     win.set_cpu_percent(0.0);
     win.set_mem_percent(0.0);
-    win.set_swap_percent(0.0);
-    win.set_mem_detail("".into());
-    win.set_swap_detail("".into());
+    // 断开 / 未连接：四张资源卡统一回到破折号空态，不残留上一台主机的数字。
+    win.set_resources(ResourceSnapshot {
+        cpu_percent: 0.0,
+        cpu_foot_left: "—".into(),
+        cpu_foot_right: "—".into(),
+        mem_percent: 0.0,
+        mem_foot_left: "—".into(),
+        mem_foot_right: "—".into(),
+        disk_percent: 0.0,
+        disk_foot_left: "—".into(),
+        disk_foot_right: "—".into(),
+        net_down: "—".into(),
+        net_up: "—".into(),
+        net_gateway: "—".into(),
+    });
 }
 
 /// Process monitor (#23) lives in a shared model (the AppWindow and the
@@ -144,7 +154,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
         if unchanged {
             win.set_conn_state(conn_state_code(st.state));
             win.set_connection_state(connection_label(st.state, &st.host).into());
-            win.set_conn_host(conn_ip(&st.host).into());
             win.set_stats_ready(overview_ready(st));
             return stats;
         }
@@ -160,14 +169,11 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
     }
 
     match status {
-        // A local-shell tab (WSL / cmd / PowerShell) also reaches the connected
-        // state but never reports remote resources, so keep the connection line
-        // and show this machine's own CPU / memory / swap instead of zeroes.
-        // 本地 shell 会话不采样本机数据，也不显示右侧 overview 面板。
+        // 本地 shell 会话（WSL / cmd / PowerShell）也会进入已连接态，但没有远端
+        // 资源可报；只保留连接行，overview 面板对它不展示数据。
         Some(st) if st.is_local => {
             win.set_conn_state(conn_state_code(st.state));
             win.set_connection_state(connection_label(st.state, &st.host).into());
-            win.set_conn_host(conn_ip(&st.host).into());
             clear_stats(win);
             win.set_stats_ready(overview_ready(&st));
         }
@@ -175,14 +181,11 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
         Some(st) if st.state == 1 => {
             win.set_conn_state(1);
             win.set_connection_state(st.host.clone().into());
-            win.set_conn_host(conn_ip(&st.host).into());
             // 就绪判据统一走 overview_ready()，见本分支末尾；此处不再提前写入，
             // 避免 Slint 的 changed 处理读到尚未更新的 host-name。
-            win.set_resource_title(t("服务器资源", "Server resources").into());
             // 综合页头卡：字段由 `monitor.rs` 从 /etc/os-release、uname、hostname、
             // uptime、loadavg 采集，结构化存放，不按本地化标签反查。
             win.set_host_name(st.sys.host.name.clone().into());
-            win.set_host_ip(st.sys.host.ip.clone().into());
             win.set_host_os(st.sys.host.os.clone().into());
             win.set_host_kernel(st.sys.host.kernel.clone().into());
             win.set_host_uptime(st.sys.host.uptime.clone().into());
@@ -198,12 +201,52 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
             win.set_mem_path(smooth_path(&st.mem_hist, 60).into());
             win.set_cpu_percent(st.cpu);
             win.set_mem_percent(usage_pct(st.mem_used_kib, st.mem_total_kib));
-            win.set_swap_percent(usage_pct(st.swap_used_kib, st.swap_total_kib));
-            win.set_mem_detail(format_mem(st.mem_used_kib / 1024, st.mem_total_kib / 1024).into());
-            win.set_swap_detail(
-                format_mem(st.swap_used_kib / 1024, st.swap_total_kib / 1024).into(),
-            );
             let (name, rx, tx) = selected_iface(&st);
+            // 2×2 资源卡：整份快照一次写入，避免十几个标量属性各穿四层。
+            // 系统盘优先整盘口径（总量 = 物理盘容量，已用 = 该盘各已挂载分区之和）；
+            // 远端没有 lsblk 时回退到 `/` 分区口径。
+            let disk = if st.disk_total_bytes > 0 {
+                (
+                    st.disk_used_bytes as f32 / st.disk_total_bytes as f32,
+                    st.disk_used_bytes,
+                    st.disk_total_bytes,
+                )
+            } else {
+                system_disk_usage(&st.disks, &mount_filter(), hide_special_partitions())
+                    .unwrap_or((0.0, 0, 0))
+            };
+            win.set_resources(ResourceSnapshot {
+                cpu_percent: st.cpu,
+                cpu_foot_left: format!("{}: {:.1}%", t("用户", "User"), st.cpu_user * 100.0)
+                    .into(),
+                cpu_foot_right: format!("{}: {:.1}%", t("系统", "Sys"), st.cpu_sys * 100.0)
+                    .into(),
+                mem_percent: usage_pct(st.mem_used_kib, st.mem_total_kib),
+                mem_foot_left: format_size(st.mem_used_kib.saturating_mul(1024)).into(),
+                mem_foot_right: format_size(st.mem_total_kib.saturating_mul(1024)).into(),
+                disk_percent: disk.0,
+                disk_foot_left: if disk.2 > 0 {
+                    format_size(disk.1)
+                } else {
+                    "—".to_string()
+                }
+                .into(),
+                disk_foot_right: if disk.2 > 0 {
+                    format_size(disk.2)
+                } else {
+                    "—".to_string()
+                }
+                .into(),
+                net_down: format_bytes_per_sec(rx).into(),
+                net_up: format_bytes_per_sec(tx).into(),
+                // 网关 5 拍才采一次；没有 `ip` 命令的远端或首拍之前显示破折号。
+                net_gateway: if st.gateway.is_empty() {
+                    "—".to_string()
+                } else {
+                    st.gateway.clone()
+                }
+                .into(),
+            });
             win.set_net_top_up(format_bytes_per_sec(tx).into());
             win.set_net_top_down(format_bytes_per_sec(rx).into());
             // 上下行共用同一个峰值：两条线画在同一刻度上才可比。
@@ -254,8 +297,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
                 }
                 .into(),
             );
-            win.set_conn_host(conn_ip(&st.host).into());
-            win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
             win.set_stats_ready(overview_ready(&st));
         }
@@ -263,8 +304,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
         Some(st) => {
             win.set_conn_state(0);
             win.set_connection_state(format!("{} {}", t("连接中", "Connecting"), st.host).into());
-            win.set_conn_host(conn_ip(&st.host).into());
-            win.set_resource_title(t("服务器资源", "Server resources").into());
             clear_stats(win);
             win.set_stats_ready(overview_ready(&st));
         }
@@ -272,7 +311,6 @@ pub(super) fn refresh_sidebar(win: &AppWindow, statuses: &TabStatuses) -> Sideba
         None => {
             win.set_conn_state(0);
             win.set_connection_state(t("未连接", "Not connected").into());
-            win.set_conn_host("".into());
             clear_stats(win);
             win.set_stats_ready(false);
         }

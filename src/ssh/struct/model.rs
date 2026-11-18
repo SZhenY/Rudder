@@ -182,19 +182,17 @@ pub struct SystemDetails {
     pub gpu_info: Vec<(String, String)>,
     pub cpu_usage: Vec<(String, String)>,
     pub memory: Vec<(String, String)>,
-    pub swap: Vec<(String, String)>,
     pub networks: Vec<(String, String, String, String, String)>,
     pub filesystems: Vec<(String, String, String, String, String)>,
     /// 综合页头卡：结构化字段，避免按本地化标签从 `overview` 里反查。
     pub host: HostCard,
 }
 
-/// 综合页头卡的主机标识，取自远端 `hostname` / `hostname -I` / `/etc/os-release` /
+/// 综合页头卡的主机标识，取自远端 `hostname` / `/etc/os-release` /
 /// `uname -r` / `uptime -p` / `/proc/loadavg`。
 #[derive(Debug, Clone, Default)]
 pub struct HostCard {
     pub name: String,
-    pub ip: String,
     pub os: String,
     pub kernel: String,
     pub uptime: String,
@@ -262,15 +260,22 @@ pub enum SessionEvent {
         responder: MfaResponder,
     },
     /// Remote machine resource sample (from the monitor channel).
-    /// Memory/swap are in KiB (as reported by /proc/meminfo).
+    /// Memory is in KiB (as reported by /proc/meminfo).
     ResourceStats {
         cpu_percent: f32,
+        /// CPU 总占用里的 user(+nice) 分项，0..1。
+        cpu_user_percent: f32,
+        /// CPU 总占用里的 system(+irq/softirq) 分项，0..1。
+        cpu_sys_percent: f32,
         mem_used_kib: u64,
         mem_total_kib: u64,
-        swap_used_kib: u64,
-        swap_total_kib: u64,
         /// Per-interface (name, rx_bytes_per_sec, tx_bytes_per_sec).
         net: Vec<(String, u64, u64)>,
+        /// 默认网关；监控循环每 5 拍才采一次，`None` = 本轮没采到，沿用上一次。
+        gateway: Option<String>,
+        /// 整块系统盘的已用 / 总容量（字节）；0 = 本轮没采到，沿用上一次。
+        disk_used_bytes: u64,
+        disk_total_bytes: u64,
         /// Per-filesystem (mount_point, available_bytes, total_bytes).
         disks: Vec<(String, u64, u64)>,
         /// Detailed system information for the detached system-info window.

@@ -153,9 +153,9 @@ pub(crate) async fn tab_status(state: &SharedState, args: &Value) -> Result<Valu
 
 /// `SystemDetails` 的 7 节。
 ///
-/// 6 个 label/value 节输出成对象（沿用既有的 `pairs`），两个 5 元组输出成具名数组：
+/// 5 个 label/value 节输出成对象（沿用既有的 `pairs`），两个 5 元组输出成具名数组：
 /// `networks` 的第 4/5 位、`filesystems` 的第 5 位是采集脚本里的占位符，不输出。
-/// 全空时返回 `null` —— 给 6 个空对象会让调用方以为"这台机器没有内存"。
+/// 全空时返回 `null` —— 给 5 个空对象会让调用方以为"这台机器没有内存"。
 pub(crate) fn sys_json(sys: &crate::ssh::SystemDetails) -> Value {
     let mut out = serde_json::Map::new();
     for (key, rows) in [
@@ -164,7 +164,6 @@ pub(crate) fn sys_json(sys: &crate::ssh::SystemDetails) -> Value {
         ("gpu_info", &sys.gpu_info),
         ("cpu_usage", &sys.cpu_usage),
         ("memory", &sys.memory),
-        ("swap", &sys.swap),
     ] {
         if !rows.is_empty() {
             out.insert(key.to_string(), pairs(rows));
@@ -234,7 +233,9 @@ pub(crate) fn status_json(state: &SharedState, tab_id: &str) -> Value {
         "is_local": status.is_local,
         "cpu_percent": status.cpu,
         "mem": { "used_kib": status.mem_used_kib, "total_kib": status.mem_total_kib },
-        "swap": { "used_kib": status.swap_used_kib, "total_kib": status.swap_total_kib },
+        "cpu_user_percent": status.cpu_user * 100.0,
+        "cpu_sys_percent": status.cpu_sys * 100.0,
+        "gateway": status.gateway,
         "net": status
             .net
             .iter()

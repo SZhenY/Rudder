@@ -65,7 +65,7 @@ pub(super) fn wire_update_transfers(window: &AppWindow, ctx: &AppContext) {
             SharedString::from(format!(
                 "sysinfo v{} — {}",
                 get_ver("sysinfo"),
-                zh("本机资源采集", "local resource sampling")
+                zh("网卡枚举", "NIC enumeration")
             )),
             SharedString::from(format!(
                 "serde v{} — {}",

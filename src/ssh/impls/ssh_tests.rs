@@ -477,6 +477,31 @@ mod monitor_hardening_tests {
     }
 
     #[test]
+    fn cpu_user_and_system_shares_follow_jiffy_deltas() {
+        // 第二拍相对第一拍：user +30、system +10、idle +60，总增量 100 → 40% / 30% / 10%。
+        let first = "cpu 100 0 100 800 0 0 0 0\nMemTotal: 1000 kB\nMemAvailable: 500 kB\n";
+        let second = "cpu 130 0 110 860 0 0 0 0\nMemTotal: 1000 kB\nMemAvailable: 500 kB\n";
+        let mut prev = None;
+        let mut prev_net = HashMap::new();
+        let mut at = Instant::now();
+        let _ = parse_monitor_block(first, &mut prev, &mut prev_net, &mut at);
+        let event = parse_monitor_block(second, &mut prev, &mut prev_net, &mut at).unwrap();
+        match event {
+            super::super::SessionEvent::ResourceStats {
+                cpu_percent,
+                cpu_user_percent,
+                cpu_sys_percent,
+                ..
+            } => {
+                assert!((cpu_percent - 0.40).abs() < 1e-4, "busy {cpu_percent}");
+                assert!((cpu_user_percent - 0.30).abs() < 1e-4, "user {cpu_user_percent}");
+                assert!((cpu_sys_percent - 0.10).abs() < 1e-4, "sys {cpu_sys_percent}");
+            }
+            other => panic!("unexpected event: {other:?}"),
+        }
+    }
+
+    #[test]
     fn lightweight_resource_sample_does_not_replace_system_details() {
         let block = "cpu 1 2 3 4\nMemTotal: 1000 kB\nMemAvailable: 500 kB\n__DF__\n";
         let mut prev = None;

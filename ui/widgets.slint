@@ -269,26 +269,6 @@ export component LabeledInput inherits VerticalLayout {
     }
 }
 
-// --- Sparkline -------------------------------------------------------------
-// Compact horizontal bar chart used in the stats sidebar.
-export component Sparkline inherits Rectangle {
-    in property <[float]> values;
-    in property <brush> line-color: Theme.accent;
-
-    background: Theme.bg-root;
-    border-radius: Theme.radius-sm;
-    clip: true;
-
-    for v[i] in values : Rectangle {
-        x: i * (parent.width / max(1, values.length));
-        y: parent.height - (parent.height * clamp(v, 0.0, 1.0));
-        width: (parent.width / max(1, values.length)) - 1px;
-        height: parent.height * clamp(v, 0.0, 1.0);
-        background: line-color.with-alpha(0.85);
-        border-radius: 1px;
-    }
-}
-
 // --- ToolStrip --------------------------------------------------------------
 // 面板收起时贴在右缘的 36px 图标条：显示工具图标，点击重新展开。SFTP 面板与
 // 快捷命令面板共用，折叠/展开表现一致。占位槽由宿主预留，图标条不覆盖其它控件。

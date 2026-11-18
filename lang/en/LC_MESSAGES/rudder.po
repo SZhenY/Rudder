@@ -9,12 +9,6 @@ msgstr ""
 msgid "Not connected"
 msgstr "Not connected"
 
-msgid "Local resources"
-msgstr "Local resources"
-
-msgid "Server resources"
-msgstr "Server resources"
-
 msgid "Download settings"
 msgstr "Download settings"
 
@@ -273,14 +267,14 @@ msgstr "Group name"
 msgid "Move to"
 msgstr "Move to"
 
-msgid "Status"
-msgstr "Status"
-
 msgid "Memory"
 msgstr "Memory"
 
-msgid "Swap"
-msgstr "Swap"
+msgid "Sys"
+msgstr "Sys"
+
+msgid "Default gateway"
+msgstr "Default gateway"
 
 msgid "Local"
 msgstr "Local"
@@ -506,9 +500,6 @@ msgstr "Close tab"
 
 msgid "Duplicate connection"
 msgstr "Duplicate connection"
-
-msgid "Copied"
-msgstr "Copied"
 
 msgid "Clear sort"
 msgstr "Clear sort"
@@ -773,9 +764,6 @@ msgstr "Network"
 
 msgid "Disk"
 msgstr "Disk"
-
-msgid "Resources"
-msgstr "Resources"
 
 msgid "Retry"
 msgstr "Retry"

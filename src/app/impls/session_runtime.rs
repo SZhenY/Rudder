@@ -76,13 +76,17 @@ pub(crate) fn reconnect_tab(tab_id: &str, ctx: &ConnectCtx) -> bool {
         st.last_stats_at = None;
         st.mem_used_kib = 0;
         st.mem_total_kib = 0;
-        st.swap_used_kib = 0;
-        st.swap_total_kib = 0;
         st.cpu = 0.0;
+        st.cpu_user = 0.0;
+        st.cpu_sys = 0.0;
+        st.gateway.clear();
+        st.disk_used_bytes = 0;
+        st.disk_total_bytes = 0;
         st.cpu_ema = None;
         st.cpu_hist.clear();
         st.mem_hist.clear();
         st.net_hist.clear();
+        st.net_up_hist.clear();
     }
     // 新会话的首个 OSC 7 重新跟随。
     ctx.sftp_last_cwd

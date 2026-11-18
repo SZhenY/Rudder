@@ -1,7 +1,7 @@
-//! 运行状态页的**区块组件**：状态行、网络图、CPU/内存/交换、网络、磁盘。
+//! 运行状态页的**区块组件**：资源卡、网络图、网络、磁盘。
 //!
 //! 这些组件都有完整的 `in property` / `callback` 接口，只通过参数与外界通信。
-//! 使用方：`resource_view.slint`（运行状态页）与 `overview_panel.slint` 的页签面板。
+//! 使用方：`overview_view.slint`（运行状态页签）。
 
 import { Theme, AnimationSettings } from "theme.slint";
 import { TrendCurve } from "components/trend_curve.slint";
@@ -14,22 +14,52 @@ export struct DiskInfo {
     percent: float,   // used fraction 0.0..1.0
 }
 
-// --- StatRow ---------------------------------------------------------------
-// A single label / percentage / progress-bar row used for CPU / memory / swap.
-export component StatRow inherits HorizontalLayout {
-    in property <string> label;
-    in property <float> percent; // 0.0 .. 1.0
-    in property <string> detail;
-    /// 条内文字：CPU 传百分比、内存/交换/磁盘传 used/total；空则回退百分比。
+// --- ResourceSnapshot ------------------------------------------------------
+// 2×2 资源卡一次写入的整份快照。字段用下划线（与 TabInfo.title_len 一致）：
+// Slint 与 Rust 两侧同名，避免生成名歧义。
+export struct ResourceSnapshot {
+    cpu_percent: float,
+    /// "User: 1.6%"
+    cpu_foot_left: string,
+    /// "Sys: 5.8%"
+    cpu_foot_right: string,
+    mem_percent: float,
+    /// "1.5 GB"（已用）
+    mem_foot_left: string,
+    /// "3.8 GB"（总量）
+    mem_foot_right: string,
+    disk_percent: float,
+    /// "3 GB"（已用，系统盘）
+    disk_foot_left: string,
+    /// "7 GB"（总量，系统盘）
+    disk_foot_right: string,
+    net_down: string,
+    net_up: string,
+    net_gateway: string,
+}
+
+// --- ResourceTile ----------------------------------------------------------
+// 资源卡的统一外壳：图标块 + 标题 + 大号读数，下面是进度条（指标卡）或速率行
+// （网络卡），最后是左右两项说明。
+export component ResourceTile inherits Rectangle {
+    in property <string> title;
+    in property <string> glyph;
+    in property <brush> tone: Theme.accent;
+    /// 大号读数（"7.4%"）；网络卡留空。
     in property <string> value;
-    in property <brush> bar-color: Theme.accent;
+    /// 进度条占比 0..1；< 0 不画（网络卡）。
+    in property <float> percent: -1;
+    in property <string> foot-left;
+    in property <string> foot-right;
+    /// 网络卡的速率行；`percent < 0` 时显示。
+    in property <string> net-down;
+    in property <string> net-up;
 
     // 条宽的目标值 + "这一次要不要动画"。
     //
-    // 输入是 1 Hz 采样，条每秒都会换目标；而**任何一帧动画都会让 Slint 重画整个窗口**
-    // （不做局部重绘）。空闲时 CPU 在 1~2% 之间抖，每秒重放动画就等于每秒重画十几次
-    // （实测空闲帧率 15 fps ✗）。所以只有**真正的跳变**（≥10 个百分点）才出动画，
-    // 小抖动直接跳到位 —— 空闲帧率因此回到 1 fps。
+    // 输入是 1~2 Hz 采样，条每秒都会换目标；而**任何一帧动画都会让 Slint 重画整个
+    // 窗口**（不做局部重绘）。空闲时 CPU 在 1~2% 之间抖，每秒重放动画就等于每秒
+    // 重画十几次。所以只有**真正的跳变**（≥10 个百分点）才出动画，小抖动直接跳位。
     property <float> shown: percent;
     property <bool> smooth: false;
     changed percent => {
@@ -37,58 +67,131 @@ export component StatRow inherits HorizontalLayout {
         root.shown = percent;
     }
 
-    spacing: Theme.sp-6;
-    padding-left: Theme.sp-8;
-    padding-right: Theme.sp-8;
-    height: max(22px * Theme.ui-scale, Theme.fs-sm + 8px * Theme.ui-scale);
+    vertical-stretch: 0;
+    // 两行卡片对齐：内容高度 70px 左右，撑到 84px 让 2×2 四块一致；
+    // 字号调大时按内容继续长高，不裁字。
+    min-height: 84px * Theme.ui-scale;
+    border-radius: Theme.radius-md;
+    background: Theme.bg-elevated;
+    border-width: 1px;
+    border-color: Theme.border-subtle;
 
-    Text {
-        text: label;
-        color: Theme.text-secondary;
-        font-size: Theme.fs-sm;
-        width: 40px * Theme.ui-scale;          // fits English "Memory" as well as 中文 "内存"
-        vertical-alignment: center;
-        overflow: elide;
-    }
+    VerticalLayout {
+        padding: Theme.sp-8;
+        spacing: Theme.sp-6;
+        alignment: start;
 
-    // Progress bar — stretches to fill the row, with a floor so it stays usable.
-    Rectangle {
-        background: Theme.bg-root;
-        border-radius: 2px * Theme.ui-scale;
-        horizontal-stretch: 2;
-        min-width: 28px * Theme.ui-scale;
-        // 2×2 布局下行宽只有 ~100px，条内文字必须裁在自己的矩形里，
-        // 否则 `7.2G/7.8G` 会画到行外被硬裁成半截。
-        clip: true;
-
-        Rectangle {
-            x: 0;
-            y: 0;
-            height: parent.height;
-            // 条宽跟着**取整后的百分比**（右侧数字本来就是整数百分比），跳变只有 1 个百分点。
-            // 动画只在 `root.smooth`（变化 ≥10 个百分点）时生效，见上面 `changed percent`。
-            width: parent.width * clamp(Math.round(shown * 100) / 100, 0.0, 1.0);
-            background: bar-color;
-            border-radius: 2px * Theme.ui-scale;
-            animate width {
-                duration: AnimationSettings.medium2();
-                easing: AnimationSettings.e-standard-decelerate();
-                enabled: AnimationSettings.enabled && root.smooth;
+        HorizontalLayout {
+            width: 100%;
+            spacing: Theme.sp-6;
+            Rectangle {
+                width: 22px * Theme.ui-scale;
+                height: 22px * Theme.ui-scale;
+                border-radius: Theme.radius-sm;
+                background: root.tone.with-alpha(0.16);
+                IconText {
+                    width: parent.width;
+                    height: parent.height;
+                    centered: true;
+                    text: root.glyph;
+                    color: root.tone;
+                    font-size: Theme.fs-sm;
+                }
+            }
+            Text {
+                text: root.title;
+                color: Theme.text-secondary;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            if root.value != "" : Text {
+                text: root.value;
+                color: root.tone;
+                font-size: Theme.fs-xl;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
             }
         }
 
-        Text {
-            x: 6px * Theme.ui-scale;
-            width: parent.width - 10px;
-            text: root.value != "" ? root.value : Math.round(percent * 100) + "%";
-            color: Theme.text-primary;
-            font-size: Theme.fs-xs;
-            vertical-alignment: center;
-            height: parent.height;
-            overflow: elide;
+        if root.percent >= 0 : Rectangle {
+            height: 6px * Theme.ui-scale;
+            // 显式占满卡片宽度：VerticalLayout 的交叉轴不吃 `horizontal-stretch`，
+            // 只写 stretch 时轨道会缩到内容宽度并被居中，填出来像「从中间向两边长」。
+            width: 100%;
+            border-radius: 3px * Theme.ui-scale;
+            background: Theme.bg-root;
+            clip: true;
+            Rectangle {
+                x: 0;
+                y: 0;
+                width: parent.width * clamp(root.shown, 0.0, 1.0);
+                height: parent.height;
+                border-radius: 3px * Theme.ui-scale;
+                background: root.tone;
+                animate width {
+                    duration: AnimationSettings.medium2();
+                    easing: AnimationSettings.e-standard-decelerate();
+                    enabled: AnimationSettings.enabled && root.smooth;
+                }
+            }
+        }
+
+        // 上行在左、下行在右：与上方网络曲线图的 ↑ / ↓ 顺序一致。
+        if root.percent < 0 : HorizontalLayout {
+            width: 100%;
+            spacing: Theme.sp-4;
+            IconText {
+                text: "\u{E5D8}";   // arrow_upward
+                color: Theme.success;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.net-up;
+                color: Theme.text-primary;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                // 窄宽度下压缩并省略；默认 clip 的隐式最小宽度 = 全文宽度，会把数值画到卡外。
+                overflow: elide;
+            }
+            Rectangle { horizontal-stretch: 1; }
+            IconText {
+                text: "\u{E5DB}";   // arrow_downward
+                color: Theme.accent;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+            }
+            Text {
+                text: root.net-down;
+                color: Theme.text-primary;
+                font-size: Theme.fs-sm;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        HorizontalLayout {
+            width: 100%;
+            Text {
+                text: root.foot-left;
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+                overflow: elide;
+            }
+            Text {
+                text: root.foot-right;
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+                overflow: elide;
+            }
         }
     }
-
 }
 
 // --- NetGraph --------------------------------------------------------------
@@ -148,81 +251,7 @@ export component NetGraph inherits VerticalLayout {
     }
 }
 
-// --- Reusable sections -----------------------------------------------------
-// 每个区块自包含，运行状态页把它们竖排铺开，不需要为不同布局重复实现。
-
-// 状态区块：连接状态点 + 标题 + 可点击复制的主机地址。
-export component StatusBlock inherits Rectangle {
-    in property <int> conn-state;
-    in property <string> connection-state;
-    in property <string> conn-host;        // clean IP/host to copy ("" = not clickable) (#192)
-    callback copy-host(string);
-    property <bool> copied;                // shows a brief "Copied" badge after a click
-    VerticalLayout {
-        spacing: Theme.sp-4;
-        HorizontalLayout {
-            spacing: Theme.sp-6;
-            Rectangle {
-                width: 8px * Theme.ui-scale; height: 8px * Theme.ui-scale;
-                y: (parent.height - self.height) / 2;
-                border-radius: 4px * Theme.ui-scale;
-                background: root.conn-state == 1 ? Theme.success
-                          : root.conn-state == 2 ? Theme.warning
-                          : Theme.text-muted;
-            }
-            Text { text: @tr("Status"); color: Theme.text-primary;
-                   font-size: Theme.fs-md; font-weight: 600;
-                   vertical-alignment: center; }
-            Rectangle { horizontal-stretch: 1; }
-        }
-        // IP / host line — click to copy (#192). Only interactive when there's a
-        // real host (skips the "Not connected" placeholder). Hover gives a hand
-        // cursor + subtle highlight; a brief "Copied" badge confirms the copy.
-        HorizontalLayout {
-            spacing: Theme.sp-6;
-            alignment: start;
-            Rectangle {
-                width: ip-txt.preferred-width + (root.conn-host != "" ? 10px * Theme.ui-scale : 0px);
-                height: ip-txt.preferred-height + 4px * Theme.ui-scale;
-                border-radius: Theme.radius-sm;
-                background: (root.conn-host != "" && ip-ta.has-hover) ? Theme.state-hover : transparent;
-                animate background {
-                    duration: (root.conn-host != "" && ip-ta.has-hover) ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
-                    easing: (root.conn-host != "" && ip-ta.has-hover) ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
-                    enabled: AnimationSettings.enabled;
-                }
-                ip-txt := Text {
-                    x: root.conn-host != "" ? 5px * Theme.ui-scale : 0px;
-                    y: (parent.height - self.height) / 2;
-                    text: root.connection-state;
-                    color: Theme.text-secondary; font-size: Theme.fs-sm;
-                }
-                ip-ta := TouchArea {
-                    enabled: root.conn-host != "";
-                    mouse-cursor: pointer;
-                    clicked => {
-                        root.copy-host(root.conn-host);
-                        root.copied = true;
-                        copied-timer.running = true;
-                    }
-                }
-            }
-            if root.copied : Text {
-                text: @tr("Copied");
-                color: Theme.success; font-size: Theme.fs-sm;
-                vertical-alignment: center;
-            }
-        }
-    }
-    // Auto-hide the "Copied" badge a moment after the click.
-    copied-timer := Timer {
-        interval: 1400ms;
-        running: false;
-        triggered => { root.copied = false; self.running = false; }
-    }
-}
-
-// Dual network graph (active tab on top, local below).
+// 当前会话所选网卡的吞吐曲线（上下行同一坐标系）。
 export component NetBlock inherits VerticalLayout {
     in property <length> chart-height: 48px * Theme.ui-scale;
     in property <string> net-top-up;
