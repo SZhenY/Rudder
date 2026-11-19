@@ -262,11 +262,12 @@ export component AppWindow inherits Window {
     // panel is open (fixed to the right edge) it covers that corner, so shift the icons
     // to stay over the tabs.
     //
-    // 快捷面板只有真的占位时（有会话 + 未折叠）才把工具栏图标推开；新标签页
-    // 上它不显示也不占位，这里跟着不偏移，否则右上角会空出一条竖带。
+    // 快捷面板开启且有会话时把工具栏图标推开；新标签页不占位、不偏移。
     property <length> toolbar-x-off:
         root.quick-panel-open && root.quick-has-session
-            ? (root.quick-panel-collapsed ? 36px * Theme.ui-scale : root.quick-panel-width + 2px * Theme.ui-scale)
+            ? Theme.quick-strip-w
+                + (dock-area.quick-w-clamped + 2px * Theme.ui-scale - Theme.quick-strip-w)
+                    * (1 - dock-area.quick-progress)
             : 0px;
     property <length> toolbar-y-off: 0px;
     property <length> toolbar-y:
@@ -308,7 +309,6 @@ export component AppWindow inherits Window {
     property <bool> quick-has-session:
         root.active-tab-id != "welcome" && root.active-tab-id != "";
     in-out property <length> quick-panel-width: Theme.quick-w;
-    in-out property <length> quick-panel-height: 220px * Theme.ui-scale;
     property <string> quick-external-command;
     property <bool> quick-external-send-enter;
     property <int> quick-external-sequence;
@@ -1034,39 +1034,49 @@ export component AppWindow inherits Window {
         dock-area := Rectangle {
         horizontal-stretch: 1;
         vertical-stretch: 1;
-        // 无会话时快捷面板整体不显示，也不该占位（否则折叠条上会多出一个
-        // 点了没反应的快捷命令图标）。
-        property <length> quick-outer-strip:
-            root.quick-panel-open && root.quick-panel-collapsed && root.quick-has-session
-                && !root.in-dock-page
-                ? 36px * Theme.ui-scale : 0px;
-        // 快捷面板固定贴右缘：四边几何已收敛，只保留右侧留白。
-        property <length> quick-left: 0px;
-        property <length> quick-right: dock-area.quick-outer-strip;
-        property <length> quick-top: 0px;
-        property <length> quick-bottom: 0px;
+        // 快捷面板固定贴右缘：只保留右侧让位。
+        property <length> quick-right: dock-area.quick-taken;
 
-        if dock-area.quick-outer-strip > 0px : ToolStrip {
-            // 与展开态面板同底（`QuickDockPanel` 用 `term-bg`），否则折叠/展开切换会跳一档色。
-            background: Theme.term-bg;
-            x: parent.width - parent.quick-outer-strip;
+        // 快捷面板的开合几何，与 overview 的 sf-taken / sf-viz 同构：
+        // 布局让位跟随面板可视宽度，折叠条始终叠在最上层。
+        property <bool> quick-active:
+            root.quick-panel-open && root.quick-has-session && !root.in-dock-page;
+        property <bool> quick-shown: quick-active && !root.quick-panel-collapsed;
+        property <float> quick-progress: quick-shown ? 0 : 1;
+        animate quick-progress {
+            duration: AnimationSettings.collapse-duration(
+                !quick-shown, max(quick-w-clamped - Theme.quick-strip-w, 1px));
+            easing: AnimationSettings.collapse-easing();
+            enabled: AnimationSettings.enabled;
+        }
+        // 两侧栏共用的最大宽度：基准是 dock-area 自身，不含任何面板。
+        property <length> panel-max-w: Theme.panel-max-w(dock-area.width, Theme.overview-min-w);
+        // 渲染用宽度：窗口变窄时自动收回，不改持久化值（与 overview 一致）。
+        property <length> quick-w-clamped:
+            clamp(root.quick-panel-width, Theme.quick-min-w, panel-max-w);
+        // 让位宽度跟随面板可视宽度：rest 的右缘始终贴着面板左缘，
+        // overview / 终端与面板同一条时间轴移动，不会先被推开再等面板。
+        property <length> quick-taken: quick-active ? quick-viz : 0px;
+        property <length> quick-viz:
+            Theme.quick-strip-w + (quick-w-clamped - Theme.quick-strip-w) * (1 - quick-progress);
+
+        // 面板底色：按布局让位宽度铺满（收 36 / 展 full），
+        // 面板内容淡入淡出、以及动画中面板还没长到的部分，背后都不是壁纸。
+        // 声明在 rest 之前 → rest 盖住左侧，露出的正好是 quick-taken 这一块。
+        if quick-active : Rectangle {
+            x: parent.width - quick-taken;
             y: 0px;
-            width: parent.quick-outer-strip;
+            width: quick-taken;
             height: parent.height;
-            glyph: "\u{E3E7}";
-            tooltip: @tr("Quick commands");
-            expand => {
-                root.quick-panel-collapsed = false;
-            }
+            background: Theme.term-bg;
         }
 
         // Everything except the quick panel.
         rest := Rectangle {
-        x: parent.quick-left;
-        y: parent.quick-top;
-        width: parent.width - parent.quick-left - parent.quick-right;
-        height: parent.height
-            - parent.quick-top - parent.quick-bottom;
+        x: 0px;
+        y: 0px;
+        width: parent.width - parent.quick-right;
+        height: parent.height;
 
         // 切页过渡底板：只在淡入期间压住壁纸，静态不绘制。
         // 读动画后的 quick-area.opacity，避免底板提前消失。
@@ -1097,28 +1107,12 @@ export component AppWindow inherits Window {
                 easing: AnimationSettings.e-enter();
                 enabled: AnimationSettings.enabled && !root.nav-swapping;
             }
-            // 开关打开、未折叠，且当前活动标签是真实会话时才显示并占位。
-            // 新标签页即使开关是开的也不显示，避免挤压欢迎页。
-            property <bool> quick-shown:
-                root.quick-panel-open && !root.quick-panel-collapsed
-                && root.quick-has-session && !root.in-dock-page;
-            // 折叠进度：0 = 展开，1 = 收起。**与左侧导航 / SFTP 面板同一组令牌**，
-            // 宽度、间距、面板透明度全部从它派生 —— 三者同一条时间轴。
-            property <float> quick-progress: quick-shown ? 0 : 1;
-            animate quick-progress {
-                duration: AnimationSettings.collapse-duration(!quick-shown, root.quick-panel-width);
-                easing: AnimationSettings.collapse-easing();
-                enabled: AnimationSettings.enabled;
-            }
-            property <length> quick-w: root.quick-panel-width * (1 - quick-progress);
-            property <length> quick-h: root.quick-panel-height * (1 - quick-progress);
-            property <length> quick-sp: 0px;
-
+            // rest 已按 quick-taken 让位，内容区填满 rest；
+            // 面板与内容共用同一进度，右缘始终贴合。
             Rectangle {
             x: 0px;
             y: 0px;
-            width: parent.quick-shown
-                ? parent.width - parent.quick-w - parent.quick-sp : parent.width;
+            width: parent.width;
             height: parent.height;
             clip: true;
             // Split-pane area (v0.5): panes tile this rect; each pane has its own
@@ -1229,6 +1223,7 @@ export component AppWindow inherits Window {
                     height: shown ? parent.height : 0px;
                     if shown : TerminalView {
                         visible: root.nav-page != 3 && root.nav-page != 5;
+                        panel-max-w: dock-area.panel-max-w;
                         active: term.id == root.active-tab-id;
                         focus-sequence: root.terminal-focus-sequence;
                         width: parent.width;
@@ -1495,17 +1490,20 @@ export component AppWindow inherits Window {
 
         }
 
+        }
+
+        }
         if root.quick-panel-open : QuickDockPanel {
-            // 切到欢迎页 / Docker / 笔记页时不要瞬间消失：保持元素，靠 quick-w 收窄 + 这里淡出。
+            // 切到欢迎页 / Docker / 笔记页时不要瞬间消失：保持元素，靠 quick-viz 收窄 + 这里淡出。
             // 与宽度共用 `quick-progress`：原来这里有一条独立的 opacity 动画
             // （e-standard-decelerate，与尺寸的弹簧不同步），是"内容先暗、外壳后收"
             // 的根源。现在两者同轴。
             opacity: 1 - parent.quick-progress;
             // `opacity: 0` 仍会吃掉点击，淡出走完就停止命中。
             visible: self.opacity > 0.001;
-            x: parent.width - parent.quick-w;
+            x: parent.width - parent.quick-viz;
             y: 0px;
-            width: parent.quick-w;
+            width: parent.quick-viz;
             height: parent.height;
             commands: root.quick-commands;
             activate(command, send-enter) => {
@@ -1525,9 +1523,8 @@ export component AppWindow inherits Window {
         }
 
         Rectangle {
-            visible: root.quick-panel-open && !root.quick-panel-collapsed
-                && !root.in-dock-page;
-            x: parent.width - parent.quick-w - 2px * Theme.ui-scale;
+            visible: parent.quick-active && parent.quick-progress < 0.999;
+            x: parent.width - parent.quick-viz - 2px * Theme.ui-scale;
             y: 0px;
             width: 2px * Theme.ui-scale;
             height: parent.height;
@@ -1547,16 +1544,33 @@ export component AppWindow inherits Window {
                 moved => {
                     if (self.pressed) {
                         root.quick-panel-width = clamp(
-                            quick-area.width - ((self.absolute-position.x + self.mouse-x)
-                                - quick-area.absolute-position.x),
-                            180px * Theme.ui-scale, max(200px * Theme.ui-scale, quick-area.width - 240px * Theme.ui-scale));
+                            dock-area.width - ((self.absolute-position.x + self.mouse-x)
+                                - dock-area.absolute-position.x),
+                            Theme.quick-min-w, dock-area.panel-max-w);
                     }
                 }
             }
         }
-        }
-        }
 
+        // 折叠条常驻、随进度淡入，且声明在面板之后 = 画在最上层；
+        // 展开时它盖在面板右缘淡出，收起时淡入，右缘不会出现空白。
+        if quick-active : ToolStrip {
+            background: Theme.term-bg;
+            opacity: quick-progress;
+            visible: quick-progress > 0.001;
+            // 只在完全收起后接受 hover/点击：展开时鼠标还停在条上，
+            // 淡出期间保持 enabled 会让图标方块亮一下。
+            enabled: root.quick-panel-collapsed && quick-progress > 0.99;
+            x: parent.width - Theme.quick-strip-w;
+            y: 0px;
+            width: Theme.quick-strip-w;
+            height: parent.height;
+            glyph: "\u{E3E7}";
+            tooltip: @tr("Quick commands");
+            expand => {
+                root.quick-panel-collapsed = false;
+            }
+        }
     }
         }
     }

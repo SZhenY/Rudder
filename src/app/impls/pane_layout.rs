@@ -25,7 +25,6 @@ pub(crate) fn save_layout(win: &AppWindow, store: &Rc<RefCell<ConfigStore>>) {
     s.set_quick_panel_open(win.get_quick_panel_open());
     s.set_quick_panel_collapsed(win.get_quick_panel_collapsed());
     s.set_quick_panel_width(win.get_quick_panel_width());
-    s.set_quick_panel_height(win.get_quick_panel_height());
     // A maximized size isn't a useful "preferred" size to restore to, so only
     // remember the windowed size. Ask the native window too, because the Slint
     // property can lag during startup/shutdown on frameless Windows (#234).

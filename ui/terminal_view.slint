@@ -134,12 +134,14 @@ export component TerminalView inherits Rectangle {
     callback set-piece-span(string /* tab-id */, int /* 0=cpu 1=net */, int /* 0..5 */);
     // 逻辑 px：不随 ui-scale 变，跨缩放持久化稳定（物理宽见 `overview-w-phys`）。
     in property <length> overview-panel-width: 380px;     // 右侧面板宽度
-    // 面板物理宽度：逻辑值随缩放等比，下限 255×缩放、上限窗口宽 45%
+    // 两侧栏共用的最大宽度（由 app.slint 按 dock-area 宽算好传入，不含快捷面板）。
+    in property <length> panel-max-w: 0px;
+    // 面板物理宽度：逻辑值随缩放等比，下限 255×缩放、上限统一为 panel-max-w
     // —— 与 `src/app/impls/window_geometry.rs::panel_phys_w` 同一公式，改一处要同步。
     property <length> overview-w-phys: clamp(
         root.overview-panel-width * Theme.ui-scale,
         Theme.overview-min-w,
-        max(Theme.overview-min-w, root.width * 0.45));
+        max(Theme.overview-min-w, root.panel-max-w));
     in property <bool>   overview-collapsed: false;       // SFTP panel minimised (toolbar only)
 
     // 折叠进度：0 = 展开，1 = 收起。**与左侧导航、快捷面板同一组令牌、同一套结构** ——
@@ -1313,7 +1315,7 @@ export component TerminalView inherits Rectangle {
                         root.set-overview-panel-width(clamp(
                             (dock-region.width - ((self.absolute-position.x + self.mouse-x)
                                 - dock-region.absolute-position.x)) / Theme.ui-scale,
-                            255px, max(310px, dock-region.width * 0.45 / Theme.ui-scale)));
+                            255px, max(255px, root.panel-max-w / Theme.ui-scale)));
                     }
                 }
             }

@@ -282,6 +282,15 @@ export global Theme {
     out property <length> nav-w-collapsed: 54px * root.ui-scale;
     out property <length> settings-nav-w: 168px * root.ui-scale;
     out property <length> quick-w: 260px * root.ui-scale;
+    out property <length> quick-min-w: 180px * root.ui-scale;
+    out property <length> quick-strip-w: 36px * root.ui-scale;
+    /// 两侧栏共用的最大宽度比例（见 `panel-max-w`）。
+    out property <float> panel-max-ratio: 0.45;
+
+    /// 面板最大宽度：max(下限, 可用宽 × 45%)。quick 与 overview 共用，基准各自独立。
+    public pure function panel-max-w(avail: length, min-w: length) -> length {
+        return max(min-w, avail * root.panel-max-ratio);
+    }
 
     /// 平台输入法提示（Slint 1.18 新增的 `input-method-hints`）：**不要**自动大写、
     /// 不要自动纠错、不要自动补全。
