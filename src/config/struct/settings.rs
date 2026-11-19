@@ -164,7 +164,6 @@ pub struct LayoutSettings {
     pub quick_panel_open: bool,
     pub quick_panel_collapsed: bool,
     pub quick_panel_width: f32,
-    pub quick_panel_height: f32,
     /// 窗口尺寸（逻辑像素；0 = 未设置 → 用内置默认）。
     pub window_width: f32,
     pub window_height: f32,
@@ -184,7 +183,6 @@ impl Default for LayoutSettings {
             quick_panel_open: false,
             quick_panel_collapsed: false,
             quick_panel_width: 260.0,
-            quick_panel_height: 220.0,
             window_width: 0.0,
             window_height: 0.0,
         }

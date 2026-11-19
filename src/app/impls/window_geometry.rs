@@ -158,10 +158,18 @@ pub(crate) fn handle_macos_terminal_wheel(
 // 按指针位置派发到对应窗口，这个守卫反而会让设置开着时主窗口滚不动 —— 已删除。
 
 /// 面板物理宽度 —— 与 `ui/terminal_view.slint` 的 `overview-w-phys` 同一公式：
-/// `clamp(逻辑值 × 缩放, 255 × 缩放, 可用宽 × 45%)`。改一处必须同步另一处。
-fn panel_phys_w(logical: f32, avail: f32, scale: f32) -> f32 {
+/// `clamp(逻辑值 × 缩放, 255 × 缩放, 可用宽 × Theme.panel-max-ratio)`。改一处必须同步另一处。
+fn panel_phys_w(logical: f32, avail: f32, scale: f32, ratio: f32) -> f32 {
     let min = 255.0 * scale;
-    (logical * scale).clamp(min, (avail * 0.45).max(min))
+    (logical * scale).clamp(min, (avail * ratio).max(min))
+}
+
+/// 快捷面板宽度：下限 180×缩放，上限与 overview 共用 `max(255×缩放, 停靠区宽 × ratio)`。
+/// 注意它存的是渲染 px，不再乘 scale。
+fn quick_phys_w(logical: f32, dock: f32, scale: f32, ratio: f32) -> f32 {
+    let min = 180.0 * scale;
+    let max = (dock * ratio).max(255.0 * scale);
+    logical.clamp(min, max)
 }
 
 pub(crate) fn terminal_wheel_hit(
@@ -188,7 +196,13 @@ pub(crate) fn terminal_wheel_hit(
         // 折叠条与 `Theme.overview-strip-w` 一致（36 × 缩放）。
         36.0 * scale
     } else {
-        panel_phys_w(term_state.overview_panel_width, term.w, scale)
+        panel_phys_w(
+            term_state.overview_panel_width,
+            dock_width_logical(win),
+            scale,
+            win.global::<Theme>().get_panel_max_ratio(),
+        )
+        .min(term.w)
     };
     term_w = (term_w - sftp_take).max(0.0);
 
@@ -251,16 +265,35 @@ pub(crate) fn app_content_area(win: &AppWindow) -> LogicalRect {
     area.x += nav;
     area.w = (area.w - nav).max(0.0);
 
-    // 快捷命令面板固定在右侧。
-    if win.get_quick_panel_open() {
+    // 快捷命令面板固定在右侧。门控与 Slint 的 `quick-active` 一致：
+    // 欢迎页 / Docker / 笔记页不占位。宽度上限与 overview 共用 45% 公式。
+    let active = win.get_active_tab_id();
+    let quick_active = win.get_quick_panel_open()
+        && win.get_nav_page() != 3
+        && win.get_nav_page() != 5
+        && !active.is_empty()
+        && active.as_str() != "welcome";
+    if quick_active {
+        let ui_scale = win.global::<Theme>().get_ui_scale().max(0.8);
         let quick_take = if win.get_quick_panel_collapsed() {
-            36.0
+            36.0 * ui_scale
         } else {
-            win.get_quick_panel_width() + 2.0
+            quick_phys_w(
+                win.get_quick_panel_width(),
+                area.w,
+                ui_scale,
+                win.global::<Theme>().get_panel_max_ratio(),
+            )
         };
         area.w = (area.w - quick_take).max(0.0);
     }
     area
+}
+
+/// 不含任何面板的停靠区宽（窗口逻辑宽 - 左侧导航）。
+fn dock_width_logical(win: &AppWindow) -> f32 {
+    let scale = win.window().scale_factor().max(0.01);
+    (win.window().size().width as f32 / scale - win.get_nav_width()).max(0.0)
 }
 
 pub(crate) fn active_terminal_panel_rects(win: &AppWindow) -> Option<(String, LogicalRect, TerminalState)> {
@@ -320,7 +353,13 @@ pub(crate) fn active_sftp_file_list_rect(win: &AppWindow) -> Option<LogicalRect>
         h: term.h,
     };
     let scale = win.global::<Theme>().get_ui_scale().max(0.8);
-    let panel_w = panel_phys_w(term_state.overview_panel_width, dock_region.w, scale);
+    let panel_w = panel_phys_w(
+        term_state.overview_panel_width,
+        dock_width_logical(win),
+        scale,
+        win.global::<Theme>().get_panel_max_ratio(),
+    )
+    .min(dock_region.w);
     // 面板固定在右侧、不显示目录树：占满 dock-region 的高度，宽度取面板宽。
     let mut panel = LogicalRect {
         x: dock_region.x + (dock_region.w - panel_w).max(0.0),
@@ -465,5 +504,27 @@ mod tests {
         assert!(contains_logical(r, 110.0, 70.0), "右下边缘");
         assert!(!contains_logical(r, 9.9, 45.0), "左侧外出");
         assert!(!contains_logical(r, 60.0, 70.1), "下方外出");
+    }
+
+    #[test]
+    fn panel_phys_w_clamps_to_min_and_shared_ratio() {
+        // 255×scale 下限
+        assert_eq!(panel_phys_w(100.0, 2000.0, 1.0, 0.45), 255.0);
+        // 45% 上限
+        assert_eq!(panel_phys_w(1000.0, 2000.0, 1.0, 0.45), 900.0);
+        // 窄窗口：min 优先，且不 panic
+        assert_eq!(panel_phys_w(1000.0, 300.0, 1.0, 0.45), 255.0);
+        // ui-scale 同时作用于值和下限
+        assert_eq!(panel_phys_w(380.0, 2000.0, 1.25, 0.45), 475.0);
+    }
+
+    #[test]
+    fn quick_phys_w_keeps_its_min_and_uses_the_same_max() {
+        // 180×scale 下限保持现状
+        assert_eq!(quick_phys_w(100.0, 1200.0, 1.0, 0.45), 180.0);
+        assert_eq!(quick_phys_w(300.0, 1200.0, 1.0, 0.45), 300.0);
+        // 上限与 overview 一致：max(255, 45%)
+        assert_eq!(quick_phys_w(1000.0, 1200.0, 1.0, 0.45), 540.0);
+        assert_eq!(quick_phys_w(1000.0, 300.0, 1.0, 0.45), 255.0);
     }
 }

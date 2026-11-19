@@ -657,9 +657,6 @@ fn default_quick_panel_width() -> f32 {
     260.0
 }
 
-fn default_quick_panel_height() -> f32 {
-    220.0
-}
 fn default_flow() -> String {
     "none".to_string()
 }
@@ -2141,19 +2138,6 @@ impl ConfigStore {
 
     pub fn set_quick_panel_width(&mut self, width: f32) {
         self.cache.layout.quick_panel_width = width;
-    }
-
-    pub fn quick_panel_height(&self) -> f32 {
-        let height = self.cache.layout.quick_panel_height;
-        if height <= 0.0 {
-            default_quick_panel_height()
-        } else {
-            height
-        }
-    }
-
-    pub fn set_quick_panel_height(&mut self, height: f32) {
-        self.cache.layout.quick_panel_height = height;
     }
 
     /// Explicit quick-command groups (#55) — parallels [`groups`](Self::groups).

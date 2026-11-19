@@ -29,7 +29,6 @@ pub(crate) fn apply_layout_prefs(w: &AppWindow, store: &Store) {
     w.set_quick_panel_open(quick_panel_open);
     w.set_quick_panel_collapsed(quick_panel_collapsed);
     w.set_quick_panel_width(s.quick_panel_width());
-    w.set_quick_panel_height(s.quick_panel_height());
     w.set_sidebar_collapsed(sidebar_collapsed);
     // 命令栏显隐：与工具栏图标共用同一个窗口属性 —— 必须从 config 推回 UI，
     // 否则「还原本页默认」只改了 config，界面（含工具栏图标）停在旧状态，
