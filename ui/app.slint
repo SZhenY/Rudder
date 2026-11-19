@@ -205,6 +205,7 @@ export component AppWindow inherits Window {
     in-out property <bool> window-maximized: false;
     callback win-minimize();
     callback win-maximize-toggle();
+    callback win-zoom-toggle();   // macOS 留白条双击：与 AppKit 的 zoom 去重
     callback win-drag();          // start an OS window-move
     callback win-close();
     callback reset-page(string);   // settings: restore page defaults
@@ -957,11 +958,13 @@ export component AppWindow inherits Window {
         // a plain transparent strip would show the raw wallpaper here and look dark
         // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
         // bar keeps handling the window drag in this region.
-    // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
-    // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
-    // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
+    // 已抽成 `ui/titlebar_inset_strip.slint`：状态透传 + 双击/拖动转发。
+    // 双击走 `win-zoom-toggle`（应用侧兜底）；Rust 侧延迟一拍检查 AppKit 是否
+    // 已经 zoom，避免一次双击切换两次（见 window_chrome.rs）。
     if root.titlebar-inset > 0px : TitlebarInsetStrip {
         titlebar-inset : root.titlebar-inset;
+        drag() => { root.win-drag(); }
+        zoom-toggle() => { root.win-zoom-toggle(); }
     }
 
         // Immersive custom title bar (#119) — only on frameless platforms

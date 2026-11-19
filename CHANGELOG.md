@@ -5,6 +5,11 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 修复 / Fixed
+
+- macOS：双击顶部沉浸式标题栏恢复最大化 / 还原；应用侧接管双击，并与 AppKit 的 zoom 去重，避免一次双击切换两次。
+- macOS：快捷键面板补充「⌃C 中断当前命令」，说明 ⌘C 为复制。
+
 ## [0.8.3] - 2026-11-18
 
 ### 新增 / Added

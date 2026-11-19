@@ -54,6 +54,29 @@ pub(crate) fn wire_window_chrome(
     }
     {
         let weak = window.as_weak();
+        window.on_win_zoom_toggle(move || {
+            let Some(w) = weak.upgrade() else { return };
+            let target = !w.get_window_maximized();
+            let weak2 = w.as_weak();
+            // AppKit 的 zoom 可能和我们的 toggle 同时触发：等一拍再检查，
+            // 状态已经变成目标值就说明系统处理过了，不再补一次。
+            slint::Timer::single_shot(std::time::Duration::from_millis(180), move || {
+                let Some(w) = weak2.upgrade() else { return };
+                let applied = w.window().with_winit_window(|ww| {
+                    if !zoom_needs_apply(ww.is_maximized(), target) {
+                        return false;
+                    }
+                    ww.set_maximized(target);
+                    true
+                });
+                if applied.unwrap_or(false) {
+                    w.set_window_maximized(target);
+                }
+            });
+        });
+    }
+    {
+        let weak = window.as_weak();
         let close_handles = handles.clone();
         let wc_store = store.clone();
         let wc_exit_confirmed = exit_confirmed.clone();
@@ -126,4 +149,26 @@ pub(crate) fn wire_window_chrome(
         });
     }
 
+}
+
+/// AppKit 已经把窗口切到目标状态时，应用侧不再补一次 toggle。
+fn zoom_needs_apply(current: bool, target: bool) -> bool {
+    current != target
+}
+
+#[cfg(test)]
+mod zoom_guard_tests {
+    use super::zoom_needs_apply;
+
+    #[test]
+    fn zoom_skips_when_appkit_already_matched() {
+        assert!(!zoom_needs_apply(true, true));
+        assert!(!zoom_needs_apply(false, false));
+    }
+
+    #[test]
+    fn zoom_applies_when_state_differs() {
+        assert!(zoom_needs_apply(false, true));
+        assert!(zoom_needs_apply(true, false));
+    }
 }
