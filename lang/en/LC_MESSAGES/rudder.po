@@ -779,3 +779,45 @@ msgstr "Memory usage"
 
 msgid "Loading system information"
 msgstr "Loading system information"
+
+msgid "Actions"
+msgstr "Actions"
+
+msgid "Container"
+msgstr "Container"
+
+msgid "Image"
+msgstr "Image"
+
+msgid "Loading…"
+msgstr "Loading…"
+
+msgid "Logs"
+msgstr "Logs"
+
+msgid "Only the last 200 lines are shown"
+msgstr "Only the last 200 lines are shown"
+
+msgid "Open terminal"
+msgstr "Open terminal"
+
+msgid "Ports"
+msgstr "Ports"
+
+msgid "Remove container?"
+msgstr "Remove container?"
+
+msgid "Remove"
+msgstr "Remove"
+
+msgid "Search name / image / port"
+msgstr "Search name / image / port"
+
+msgid "Session disconnected — showing cached data"
+msgstr "Session disconnected — showing cached data"
+
+msgid "Start"
+msgstr "Start"
+
+msgid "Status"
+msgstr "Status"
