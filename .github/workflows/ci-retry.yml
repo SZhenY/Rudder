@@ -1,0 +1,131 @@
+name: Retry transient CI jobs
+
+# 只处理 runner 未获取 / 被回收的 job，以及日志里有资源不足签名的编译失败。
+# 真实编译错误、测试失败、脚本错误一律不重试，避免掩盖问题。
+# 单次 run 最多 3 次尝试（初始 + 2 次重跑），靠 run_attempt 防循环。
+# workflow_run 的 workflow 文件必须存在于默认分支 main 才会触发。
+
+on:
+  workflow_run:
+    workflows: ["Release"]
+    types: [completed]
+    branches: [main]        # tag run 的 head_branch 是标签名，天然排除
+  workflow_dispatch:
+    inputs:
+      run_id:
+        description: "目标 Release run id（手动验证用）"
+        required: false
+        default: ""
+      dry_run:
+        description: "只输出候选，不实际重跑"
+        type: boolean
+        default: true
+
+permissions:
+  actions: write
+  contents: read
+
+jobs:
+  rerun:
+    name: Rerun runner-failed jobs
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-24.04
+    steps:
+      - name: 分类并重跑资源类失败的 job
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.event.workflow_run.id || inputs.run_id }}
+          DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run || 'false' }}
+        run: |
+          set -euo pipefail
+
+          if [[ -z "${RUN_ID:-}" ]]; then
+            echo "::error::RUN_ID 为空：手动触发必须填 run_id"
+            exit 1
+          fi
+
+          API="repos/${OWNER_REPO}/actions"
+          run_status="$(gh api "$API/runs/${RUN_ID}" --jq '.status')"
+          attempt="$(gh api "$API/runs/${RUN_ID}" --jq '.run_attempt')"
+          echo "run_id=${RUN_ID} status=${run_status} attempt=${attempt} dry_run=${DRY_RUN}"
+
+          {
+            echo "## CI retry 判定"
+            echo ""
+            echo "- run: ${RUN_ID}"
+            echo "- status: ${run_status}, attempt: ${attempt}"
+            echo "- dry_run: ${DRY_RUN}"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [[ "$run_status" != "completed" ]]; then
+            echo "run 尚未结束，跳过。"
+            exit 0
+          fi
+          if (( attempt >= 3 )); then
+            echo "已达最大尝试次数（3），不再重跑。"
+            exit 0
+          fi
+
+          jobs_json="$(mktemp)"
+          trap 'rm -f "$jobs_json"' EXIT
+          gh api --paginate "$API/runs/${RUN_ID}/jobs?per_page=100" > "$jobs_json"
+
+          # runner 未获取的特征：completed + cancelled + steps 为空。
+          # skipped 的「包体积」job 同样 steps 为空，必须靠 conclusion 排除。
+          candidates=()
+          while IFS=$'\t' read -r id name; do
+            [[ -z "$id" ]] && continue
+            candidates+=("${id}|${name}|cancelled + 零步骤：The job was not acquired by Runner of type hosted even after multiple attempts")
+          done < <(jq -r '.jobs[]
+            | select(.status == "completed")
+            | select(.conclusion == "cancelled")
+            | select((.steps | length) == 0)
+            | [.id, .name] | @tsv' "$jobs_json")
+
+          # 编译失败只有在日志命中资源签名时才算候选；其余一律不重试。
+          while IFS=$'\t' read -r id name; do
+            [[ -z "$id" ]] && continue
+            logs="$(gh api "$API/jobs/${id}/logs" 2>/dev/null || true)"
+            if grep -Eqi \
+              -e 'not acquired by Runner' -e 'No hosted runner is available' \
+              -e 'Resource not available' -e 'The runner received a request to stop' \
+              -e 'runner lost' -e 'signal: killed' -e 'SIGKILL' -e 'Killed process' \
+              -e 'out of memory' -e 'cannot allocate memory' \
+              -e 'memory allocation of .* failed' -e 'No space left on device' \
+              -e 'Os \{ code: (12|28)' <<< "$logs"; then
+              candidates+=("${id}|${name}|日志命中资源不足 / runner 失败签名")
+            fi
+          done < <(jq -r '.jobs[]
+            | select(.status == "completed")
+            | select(.conclusion == "failure")
+            | [.id, .name] | @tsv' "$jobs_json")
+
+          if (( ${#candidates[@]} == 0 )); then
+            echo "没有资源类失败候选，退出。"
+            exit 0
+          fi
+
+          echo "候选 job："
+          printf '%s\n' "${candidates[@]}"
+          {
+            echo ""
+            echo "### 候选 job"
+            for c in "${candidates[@]}"; do
+              echo "- ${c}"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          # 一次触发最多重跑 1 个：重跑会开新 attempt，同批拿到的其他 job id 会失效。
+          IFS='|' read -r job_id job_name reason <<< "${candidates[0]}"
+          if [[ "${DRY_RUN}" == "true" ]]; then
+            echo "[dry-run] 将提交单 job 重跑：${job_name} (job_id=${job_id})；本次未调用 API。"
+            exit 0
+          fi
+
+          sleep 60
+          gh api -X POST "$API/jobs/${job_id}/rerun"
+          echo "已提交重跑：${job_name} (job_id=${job_id})，依据：${reason}"

@@ -125,6 +125,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      # 6 个平台同时抢 runner 会放大 macOS runner 未被获取的概率；限 3 个并发。
+      max-parallel: 3
       matrix:
         include:
           - os: windows-2025-vs2026      # VS2026 toolchain, same generation as
@@ -216,6 +218,13 @@ jobs:
         uses: Swatinem/rust-cache@v2
         with:
           key: ${{ matrix.target }}
+
+      # 仅 macOS 限制 cargo 并发：默认按 CPU 核数并发，峰值内存过高。
+      # 不写 job 级 env，避免其它平台收到空字符串 CARGO_BUILD_JOBS。
+      - name: Limit cargo jobs on macOS
+        if: runner.os == 'macOS'
+        shell: bash
+        run: echo "CARGO_BUILD_JOBS=2" >> "$GITHUB_ENV"
 
       - name: Build (release)
         run: cargo build --release --target ${{ matrix.target }}
