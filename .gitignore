@@ -25,3 +25,6 @@ ui/fonts/MapleMono*.ttf
 
 # Windows 快捷方式（本地文件，不入库）
 *.lnk
+
+# size-report 本地临时数据（CI 从 artifact 下载）
+/sizes/
