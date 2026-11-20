@@ -15,6 +15,7 @@ import { ResetBar } from "settings/reset_bar.slint";
 import { TerminalPage } from "settings/pages/terminal.slint";
 import { AppearancePage } from "settings/pages/appearance.slint";
 import { LayoutPage } from "settings/pages/layout.slint";
+import { DockerPage } from "settings/pages/docker.slint";
 import { SyncPage } from "settings/pages/sync.slint";
 import { WslPage } from "settings/pages/wsl.slint";
 import { TransferPage } from "settings/pages/transfer.slint";
@@ -28,6 +29,7 @@ export component InterfacePanel inherits Rectangle {
     in property <bool> is-windows;
     in-out property <string> renderer-mode: "software";
     in-out property <bool> aggressive-memory-reclaim: false;
+    in-out property <bool> docker-auto-discover: true;
     in property <[string]> term-fonts;
     in property <string> term-font-family;
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
@@ -141,11 +143,12 @@ export component InterfacePanel inherits Rectangle {
             : page == "appearance" ? 1
             : page == "transfer" ? 2
             : page == "layout" ? 3
-            : page == "wsl" ? 4
-            : page == "sync" ? (root.is-windows ? 5 : 4)
-            : page == "ai" ? (root.is-windows ? 6 : 5)
-            : page == "beta" ? (root.is-windows ? 7 : 6)
-            : (root.is-windows ? 8 : 7);
+            : page == "docker" ? 4
+            : page == "wsl" ? 5
+            : page == "sync" ? (root.is-windows ? 6 : 5)
+            : page == "ai" ? (root.is-windows ? 7 : 6)
+            : page == "beta" ? (root.is-windows ? 8 : 7)
+            : (root.is-windows ? 9 : 8);
     }
 
     // 单次定时器：等淡出快走完再换页，然后淡入。动效关闭时间隔归零，不白等。
@@ -193,6 +196,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-ui-font-px(int);   // UI base font size, px
     callback set-renderer-mode(string);
     callback set-sftp-follow-cd(bool);
+    callback set-docker-auto-discover(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-collapse-overview-default(bool);
     callback set-sync-upload-enabled(bool);
@@ -311,6 +315,11 @@ export component InterfacePanel inherits Rectangle {
                     icon: "\u{E5CB}"; label: root.lang-en ? "Layout" : "布局";
                     active: root.nav-page == "layout";
                     clicked => { root.goto-page("layout"); }
+                }
+                NavItem {
+                    icon: "\u{E30C}"; label: "Docker";
+                    active: root.nav-page == "docker";
+                    clicked => { root.goto-page("docker"); }
                 }
                 if root.is-windows : NavItem {
                     icon: "\u{E30A}"; label: "WSL";
@@ -474,6 +483,13 @@ export component InterfacePanel inherits Rectangle {
                             set-collapse-overview-default(a0) => { root.set-collapse-overview-default(a0); }
                             set-collapse-sidebar-default(a0) => { root.set-collapse-sidebar-default(a0); }
                             set-quick-commands-as-sidebar(a0) => { root.set-quick-commands-as-sidebar(a0); }
+                    }
+
+                    if root.ifd-page == "docker" : DockerPage {
+                            lang-en: root.lang-en;
+                            docker-auto-discover <=> root.docker-auto-discover;
+                            reset-page(a0) => { root.reset-page(a0); }
+                            set-docker-auto-discover(a0) => { root.set-docker-auto-discover(a0); }
                     }
 
                     if root.ifd-page == "transfer" : TransferPage {

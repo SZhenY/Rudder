@@ -21,7 +21,7 @@ import { ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
-import { DockerPage, DockerContainer } from "docker_page.slint";
+import { DockerPage, DockerContainer, DockerHostTab } from "docker_page.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
@@ -282,13 +282,30 @@ export component AppWindow inherits Window {
     callback open-processes();
     in property <bool> proc-available;       // a live remote session is active
     in property <[ProcRow]> proc-list;       // top remote processes by CPU
-    // Docker 页（仅远端会话，只读容器列表）。
+    // Docker 页：按 user@host 聚合的主机标签 + 当前主机容器列表。
     in property <[DockerContainer]> docker-containers;
+    in property <[DockerHostTab]> docker-hosts;
+    in property <string> docker-active-host;
     in property <string> docker-status: "idle";
     in property <string> docker-error;
     in property <string> docker-summary;
     in property <string> docker-session;
+    in-out property <string> docker-filter;
+    in-out property <bool> docker-auto-discover: true;
+    in property <string> docker-pending-id;
+    in property <bool> docker-log-open;
+    in property <bool> docker-log-loading;
+    in property <bool> docker-log-truncated;
+    in property <string> docker-log-title;
+    in property <[string]> docker-log-lines;
     callback refresh-docker();
+    callback docker-switch-host(string /* host key */);
+    callback docker-filter-changed(string);
+    callback docker-action(string, int);
+    callback docker-open-logs(string);
+    callback docker-close-logs();
+    callback docker-open-terminal(string);
+    callback set-docker-auto-discover(bool);
     // 综合页头卡：结构化字段，Rust 从远端 overview 直接写入，不按本地化标签反查。
     in property <string> host-name;
     in property <string> host-os;
@@ -1468,6 +1485,23 @@ export component AppWindow inherits Window {
                     width: parent.width;
                     height: parent.height;
                     containers: root.docker-containers;
+                    hosts: root.docker-hosts;
+                    active-host: root.docker-active-host;
+                    page-visible: root.nav-page == 3;
+                    auto-refresh: root.docker-auto-discover;
+                    filter-text: root.docker-filter;
+                    pending-id: root.docker-pending-id;
+                    log-open: root.docker-log-open;
+                    log-loading: root.docker-log-loading;
+                    log-truncated: root.docker-log-truncated;
+                    log-title: root.docker-log-title;
+                    log-lines: root.docker-log-lines;
+                    switch-host(key) => { root.docker-switch-host(key); }
+                    filter-changed(text) => { root.docker-filter-changed(text); }
+                    action(id, kind) => { root.docker-action(id, kind); }
+                    open-logs(id) => { root.docker-open-logs(id); }
+                    close-logs() => { root.docker-close-logs(); }
+                    open-terminal(id) => { root.docker-open-terminal(id); }
                     page-status: root.docker-status;
                     error-text: root.docker-error;
                     summary: root.docker-summary;

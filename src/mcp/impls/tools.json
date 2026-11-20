@@ -20,7 +20,10 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "group": { "type": "string", "description": "Optional exact group name filter." }
+                "group": {
+                    "type": "string",
+                    "description": "Optional exact group name filter."
+                }
             },
             "additionalProperties": false
         },
@@ -37,9 +40,15 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "session_id": { "type": "string", "minLength": 1, "description": "Saved session id returned by list_sessions." }
+                "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Saved session id returned by list_sessions."
+                }
             },
-            "required": ["session_id"],
+            "required": [
+                "session_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -70,14 +79,19 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
                 "refresh": {
                     "type": "boolean",
                     "default": false,
                     "description": "Accepted for compatibility only. MCP cannot start remote sampling — the Rudder resource panel owns it. Check stale / last_sample_ms_ago and, when stale, tell the user to open the resource panel."
                 }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -108,11 +122,28 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "source": { "type": "string", "enum": ["screen", "scrollback"], "default": "screen" },
-                "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 200 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "source": {
+                    "type": "string",
+                    "enum": [
+                        "screen",
+                        "scrollback"
+                    ],
+                    "default": "screen"
+                },
+                "max_rows": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 400,
+                    "default": 200
+                }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -128,14 +159,41 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "pattern": { "type": "string", "description": "Rust regex matched against the terminal's plain text." },
-                "timeout_ms": { "type": "integer", "minimum": 100, "maximum": 120000, "default": 15000 },
-                "quiet_ms": { "type": "integer", "minimum": 0, "maximum": 5000, "default": 300 },
-                "since_seq": { "type": "integer", "minimum": 0, "description": "Only count output after this output_seq (from read_terminal). Defaults to now." },
-                "max_rows": { "type": "integer", "minimum": 1, "maximum": 400, "default": 400 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "pattern": {
+                    "type": "string",
+                    "description": "Rust regex matched against the terminal's plain text."
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 100,
+                    "maximum": 120000,
+                    "default": 15000
+                },
+                "quiet_ms": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 5000,
+                    "default": 300
+                },
+                "since_seq": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "description": "Only count output after this output_seq (from read_terminal). Defaults to now."
+                },
+                "max_rows": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 400,
+                    "default": 400
+                }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -151,14 +209,20 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "session_id": { "type": "string", "minLength": 1, "description": "Saved session id from list_sessions, or a built-in `system:` id." },
+                "session_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Saved session id from list_sessions, or a built-in `system:` id."
+                },
                 "trust_unknown_host_key": {
                     "type": "boolean",
                     "default": false,
                     "description": "Only affects hosts with no saved key: record the key and connect without prompting. Ignored for changed keys, which always require the user."
                 }
             },
-            "required": ["session_id"],
+            "required": [
+                "session_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -174,9 +238,14 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -192,11 +261,23 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "text": { "type": "string", "description": "Text to type. May be empty to send only Enter." },
-                "enter": { "type": "boolean", "default": true, "description": "Append a carriage return (press Enter) after the text." }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "text": {
+                    "type": "string",
+                    "description": "Text to type. May be empty to send only Enter."
+                },
+                "enter": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Append a carriage return (press Enter) after the text."
+                }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -212,12 +293,31 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "command": { "type": "string", "minLength": 1 },
-                "timeout_ms": { "type": "integer", "minimum": 1000, "maximum": 300000, "default": 30000 },
-                "max_output_bytes": { "type": "integer", "minimum": 1024, "maximum": 4194304, "default": 1048576 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "command": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 1000,
+                    "maximum": 300000,
+                    "default": 30000
+                },
+                "max_output_bytes": {
+                    "type": "integer",
+                    "minimum": 1024,
+                    "maximum": 4194304,
+                    "default": 1048576
+                }
             },
-            "required": ["tab_id", "command"],
+            "required": [
+                "tab_id",
+                "command"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -248,7 +348,11 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1, "description": "An SSH tab from list_tabs." },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "An SSH tab from list_tabs."
+                },
                 "pid": {
                     "type": "integer",
                     "minimum": 1,
@@ -261,7 +365,10 @@
                     "description": "Optional sudo password for the connected user. Omit when the process belongs to that user."
                 }
             },
-            "required": ["tab_id", "pid"],
+            "required": [
+                "tab_id",
+                "pid"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -279,7 +386,9 @@
             "properties": {
                 "keys": {
                     "type": "array",
-                    "items": { "type": "string" },
+                    "items": {
+                        "type": "string"
+                    },
                     "description": "Exact setting keys such as terminal.font_size. Omit for all."
                 }
             },
@@ -303,7 +412,9 @@
                     "description": "Map of setting key to new value, e.g. {\"terminal.font_size\": 15}."
                 }
             },
-            "required": ["values"],
+            "required": [
+                "values"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -319,20 +430,70 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "session_id": { "type": "string", "description": "Empty or omitted = create a new host." },
-                "name": { "type": "string" },
-                "host": { "type": "string", "description": "Required for ssh/telnet." },
-                "port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                "user": { "type": "string" },
-                "kind": { "type": "string", "enum": ["ssh", "serial", "telnet", "local"] },
-                "auth": { "type": "string", "enum": ["password", "key", "keyboard-interactive"] },
-                "password": { "type": "string" },
-                "key_mode": { "type": "string", "enum": ["path", "inline"], "description": "Which key source to use; clears the other one." },
-                "private_key_path": { "type": "string" },
-                "private_key_inline": { "type": "string", "description": "PEM/OpenSSH key text; implies key_mode=inline." },
-                "group": { "type": "string" },
-                "note": { "type": "string" },
-                "jump_session_id": { "type": "string", "description": "Saved host id to use as a jump/bastion host." },
+                "session_id": {
+                    "type": "string",
+                    "description": "Empty or omitted = create a new host."
+                },
+                "name": {
+                    "type": "string"
+                },
+                "host": {
+                    "type": "string",
+                    "description": "Required for ssh/telnet."
+                },
+                "port": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 65535
+                },
+                "user": {
+                    "type": "string"
+                },
+                "kind": {
+                    "type": "string",
+                    "enum": [
+                        "ssh",
+                        "serial",
+                        "telnet",
+                        "local"
+                    ]
+                },
+                "auth": {
+                    "type": "string",
+                    "enum": [
+                        "password",
+                        "key",
+                        "keyboard-interactive"
+                    ]
+                },
+                "password": {
+                    "type": "string"
+                },
+                "key_mode": {
+                    "type": "string",
+                    "enum": [
+                        "path",
+                        "inline"
+                    ],
+                    "description": "Which key source to use; clears the other one."
+                },
+                "private_key_path": {
+                    "type": "string"
+                },
+                "private_key_inline": {
+                    "type": "string",
+                    "description": "PEM/OpenSSH key text; implies key_mode=inline."
+                },
+                "group": {
+                    "type": "string"
+                },
+                "note": {
+                    "type": "string"
+                },
+                "jump_session_id": {
+                    "type": "string",
+                    "description": "Saved host id to use as a jump/bastion host."
+                },
                 "proxy": {
                     "type": "string",
                     "description": "Outbound proxy for this host: socks5://host:port or http://host:port. Credentials may be embedded as user:pass@; they are split out and the password is stored encrypted. Empty string = direct (or ALL_PROXY)."
@@ -345,28 +506,91 @@
                     "type": "string",
                     "description": "Proxy password, stored encrypted and never returned. Omit to keep the saved one; empty string clears it."
                 },
-                "encoding": { "type": "string", "description": "Terminal encoding, e.g. UTF-8 or GBK." },
-                "disable_shell_integration": { "type": "boolean" },
-                "serial_port": { "type": "string", "description": "Device name, e.g. COM3 or /dev/ttyUSB0. Required for kind=serial." },
-                "baud_rate": { "type": "integer", "minimum": 300, "maximum": 4000000 },
-                "data_bits": { "type": "integer", "enum": [7, 8] },
-                "stop_bits": { "type": "integer", "enum": [1, 2] },
-                "parity": { "type": "string", "enum": ["none", "odd", "even"] },
-                "flow_control": { "type": "string", "enum": ["none", "hardware", "software"] },
+                "encoding": {
+                    "type": "string",
+                    "description": "Terminal encoding, e.g. UTF-8 or GBK."
+                },
+                "disable_shell_integration": {
+                    "type": "boolean"
+                },
+                "serial_port": {
+                    "type": "string",
+                    "description": "Device name, e.g. COM3 or /dev/ttyUSB0. Required for kind=serial."
+                },
+                "baud_rate": {
+                    "type": "integer",
+                    "minimum": 300,
+                    "maximum": 4000000
+                },
+                "data_bits": {
+                    "type": "integer",
+                    "enum": [
+                        7,
+                        8
+                    ]
+                },
+                "stop_bits": {
+                    "type": "integer",
+                    "enum": [
+                        1,
+                        2
+                    ]
+                },
+                "parity": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "odd",
+                        "even"
+                    ]
+                },
+                "flow_control": {
+                    "type": "string",
+                    "enum": [
+                        "none",
+                        "hardware",
+                        "software"
+                    ]
+                },
                 "forwards": {
                     "type": "array",
                     "description": "Replaces the host's tunnel list when given.",
                     "items": {
                         "type": "object",
                         "properties": {
-                            "kind": { "type": "string", "enum": ["local", "remote", "dynamic"], "description": "local = -L, remote = -R, dynamic = -D." },
-                            "name": { "type": "string" },
-                            "bind_addr": { "type": "string" },
-                            "bind_port": { "type": "integer", "minimum": 1, "maximum": 65535 },
-                            "host": { "type": "string" },
-                            "host_port": { "type": "integer", "minimum": 0, "maximum": 65535 }
+                            "kind": {
+                                "type": "string",
+                                "enum": [
+                                    "local",
+                                    "remote",
+                                    "dynamic"
+                                ],
+                                "description": "local = -L, remote = -R, dynamic = -D."
+                            },
+                            "name": {
+                                "type": "string"
+                            },
+                            "bind_addr": {
+                                "type": "string"
+                            },
+                            "bind_port": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 65535
+                            },
+                            "host": {
+                                "type": "string"
+                            },
+                            "host_port": {
+                                "type": "integer",
+                                "minimum": 0,
+                                "maximum": 65535
+                            }
                         },
-                        "required": ["kind", "bind_port"],
+                        "required": [
+                            "kind",
+                            "bind_port"
+                        ],
                         "additionalProperties": false
                     }
                 },
@@ -376,12 +600,24 @@
                     "items": {
                         "type": "object",
                         "properties": {
-                            "expect": { "type": "string" },
-                            "response": { "type": "string" },
-                            "append_enter": { "type": "boolean", "default": true },
-                            "repeat": { "type": "boolean", "default": false }
+                            "expect": {
+                                "type": "string"
+                            },
+                            "response": {
+                                "type": "string"
+                            },
+                            "append_enter": {
+                                "type": "boolean",
+                                "default": true
+                            },
+                            "repeat": {
+                                "type": "boolean",
+                                "default": false
+                            }
                         },
-                        "required": ["expect"],
+                        "required": [
+                            "expect"
+                        ],
                         "additionalProperties": false
                     }
                 }
@@ -401,10 +637,18 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "session_id": { "type": "string", "minLength": 1 },
-                "close_open_tabs": { "type": "boolean", "default": false }
+                "session_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "close_open_tabs": {
+                    "type": "boolean",
+                    "default": false
+                }
             },
-            "required": ["session_id"],
+            "required": [
+                "session_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -420,10 +664,18 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "path": { "type": "string", "default": "/" }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "path": {
+                    "type": "string",
+                    "default": "/"
+                }
             },
-            "required": ["tab_id"],
+            "required": [
+                "tab_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -439,15 +691,23 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "remote_path": { "type": "string", "minLength": 1 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "remote_path": {
+                    "type": "string",
+                    "minLength": 1
+                }
             },
-            "required": ["tab_id", "remote_path"],
+            "required": [
+                "tab_id",
+                "remote_path"
+            ],
             "additionalProperties": false
         },
         "annotations": {
             "readOnlyHint": false,
-            
             "destructiveHint": false,
             "idempotentHint": false,
             "openWorldHint": true
@@ -459,11 +719,25 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "local_path": { "type": "string", "minLength": 1, "description": "Source path on the machine running Rudder." },
-                "remote_path": { "type": "string", "minLength": 1 }
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "local_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Source path on the machine running Rudder."
+                },
+                "remote_path": {
+                    "type": "string",
+                    "minLength": 1
+                }
             },
-            "required": ["tab_id", "local_path", "remote_path"],
+            "required": [
+                "tab_id",
+                "local_path",
+                "remote_path"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -479,14 +753,20 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
                 "path": {
                     "type": "string",
                     "minLength": 1,
                     "description": "Absolute remote path to create, e.g. /var/tmp/release."
                 }
             },
-            "required": ["tab_id", "path"],
+            "required": [
+                "tab_id",
+                "path"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -502,7 +782,10 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
                 "path": {
                     "type": "string",
                     "minLength": 1,
@@ -514,7 +797,10 @@
                     "description": "Delete a non-empty directory and everything under it. Irreversible; ignored for files."
                 }
             },
-            "required": ["tab_id", "path"],
+            "required": [
+                "tab_id",
+                "path"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -530,7 +816,10 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
                 "from": {
                     "type": "string",
                     "minLength": 1,
@@ -542,7 +831,11 @@
                     "description": "Destination absolute remote path; replaced if present."
                 }
             },
-            "required": ["tab_id", "from", "to"],
+            "required": [
+                "tab_id",
+                "from",
+                "to"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -558,15 +851,25 @@
         "inputSchema": {
             "type": "object",
             "properties": {
-                "tab_id": { "type": "string", "minLength": 1 },
-                "path": { "type": "string", "minLength": 1 },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "path": {
+                    "type": "string",
+                    "minLength": 1
+                },
                 "mode": {
                     "type": "string",
                     "pattern": "^[0-7]{3,4}$",
                     "description": "Octal permission bits, e.g. \"755\" or \"0644\"."
                 }
             },
-            "required": ["tab_id", "path", "mode"],
+            "required": [
+                "tab_id",
+                "path",
+                "mode"
+            ],
             "additionalProperties": false
         },
         "annotations": {
@@ -584,10 +887,243 @@
             "properties": {
                 "action": {
                     "type": "string",
-                    "enum": ["check_update", "webdav_upload", "webdav_download"]
+                    "enum": [
+                        "check_update",
+                        "webdav_upload",
+                        "webdav_download"
+                    ]
                 }
             },
-            "required": ["action"],
+            "required": [
+                "action"
+            ],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_list_containers",
+        "description": "List containers on one SSH host using its live Rudder session. Pass host (user@host) or tab_id.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "all": {
+                    "type": "boolean",
+                    "default": true,
+                    "description": "Include stopped containers."
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_container_logs",
+        "description": "Read the tail of a container's logs (stdout + stderr).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "container_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "tail": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 2000,
+                    "default": 200
+                },
+                "timestamps": {
+                    "type": "boolean",
+                    "default": false
+                }
+            },
+            "required": [],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": true,
+            "destructiveHint": false,
+            "idempotentHint": true,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_start_container",
+        "description": "Start a stopped container.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "container_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 5000,
+                    "maximum": 120000,
+                    "default": 30000
+                }
+            },
+            "required": [
+                "container_id"
+            ],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_stop_container",
+        "description": "Stop a running container (5s grace).",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "container_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 5000,
+                    "maximum": 120000,
+                    "default": 30000
+                }
+            },
+            "required": [
+                "container_id"
+            ],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_restart_container",
+        "description": "Restart a container.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "container_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 5000,
+                    "maximum": 120000,
+                    "default": 30000
+                }
+            },
+            "required": [
+                "container_id"
+            ],
+            "additionalProperties": false
+        },
+        "annotations": {
+            "readOnlyHint": false,
+            "destructiveHint": true,
+            "idempotentHint": false,
+            "openWorldHint": true
+        }
+    },
+    {
+        "name": "docker_remove_container",
+        "description": "Remove a container. By default stops it first; force=true skips the stop.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "host": {
+                    "type": "string",
+                    "description": "user@host of a live SSH tab; use this or tab_id."
+                },
+                "tab_id": {
+                    "type": "string",
+                    "minLength": 1,
+                    "description": "Live SSH tab id; alternative to host."
+                },
+                "container_id": {
+                    "type": "string",
+                    "minLength": 1
+                },
+                "force": {
+                    "type": "boolean",
+                    "default": false
+                },
+                "timeout_ms": {
+                    "type": "integer",
+                    "minimum": 5000,
+                    "maximum": 120000,
+                    "default": 60000
+                }
+            },
+            "required": [
+                "container_id"
+            ],
             "additionalProperties": false
         },
         "annotations": {

@@ -103,6 +103,14 @@ pub(super) async fn call(
         "sftp_list" => sftp_list(state, args).await,
         "sftp_download" => sftp_download(state, args).await,
         "sftp_upload" => sftp_upload(state, args).await,
+        "docker_list_containers"
+        | "docker_container_logs"
+        | "docker_start_container"
+        | "docker_stop_container"
+        | "docker_restart_container"
+        | "docker_remove_container" => {
+            super::calls_docker::call(state, name, args).await
+        }
         "run_action" => crate::app::mcp_ui::run_action(str_arg(args, "action")?).await,
         other => Err(McpError::Invalid(format!("unknown tool: {other}"))),
     }

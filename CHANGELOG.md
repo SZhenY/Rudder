@@ -5,6 +5,10 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+### 新增 / Added
+
+- Docker 页按 user@host 分主机标签：容器列表支持搜索、启动 / 停止 / 重启、日志、进入容器终端与删除；设置 › Docker 可关闭「连接后自动探索」，Docker 页可见时每 10 秒刷新。
+
 ### 修复 / Fixed
 
 - 快捷命令侧栏展开 / 收起：让位宽度与面板可视宽度同轴（从折叠条宽度插值），overview 与面板同步移动；拖拽调宽改用 dock-area 为基准，消除抖动与反向跳变。

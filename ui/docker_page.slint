@@ -1,32 +1,88 @@
-//! Docker 页：当前会话对应主机上的容器列表（只读）。
+//! Docker 页：按 user@host 聚合主机标签，展示当前主机的容器列表。
 //!
-//! 数据由 `src/app/impls/docker.rs` 通过现有 SSH 会话执行 `docker ps --all` 取回，
-//! 只展示名称、镜像、状态与端口；不提供启停等写操作。
+//! 列表用 ListView 虚拟化（固定行高），主机切换只切缓存；数据由
+//! `src/app/impls/docker/` 通过现有 SSH exec 拉取。
 
 import { Theme, AnimationSettings } from "theme.slint";
-import { ScrollView } from "std-widgets.slint";
+import { ListView, LineEdit } from "std-widgets.slint";
 import { IconText } from "components/text.slint";
 import { StateSurface } from "components/interactive.slint";
+
+export struct DockerHostTab {
+    key: string,
+    label: string,
+    connected: bool,
+    session_count: int,
+    count: int,          // -1 = 尚未加载；0 = 已加载但无容器
+}
 
 export struct DockerContainer {
     id: string,
     name: string,
     image: string,
-    state: string,     // running / exited / paused / created / dead
+    state: string,     // running / exited / paused / created / restarting / dead
     status: string,    // docker 原文，如 "Up 3 hours"
     ports: string,
+    created: string,
+}
+
+component ActionIcon inherits Rectangle {
+    in property <string> glyph;
+    in property <string> tooltip;
+    in property <bool> danger: false;
+    callback clicked();
+    width: 24px * Theme.ui-zoom;
+    height: 24px * Theme.ui-zoom;
+    border-radius: Theme.radius-sm;
+    background: hit.has-hover ? Theme.state-hover : transparent;
+    hit := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+    IconText {
+        text: root.glyph;
+        color: root.danger ? Theme.danger : Theme.text-secondary;
+        font-size: Theme.fs-sm;
+        centered: true;
+    }
 }
 
 export component DockerPage inherits Rectangle {
     in property <[DockerContainer]> containers;
-    /// idle / loading / ok / empty / error
+    in property <[DockerHostTab]> hosts;
+    in property <string> active-host;
+    /// idle / loading / ok / empty / error / disconnected / no-session
     in property <string> page-status: "idle";
     in property <string> error-text;
     in property <string> summary;
     in property <string> session-name;
+    in property <bool> page-visible: false;
+    in property <bool> auto-refresh: true;
+    in property <string> pending-id;
+    in property <bool> log-open: false;
+    in property <bool> log-loading: false;
+    in property <bool> log-truncated: false;
+    in property <string> log-title;
+    in property <[string]> log-lines;
+    in-out property <string> filter-text;
+    property <string> confirm-remove-id;
+
     callback refresh();
+    callback switch-host(string);
+    callback filter-changed(string);
+    callback action(string /* container id */, int /* 0=start 1=stop 2=restart 3=remove */);
+    callback open-logs(string);
+    callback close-logs();
+    callback open-terminal(string);
 
     background: Theme.bg-root;
+
+    // 仅页面可见 + 开关打开 + 有主机时轮询；离开页面立即停表。
+    Timer {
+        interval: 10s;
+        running: root.page-visible && root.auto-refresh && root.hosts.length > 0;
+        triggered => { root.refresh(); }
+    }
 
     VerticalLayout {
         padding-left: Theme.sp-20;
@@ -67,6 +123,13 @@ export component DockerPage inherits Rectangle {
                 color: Theme.text-secondary;
                 vertical-alignment: center;
             }
+            LineEdit {
+                width: 220px * Theme.ui-zoom;
+                text: root.filter-text;
+                font-family: Theme.ui-font-family;
+                placeholder-text: @tr("Search name / image / port");
+                edited => { root.filter-changed(self.text); }
+            }
             if root.page-status != "no-session" : StateSurface {
                 width: 30px * Theme.ui-zoom;
                 height: 26px * Theme.ui-zoom;
@@ -81,60 +144,67 @@ export component DockerPage inherits Rectangle {
             }
         }
 
-        Rectangle {
-            height: 1px;
-            background: Theme.border-subtle;
-        }
-
-        // --- 内容 -------------------------------------------------------
-        if root.page-status == "no-session" : VerticalLayout {
-            alignment: center;
-            spacing: Theme.sp-8;
-            IconText {
-                text: "\u{E30C}";
-                color: Theme.text-muted;
-                font-size: 28px * Theme.ui-zoom;
-                horizontal-alignment: center;
-            }
-            Text {
-                text: @tr("Connect a host on the left first");
-                font-size: Theme.fs-sm;
-                color: Theme.text-muted;
-                horizontal-alignment: center;
-            }
-        }
-
-        if root.page-status == "disconnected" : VerticalLayout {
-            alignment: center;
-            spacing: Theme.sp-10;
-            IconText {
-                text: "\u{E002}";   // warning
-                color: Theme.warning;
-                font-size: 28px * Theme.ui-zoom;
-                horizontal-alignment: center;
-            }
-            Text {
-                text: @tr("The session is disconnected");
-                font-size: Theme.fs-sm;
-                color: Theme.text-secondary;
-                horizontal-alignment: center;
-            }
-            StateSurface {
-                width: 96px * Theme.ui-zoom;
+        // --- 主机标签 ---------------------------------------------------
+        if root.hosts.length > 1 : HorizontalLayout {
+            height: 30px * Theme.ui-zoom;
+            spacing: Theme.sp-4;
+            for h in root.hosts : Rectangle {
+                min-width: 108px * Theme.ui-zoom;
                 height: 28px * Theme.ui-zoom;
-                radius: Theme.radius-sm;
-                clicked => { root.refresh(); }
-                Text {
-                    text: @tr("Retry");
-                    font-size: Theme.fs-sm;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                border-radius: Theme.radius-sm;
+                background: h.key == root.active-host
+                    ? Theme.state-selected : (tab-ta.has-hover ? Theme.state-hover : transparent);
+                animate background { duration: AnimationSettings.enter-state(); }
+                tab-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.switch-host(h.key); }
+                }
+                HorizontalLayout {
+                    padding-left: Theme.sp-8;
+                    padding-right: Theme.sp-8;
+                    spacing: Theme.sp-6;
+                    alignment: center;
+                    Rectangle {
+                        width: 7px * Theme.ui-scale;
+                        height: 7px * Theme.ui-scale;
+                        border-radius: 4px * Theme.ui-scale;
+                        background: h.connected ? Theme.success : Theme.text-muted;
+                    }
+                    Text {
+                        text: h.label;
+                        font-size: Theme.fs-xs;
+                        color: h.key == root.active-host ? Theme.text-primary : Theme.text-secondary;
+                        overflow: elide;
+                        vertical-alignment: center;
+                    }
+                    if h.session_count > 1 : Text {
+                        text: "(" + h.session_count + ")";
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                    }
+                    if h.count >= 0 : Text {
+                        text: h.count;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-muted;
+                        vertical-alignment: center;
+                    }
                 }
             }
+            Rectangle { horizontal-stretch: 1; }
         }
 
-        if root.page-status == "loading" : Text {
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        // --- 状态 -------------------------------------------------------
+        if root.containers.length == 0 && root.page-status == "no-session" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E30C}"; color: Theme.text-muted; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: @tr("Connect a host on the left first"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; }
+        }
+
+        if root.containers.length == 0 && (root.page-status == "loading" || root.page-status == "idle") : Text {
             text: @tr("Loading containers…");
             font-size: Theme.fs-sm;
             color: Theme.text-muted;
@@ -144,137 +214,195 @@ export component DockerPage inherits Rectangle {
             vertical-stretch: 1;
         }
 
-        if root.page-status == "error" : VerticalLayout {
+        if root.containers.length == 0 && root.page-status == "error" : VerticalLayout {
             alignment: center;
             spacing: Theme.sp-10;
-            IconText {
-                text: "\u{E002}";   // warning
-                color: Theme.danger;
-                font-size: 28px * Theme.ui-zoom;
-                horizontal-alignment: center;
-            }
-            Text {
-                text: root.error-text;
-                font-size: Theme.fs-sm;
-                color: Theme.text-secondary;
-                horizontal-alignment: center;
-                wrap: word-wrap;
-                max-width: 520px * Theme.ui-zoom;
-            }
+            IconText { text: "\u{E002}"; color: Theme.danger; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 520px * Theme.ui-zoom; }
             StateSurface {
-                width: 96px * Theme.ui-zoom;
-                height: 28px * Theme.ui-zoom;
-                radius: Theme.radius-sm;
+                width: 96px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm;
                 clicked => { root.refresh(); }
-                Text {
-                    text: @tr("Retry");
-                    font-size: Theme.fs-sm;
-                    color: Theme.text-primary;
-                    horizontal-alignment: center;
-                    vertical-alignment: center;
+                Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+
+        if root.containers.length == 0 && root.page-status == "empty" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E30C}"; color: Theme.text-muted; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: @tr("No containers on this host"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; }
+        }
+
+        // 断线但有缓存：顶部警告条 + 列表继续显示（数据可能过期）。
+        if root.containers.length > 0 && root.page-status == "disconnected" : Rectangle {
+            height: 30px * Theme.ui-zoom;
+            border-radius: Theme.radius-sm;
+            background: Theme.state-hover;
+            HorizontalLayout {
+                padding-left: Theme.sp-10; padding-right: Theme.sp-10; spacing: Theme.sp-8; alignment: center;
+                IconText { text: "\u{E002}"; color: Theme.warning; font-size: Theme.fs-sm; }
+                Text { text: @tr("Session disconnected — showing cached data"); font-size: Theme.fs-xs; color: Theme.text-secondary; vertical-alignment: center; horizontal-stretch: 1; }
+                StateSurface {
+                    width: 64px * Theme.ui-zoom; height: 22px * Theme.ui-zoom; radius: Theme.radius-sm;
+                    clicked => { root.refresh(); }
+                    Text { text: @tr("Retry"); font-size: Theme.fs-xs; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
                 }
             }
         }
 
-        if root.page-status == "empty" : VerticalLayout {
-            alignment: center;
-            spacing: Theme.sp-8;
-            IconText {
-                text: "\u{E30C}";
-                color: Theme.text-muted;
-                font-size: 28px * Theme.ui-zoom;
-                horizontal-alignment: center;
-            }
-            Text {
-                text: @tr("No containers on this host");
-                font-size: Theme.fs-sm;
-                color: Theme.text-muted;
-                horizontal-alignment: center;
-            }
+        // --- 表头 -------------------------------------------------------
+        if root.containers.length > 0 : HorizontalLayout {
+            height: 24px * Theme.ui-zoom;
+            padding-left: Theme.sp-10;
+            padding-right: Theme.sp-10;
+            spacing: Theme.sp-10;
+            Text { text: @tr("Container"); font-size: Theme.fs-xs; color: Theme.text-muted; horizontal-stretch: 2; }
+            Text { text: @tr("Status"); font-size: Theme.fs-xs; color: Theme.text-muted; width: 110px * Theme.ui-zoom; }
+            Text { text: @tr("Image"); font-size: Theme.fs-xs; color: Theme.text-muted; horizontal-stretch: 2; }
+            Text { text: @tr("Ports"); font-size: Theme.fs-xs; color: Theme.text-muted; width: 150px * Theme.ui-zoom; }
+            Text { text: @tr("Actions"); font-size: Theme.fs-xs; color: Theme.text-muted; width: 150px * Theme.ui-zoom; horizontal-alignment: right; }
         }
 
-        // --- 列表 -------------------------------------------------------
-        if root.page-status == "ok" : ScrollView {
-            width: 100%;
+        // --- 容器列表 ---------------------------------------------------
+        if root.containers.length > 0 : ListView {
             vertical-stretch: 1;
+            min-height: 0px;
+            for c in root.containers : Rectangle {
+                height: 48px * Theme.ui-zoom;
+                border-radius: Theme.radius-sm;
+                background: row-ta.has-hover ? Theme.state-hover : transparent;
+                animate background { duration: AnimationSettings.enter-state(); }
+                row-ta := TouchArea { mouse-cursor: pointer; }
 
-            VerticalLayout {
-                spacing: Theme.sp-2;
+                HorizontalLayout {
+                    padding-left: Theme.sp-10;
+                    padding-right: Theme.sp-10;
+                    spacing: Theme.sp-10;
+                    alignment: center;
 
-                for c in root.containers : Rectangle {
-                    height: 44px * Theme.ui-zoom;
-                    border-radius: Theme.radius-sm;
-                    background: row-ta.has-hover ? Theme.state-hover : transparent;
-                    animate background {
-                        duration: AnimationSettings.enter-state();
-                        easing: AnimationSettings.e-enter();
-                        enabled: AnimationSettings.enabled;
+                    VerticalLayout {
+                        horizontal-stretch: 2;
+                        spacing: Theme.sp-2;
+                        alignment: center;
+                        Text { text: c.name; font-size: Theme.fs-sm; color: Theme.text-primary; overflow: elide; }
+                        Text { text: c.id; font-size: Theme.fs-xs; color: Theme.text-muted; overflow: elide; }
                     }
-                    row-ta := TouchArea {
-                        mouse-cursor: pointer;
+
+                    Rectangle {
+                        width: 96px * Theme.ui-zoom;
+                        height: 22px * Theme.ui-zoom;
+                        border-radius: Theme.radius-sm;
+                        background: Theme.state-hover;
+                        Text {
+                            text: c.state;
+                            font-size: Theme.fs-xs;
+                            color: c.state == "running" ? Theme.success
+                                : c.state == "paused" || c.state == "restarting" ? Theme.warning
+                                : c.state == "dead" ? Theme.danger : Theme.text-muted;
+                            horizontal-alignment: center;
+                            vertical-alignment: center;
+                        }
+                    }
+
+                    Text {
+                        text: c.image;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                        horizontal-stretch: 2;
+                        overflow: elide;
+                    }
+
+                    Text {
+                        text: c.ports == "" ? "—" : c.ports;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-muted;
+                        width: 150px * Theme.ui-zoom;
+                        vertical-alignment: center;
+                        overflow: elide;
                     }
 
                     HorizontalLayout {
-                        padding-left: Theme.sp-10;
-                        padding-right: Theme.sp-10;
-                        spacing: Theme.sp-10;
-
-                        // 状态点
-                        VerticalLayout {
-                            width: 8px * Theme.ui-scale;
-                            alignment: center;
-                            Rectangle {
-                                width: 8px * Theme.ui-scale;
-                                height: 8px * Theme.ui-scale;
-                                border-radius: 4px * Theme.ui-scale;
-                                background: c.state == "running"
-                                    ? Theme.success
-                                    : c.state == "paused"
-                                        ? Theme.warning
-                                        : c.state == "dead"
-                                            ? Theme.danger
-                                            : Theme.text-muted;
-                            }
+                        width: 150px * Theme.ui-zoom;
+                        spacing: Theme.sp-4;
+                        alignment: end;
+                        if c.state == "exited" || c.state == "created" || c.state == "dead" : ActionIcon {
+                            glyph: "\u{E037}"; tooltip: @tr("Start"); clicked => { root.action(c.id, 0); }
                         }
-
-                        VerticalLayout {
-                            horizontal-stretch: 2;
-                            alignment: center;
-                            spacing: Theme.sp-2;
-                            Text {
-                                text: c.name;
-                                font-size: Theme.fs-sm;
-                                color: Theme.text-primary;
-                                overflow: elide;
-                            }
-                            Text {
-                                text: c.image;
-                                font-size: Theme.fs-xs;
-                                color: Theme.text-muted;
-                                overflow: elide;
-                            }
+                        if c.state == "running" || c.state == "restarting" : ActionIcon {
+                            glyph: "\u{E047}"; tooltip: @tr("Stop"); clicked => { root.action(c.id, 1); }
                         }
-
-                        Text {
-                            text: c.status;
-                            font-size: Theme.fs-xs;
-                            color: Theme.text-secondary;
-                            vertical-alignment: center;
-                            horizontal-stretch: 1;
-                            overflow: elide;
+                        if c.state == "running" : ActionIcon {
+                            glyph: "\u{E5D5}"; tooltip: @tr("Restart"); clicked => { root.action(c.id, 2); }
                         }
-
-                        Text {
-                            text: c.ports;
-                            font-size: Theme.fs-xs;
-                            color: Theme.text-muted;
-                            vertical-alignment: center;
-                            width: 140px * Theme.ui-zoom;
-                            overflow: elide;
-                        }
+                        ActionIcon { glyph: "\u{E3A8}"; tooltip: @tr("Open terminal"); clicked => { root.open-terminal(c.id); } }
+                        ActionIcon { glyph: "\u{E873}"; tooltip: @tr("Logs"); clicked => { root.open-logs(c.id); } }
+                        ActionIcon { glyph: "\u{E872}"; tooltip: @tr("Remove"); danger: true; clicked => { root.confirm-remove-id = c.id; } }
                     }
                 }
             }
         }
     }
+    // --- 删除确认 ---------------------------------------------------
+    if root.confirm-remove-id != "" : Rectangle {
+        x: 0px; y: 0px; width: parent.width; height: parent.height;
+        background: #00000066;
+        TouchArea { clicked => { root.confirm-remove-id = ""; } }
+        Rectangle {
+            width: 360px * Theme.ui-zoom;
+            height: 150px * Theme.ui-zoom;
+            x: (parent.width - self.width) / 2;
+            y: (parent.height - self.height) / 2;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            VerticalLayout {
+                padding: Theme.sp-16; spacing: Theme.sp-10;
+                Text { text: @tr("Remove container?"); font-size: Theme.fs-md; color: Theme.text-primary; font-weight: 600; }
+                Text { text: @tr("Running containers are stopped first. Volumes are not removed."); font-size: Theme.fs-xs; color: Theme.text-secondary; wrap: word-wrap; }
+                Rectangle { vertical-stretch: 1; }
+                HorizontalLayout {
+                    spacing: Theme.sp-8; alignment: end;
+                    StateSurface { width: 80px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; clicked => { root.confirm-remove-id = ""; } Text { text: @tr("Cancel"); font-size: Theme.fs-xs; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; } }
+                    StateSurface { width: 80px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; clicked => { root.action(root.confirm-remove-id, 3); root.confirm-remove-id = ""; } Text { text: @tr("Remove"); font-size: Theme.fs-xs; color: Theme.danger; horizontal-alignment: center; vertical-alignment: center; } }
+                }
+            }
+        }
+    }
+
+    // --- 日志抽屉 ---------------------------------------------------
+    if root.log-open : Rectangle {
+        x: parent.width - 560px * Theme.ui-zoom;
+        y: 0px;
+        width: 560px * Theme.ui-zoom;
+        height: parent.height;
+        background: Theme.bg-panel;
+        border-radius: Theme.radius-md;
+        VerticalLayout {
+            padding: Theme.sp-12;
+            spacing: Theme.sp-8;
+            HorizontalLayout {
+                height: 28px * Theme.ui-zoom;
+                Text { text: root.log-title; font-size: Theme.fs-sm; color: Theme.text-primary; vertical-alignment: center; horizontal-stretch: 1; overflow: elide; }
+                if root.log-loading : Text { text: @tr("Loading…"); font-size: Theme.fs-xs; color: Theme.text-muted; vertical-alignment: center; }
+                ActionIcon { glyph: "\u{E872}"; tooltip: @tr("Close"); clicked => { root.close-logs(); } }
+            }
+            Rectangle { height: 1px; background: Theme.border-subtle; }
+            Flickable {
+                vertical-stretch: 1;
+                min-height: 0px;
+                content-height: log-col.preferred-height;
+                log-col := VerticalLayout {
+                    for line in root.log-lines : Text {
+                        text: line;
+                        font-family: Theme.term-font-family;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-secondary;
+                        wrap: no-wrap;
+                    }
+                }
+            }
+            if root.log-truncated : Text { text: @tr("Only the last 200 lines are shown"); font-size: Theme.fs-xs; color: Theme.text-muted; }
+        }
+    }
+
 }

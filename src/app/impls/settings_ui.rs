@@ -29,6 +29,7 @@ pub(crate) enum SettingsPage {
     Terminal,
     Appearance,
     Layout,
+    Docker,
     Transfer,
     Ai,
 }
@@ -39,6 +40,7 @@ impl SettingsPage {
             "terminal" => Some(Self::Terminal),
             "appearance" => Some(Self::Appearance),
             "layout" => Some(Self::Layout),
+            "docker" => Some(Self::Docker),
             "transfer" => Some(Self::Transfer),
             "ai" => Some(Self::Ai),
             _ => None,
@@ -71,6 +73,7 @@ fn reset_page(w: &AppWindow, store: &Store, bufs: &TermBuffers, refs: &ResetRefs
             settings::appearance::reset(w, store, bufs, &fonts, &crate::app::sub_windows::proc_weak())
         }
         SettingsPage::Layout => settings::layout::reset(w, store),
+        SettingsPage::Docker => settings::docker::reset(w, store),
         SettingsPage::Transfer => settings::transfer::reset(w, store, &refs.sftp_follow_cd),
         SettingsPage::Ai => settings::ai::reset(w, store),
     }
@@ -313,6 +316,7 @@ pub(super) fn seed_settings(window: &AppWindow, ctx: &AppContext) {
     settings::appearance::bind(window, store, bufs);
     settings::terminal::bind(window, store, bufs);
     settings::layout::bind(window, store);
+    settings::docker::bind(window, store);
     settings::beta::bind(window, store);
 
 

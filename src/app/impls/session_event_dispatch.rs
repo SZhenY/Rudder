@@ -102,8 +102,15 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 st.stats_seq = st.stats_seq.wrapping_add(1);
                 st.failed = false;
             }
+            if let Some(cmd) = super::docker::take_pending_terminal(tab_id) {
+                win.invoke_run_command(tab_id.into(), cmd.into(), false);
+            }
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses);
+            }
+            // 连接后自动探索：开关打开时拉一次；是否轮询由 Docker 页自己控制。
+            if win.get_docker_auto_discover() {
+                win.invoke_refresh_docker();
             }
         }
         SessionEvent::Closed(reason) => {

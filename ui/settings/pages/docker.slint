@@ -1,0 +1,43 @@
+// 设置页：Docker
+//
+// 一个开关：连接 SSH 后自动拉取一次；Docker 页可见时每 10 秒刷新。
+// 关闭后不预取、不轮询，只在进入页面或切主机时惰性加载。
+
+import { SettingSwitch } from "../chrome.slint";
+import { SettingsSection } from "../section.slint";
+import { ResetBar } from "../reset_bar.slint";
+import { Theme } from "../../theme.slint";
+
+export component DockerPage inherits VerticalLayout {
+    in property <bool> lang-en;
+    in-out property <bool> docker-auto-discover;
+    callback reset-page(string);
+    callback set-docker-auto-discover(bool);
+
+    padding-left: Theme.sp-20;
+    padding-right: Theme.sp-20;
+    padding-top: Theme.sp-14;
+    spacing: 0;
+    alignment: start;
+
+    SettingsSection {
+        section-id: "docker.discovery";
+        lang-en: root.lang-en;
+        title-zh: "容器探索";
+        title-en: "CONTAINERS";
+        SettingSwitch {
+            label: root.lang-en ? "Discover Docker containers after connecting" : "连接 SSH 后自动探索 Docker 容器";
+            desc: root.lang-en
+                ? "Pulls the container list once per host after connecting; refreshes every 10 seconds only while the Docker page is visible."
+                : "连接后每台主机拉一次；仅在 Docker 页面可见时每 10 秒刷新，离开页面立即停止。";
+            show-divider: false;
+            checked <=> root.docker-auto-discover;
+            toggled(v) => { root.set-docker-auto-discover(v); }
+        }
+    }
+
+    ResetBar {
+        page-id: "docker";
+        reset-page(p) => { root.reset-page(p); }
+    }
+}

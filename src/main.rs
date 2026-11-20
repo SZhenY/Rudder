@@ -6,6 +6,7 @@
 mod app;
 mod color;
 mod config;
+mod docker;
 mod files;
 mod fonts;
 mod i18n;

@@ -164,6 +164,8 @@ pub struct LayoutSettings {
     pub quick_panel_open: bool,
     pub quick_panel_collapsed: bool,
     pub quick_panel_width: f32,
+    /// 连接 SSH 成功后自动拉取一次 Docker 容器列表；Docker 页可见时每 10 秒刷新。
+    pub docker_auto_discover: bool,
     /// 窗口尺寸（逻辑像素；0 = 未设置 → 用内置默认）。
     pub window_width: f32,
     pub window_height: f32,
@@ -183,6 +185,7 @@ impl Default for LayoutSettings {
             quick_panel_open: false,
             quick_panel_collapsed: false,
             quick_panel_width: 260.0,
+            docker_auto_discover: true,
             window_width: 0.0,
             window_height: 0.0,
         }

@@ -208,6 +208,7 @@ fn sync_settings_reflected(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_collapse_overview_default(m.get_collapse_overview_default());
     sw.set_show_cmd_bar(m.get_show_cmd_bar());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
+    sw.set_docker_auto_discover(m.get_docker_auto_discover());
     sw.set_download_always_ask(m.get_download_always_ask());
     sw.set_update_check_enabled(m.get_update_check_enabled());
     sw.set_update_freq_index(m.get_update_freq_index());
@@ -387,6 +388,7 @@ fn seed_settings_window(m: &AppWindow, sw: &SettingsWindow) {
     sw.set_aggressive_memory_reclaim(m.get_aggressive_memory_reclaim());
     sw.set_scrollback_lines(m.get_scrollback_lines());
     sw.set_sftp_follow_cd(m.get_sftp_follow_cd());
+    sw.set_docker_auto_discover(m.get_docker_auto_discover());
     sw.set_show_cmd_bar(m.get_show_cmd_bar());
     sw.set_sync_upload_enabled(m.get_sync_upload_enabled());
     sw.set_term_cursor_color(m.get_term_cursor_color());
@@ -493,6 +495,7 @@ pub(super) fn wire_settings_window(m: &slint::Weak<AppWindow>, sw: &SettingsWind
     forward!(sw, m, s, on_set_aggressive_memory_reclaim => invoke_set_aggressive_memory_reclaim, (a0));
     forward!(sw, m, s, on_set_scrollback_lines -> invoke_set_scrollback_lines, (a0));
     forward!(sw, m, s, on_set_sftp_follow_cd => invoke_set_sftp_follow_cd, (a0));
+    forward!(sw, m, s, on_set_docker_auto_discover => invoke_set_docker_auto_discover, (a0));
     forward!(sw, m, s, on_set_show_cmd_bar => invoke_set_show_cmd_bar, (a0));
     forward!(sw, m, s, on_set_sync_upload_enabled => invoke_set_sync_upload_enabled, (a0));
     forward!(sw, m, s, on_set_term_cursor_color -> invoke_set_term_cursor_color, (a0));

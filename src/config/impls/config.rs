@@ -2100,6 +2100,14 @@ impl ConfigStore {
             .collect();
     }
 
+    pub fn docker_auto_discover(&self) -> bool {
+        self.cache.layout.docker_auto_discover
+    }
+
+    pub fn set_docker_auto_discover(&mut self, enabled: bool) {
+        self.cache.layout.docker_auto_discover = enabled;
+    }
+
     pub fn quick_panel_open(&self) -> bool {
         self.cache.layout.quick_panel_open
     }

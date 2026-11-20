@@ -72,6 +72,12 @@ const TOOLS: &[ToolMeta] = &[
     ToolMeta { name: "sftp_rename", require: &["file_upload"], show: &["file_upload"] },
     ToolMeta { name: "sftp_chmod", require: &["file_upload"], show: &["file_upload"] },
     ToolMeta { name: "run_action", require: &["settings_write"], show: &["settings_write"] },
+    ToolMeta { name: "docker_list_containers", require: &["read"], show: &["read"] },
+    ToolMeta { name: "docker_container_logs", require: &["read"], show: &["read"] },
+    ToolMeta { name: "docker_start_container", require: &["exec"], show: &["exec"] },
+    ToolMeta { name: "docker_stop_container", require: &["exec"], show: &["exec"] },
+    ToolMeta { name: "docker_restart_container", require: &["exec"], show: &["exec"] },
+    ToolMeta { name: "docker_remove_container", require: &["exec"], show: &["exec"] },
 ];
 
 fn meta(name: &str) -> Option<&'static ToolMeta> {

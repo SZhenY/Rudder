@@ -31,6 +31,8 @@ mod audit_types;
 mod auth;
 #[path = "impls/calls.rs"]
 mod calls;
+#[path = "impls/calls_docker.rs"]
+mod calls_docker;
 #[path = "struct/config.rs"]
 mod config;
 #[path = "struct/error.rs"]

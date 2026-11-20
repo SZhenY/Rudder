@@ -205,6 +205,63 @@ pub fn run() -> Result<()> {
                 );
             }
         });
+
+        let act_weak = window.as_weak();
+        let act_runtime = ctx.runtime.clone();
+        let act_handles = handles.clone();
+        window.on_docker_action(move |id, kind| {
+            if let Some(w) = act_weak.upgrade() {
+                let key = w.get_docker_active_host().to_string();
+                super::docker::act(&w, &act_runtime, &act_handles, &key, id.as_str(), kind);
+            }
+        });
+
+        let logs_weak = window.as_weak();
+        let logs_runtime = ctx.runtime.clone();
+        let logs_handles = handles.clone();
+        window.on_docker_open_logs(move |id| {
+            if let Some(w) = logs_weak.upgrade() {
+                let key = w.get_docker_active_host().to_string();
+                super::docker::fetch_logs(&w, &logs_runtime, &logs_handles, &key, id.as_str());
+            }
+        });
+
+        let terminal_weak = window.as_weak();
+        window.on_docker_open_terminal(move |id| {
+            if let Some(w) = terminal_weak.upgrade() {
+                let key = w.get_docker_active_host().to_string();
+                super::docker::open_terminal(&w, &key, id.as_str());
+            }
+        });
+
+        let close_logs_weak = window.as_weak();
+        window.on_docker_close_logs(move || {
+            if let Some(w) = close_logs_weak.upgrade() {
+                w.set_docker_log_open(false);
+            }
+        });
+
+        let filter_weak = window.as_weak();
+        window.on_docker_filter_changed(move |text| {
+            if let Some(w) = filter_weak.upgrade() {
+                w.set_docker_filter(text.clone());
+                super::docker::set_filter(&w, text.as_str());
+            }
+        });
+
+        let switch_weak = window.as_weak();
+        let switch_runtime = ctx.runtime.clone();
+        let switch_handles = handles.clone();
+        window.on_docker_switch_host(move |key| {
+            if let Some(w) = switch_weak.upgrade() {
+                super::docker::select_host(
+                    &w,
+                    &switch_runtime,
+                    &switch_handles,
+                    key.as_str(),
+                );
+            }
+        });
     }
 
     // Recompute the sidebar whenever the active tab changes (fired from Slint's

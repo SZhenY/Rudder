@@ -104,7 +104,7 @@ mod sftp_callbacks;
 mod sftp_ui;
 #[path = "impls/sidebar.rs"]
 mod sidebar;
-#[path = "impls/docker.rs"]
+#[path = "impls/docker/mod.rs"]
 mod docker;
 #[path = "impls/tab_callbacks.rs"]
 mod tab_callbacks;
