@@ -23,6 +23,10 @@ if [ ! -f "$root/CHANGELOG.md" ]; then
 fi
 cd "$root"
 
+# 容器作业里工作区的 owner 与 checkout 用户不同，git 会以 dubious ownership 拒绝
+# tag / describe / log；显式信任本次工作区，Release 正文的提交附录才能取到。
+git config --global --add safe.directory "$root" 2>/dev/null || true
+
 section=$(bash scripts/changelog-section.sh "$ver" 2>/dev/null || true)
 if [ -n "$section" ]; then
     printf '%s\n' "$section"
