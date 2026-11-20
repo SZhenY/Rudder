@@ -121,8 +121,10 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     set_window_icon(&window);
 
-    // 验证分支：macOS 也用无边框 + 自绘标题栏，双击由 FramelessTitleBar 接管。
-    // 默认 custom-titlebar 为 true，无需再按平台关掉。
+    // 窗口默认无边框 + 自绘标题栏（#119）；macOS 保留原生装饰与红绿灯，
+    // 顶部留白条由 `titlebar-inset` 让出，双击仍走 `win-zoom-toggle` 兜底。
+    #[cfg(target_os = "macos")]
+    window.set_custom_titlebar(false);
 
     // --- Detachable process monitor window (#23) -----------------------------
     // The process table is its own top-level OS window so it can be dragged

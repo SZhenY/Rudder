@@ -140,7 +140,7 @@ export struct SplitterInfo {
 export component AppWindow inherits Window {
     title: "Rudder";
     icon: @image-url("../assets/icon.png");
-    // 自绘标题栏时无边框；本验证分支下 macOS 也走这条路径。
+    // 自绘标题栏时无边框（Windows / Linux）；macOS 保留原生装饰与红绿灯。
     // Slint 的 no-frame → winit set_decorations(false)。
     no-frame: root.custom-titlebar;
     min-width: 960px * Theme.ui-scale;
@@ -192,13 +192,13 @@ export component AppWindow inherits Window {
         }
     }
 
-    // 自绘标题栏：无边框窗口自己画顶部条，双击 / 拖动 / 关闭都由 Rust 回调驱动。
-    // 验证分支：macOS 也启用，不再保留原生装饰。
+    // 自绘标题栏：Windows / Linux 无边框时自己画顶部条，双击 / 拖动 / 关闭由 Rust 回调驱动。
+    // macOS 由 Rust 在建窗后置 false，保留原生装饰与红绿灯（见 run.rs）。
     in-out property <bool> custom-titlebar: true;
     // macOS immersive title bar: Rust makes the native bar transparent and lets
     // content render under it, so we reserve this much space at the top for the
     // traffic-light buttons + a clean drag strip (0 elsewhere). See setup_macos_platform.
-    // 自绘标题栏时不留原生交通灯的 28px 空位。
+    // 自绘标题栏时不留原生交通灯的 28px 空位，原生栏下留 28px。
     property <length> titlebar-inset:
         root.is-mac && !root.custom-titlebar ? 28px * Theme.ui-scale : 0px;
     in-out property <bool> window-maximized: false;

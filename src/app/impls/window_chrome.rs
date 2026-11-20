@@ -33,8 +33,8 @@ pub(crate) fn wire_window_chrome(
         let weak = window.as_weak();
         window.on_win_maximize_toggle(move || {
             if let Some(w) = weak.upgrade() {
-                // 自绘标题栏的最大化按钮 / 双击都走这里；macOS 原生标题栏方案下
-                // 这个回调不用，避免和 AppKit 的 zoom 抢（本验证分支不显示留白条）。
+                // 自绘标题栏的最大化按钮 / 双击走这里；macOS 保留原生装饰，
+                // 顶部留白条的双击由 win-zoom-toggle 接管，避免和 AppKit 的 zoom 抢。
                 let now = w.window().with_winit_window(|ww| {
                     let m = !ww.is_maximized();
                     ww.set_maximized(m);
