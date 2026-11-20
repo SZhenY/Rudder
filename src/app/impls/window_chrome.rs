@@ -33,13 +33,8 @@ pub(crate) fn wire_window_chrome(
         let weak = window.as_weak();
         window.on_win_maximize_toggle(move || {
             if let Some(w) = weak.upgrade() {
-                // ⚠️ macOS 上**不要**再自己 toggle：那块留白区的双击本来就是 AppKit 在处理
-                // （它把窗口 zoom 成屏幕大小、还原时回到 `standard_frame`，两个方向都对），
-                // 我们再补一次 `set_maximized`/`performZoom` 就等于"跟系统抢" —— 表现为
-                // 第一次能最大化、第二次"回弹一下又最大化"（0.7.9 起的老 bug，2026-09-21
-                // 用 `isZoomed` 日志抓到的：系统 zoom 完 ~0.5s 后我们的 handler 才跑）。
-                // macOS 上这个回调现在只有 Windows/Linux 的小窗口按钮用得到，
-                // 上面那条 `titlebar-inset-strip` 已不再派发它。
+                // 自绘标题栏的最大化按钮 / 双击都走这里；macOS 原生标题栏方案下
+                // 这个回调不用，避免和 AppKit 的 zoom 抢（本验证分支不显示留白条）。
                 let now = w.window().with_winit_window(|ww| {
                     let m = !ww.is_maximized();
                     ww.set_maximized(m);
@@ -56,22 +51,36 @@ pub(crate) fn wire_window_chrome(
         let weak = window.as_weak();
         window.on_win_zoom_toggle(move || {
             let Some(w) = weak.upgrade() else { return };
-            let target = !w.get_window_maximized();
+            // 目标状态从窗口系统读，不用 Slint 属性：原生标题栏双击、Fill / Zoom
+            // 系统设置都会改变 OS 状态，属性只有在 Resized 事件里才同步。
+            let os_state = w.window().with_winit_window(|ww| ww.is_maximized());
+            let prop_state = w.get_window_maximized();
+            let target = !os_state.unwrap_or(prop_state);
+            tracing::info!(
+                "[ZOOM] callback: property={prop_state} os={os_state:?} target={target}"
+            );
             let weak2 = w.as_weak();
             // AppKit 的 zoom 可能和我们的 toggle 同时触发：等一拍再检查，
             // 状态已经变成目标值就说明系统处理过了，不再补一次。
             slint::Timer::single_shot(std::time::Duration::from_millis(180), move || {
                 let Some(w) = weak2.upgrade() else { return };
+                let before = w.window().with_winit_window(|ww| ww.is_maximized());
                 let applied = w.window().with_winit_window(|ww| {
-                    if !zoom_needs_apply(ww.is_maximized(), target) {
+                    if before == Some(target) {
                         return false;
                     }
                     ww.set_maximized(target);
                     true
                 });
-                if applied.unwrap_or(false) {
-                    w.set_window_maximized(target);
-                }
+                // 无论是否补 toggle，都把 Slint 属性同步到实际窗口状态。
+                let after = w
+                    .window()
+                    .with_winit_window(|ww| ww.is_maximized())
+                    .unwrap_or(target);
+                w.set_window_maximized(after);
+                tracing::info!(
+                    "[ZOOM] timer: before={before:?} applied={applied:?} after={after}"
+                );
             });
         });
     }
@@ -151,24 +160,3 @@ pub(crate) fn wire_window_chrome(
 
 }
 
-/// AppKit 已经把窗口切到目标状态时，应用侧不再补一次 toggle。
-fn zoom_needs_apply(current: bool, target: bool) -> bool {
-    current != target
-}
-
-#[cfg(test)]
-mod zoom_guard_tests {
-    use super::zoom_needs_apply;
-
-    #[test]
-    fn zoom_skips_when_appkit_already_matched() {
-        assert!(!zoom_needs_apply(true, true));
-        assert!(!zoom_needs_apply(false, false));
-    }
-
-    #[test]
-    fn zoom_applies_when_state_differs() {
-        assert!(zoom_needs_apply(false, true));
-        assert!(zoom_needs_apply(true, false));
-    }
-}

@@ -46,10 +46,8 @@ component WinBtn inherits Rectangle {
 ///
 /// 高度四个窗口统一取 `Theme.titlebar-height`，不再逐窗口传。
 ///
-/// 「拖动标题栏移动窗口」由 Slint 1.18 的 `WindowMoveArea` 负责（见下）。原先那套
-/// "按下后位移超过 6px 才交给系统"的手写状态机（`armed-drag`）因此删掉了 ——
-/// 它存在的唯一理由是"按下即 drag 会让系统接管指针，`double-clicked` 永远派发不到"，
-/// 而这恰好就是 `WindowMoveArea` 内置的行为（拖过阈值才开始移动，单击不接管指针）。
+/// 拖动用下面手写的 `armed-drag`：按住位移超过 6px 才交给系统，单击不抢指针。
+/// 不能用 Slint 的 `WindowMoveArea`，它会抓走指针导致第二次点击到不了 TouchArea。
 export component WindowTitleBar inherits Rectangle {
     in property <string> title;
     in property <length> bar-height: Theme.titlebar-height;
