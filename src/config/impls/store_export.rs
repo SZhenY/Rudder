@@ -31,6 +31,8 @@ impl ConfigStore {
                 let enc = Self::encrypt_export(s.private_key_inline.as_str())?;
                 s.private_key_inline = Secret::new(enc);
             }
+            // 提权密码不随便携包走：导入端留空，避免把 sudo 口令写到 U 盘 / 共享盘。
+            s.docker_sudo_password = Secret::default();
             // `last_used` is machine-local noise — don't carry it across.
             s.last_used = None;
         }

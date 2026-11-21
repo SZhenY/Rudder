@@ -1,0 +1,41 @@
+//! Docker 尚未接入数据层的功能页（Compose / 本地镜像 / 镜像仓库 / 网络）。
+//!
+//! 统一空态：图标 + 标题 + 说明。页头保留在各自调用点，后续补数据时只换内容区。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+
+export component DockerPlaceholderPage inherits Rectangle {
+    in property <string> icon;
+    in property <string> title;
+    in property <string> subtitle;
+
+    background: transparent;
+
+    VerticalLayout {
+        alignment: center;
+        spacing: Theme.sp-10;
+
+        IconText {
+            text: root.icon;
+            color: Theme.text-muted;
+            font-size: 30px * Theme.ui-zoom;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.title;
+            font-size: Theme.fs-md;
+            font-weight: 600;
+            color: Theme.text-secondary;
+            horizontal-alignment: center;
+        }
+        Text {
+            text: root.subtitle;
+            font-size: Theme.fs-sm;
+            color: Theme.text-muted;
+            horizontal-alignment: center;
+            wrap: word-wrap;
+            max-width: 420px * Theme.ui-zoom;
+        }
+    }
+}

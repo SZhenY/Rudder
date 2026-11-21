@@ -18,10 +18,16 @@ const READ_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub(super) async fn call(state: &SharedState, name: &str, args: &Value) -> Result<Value, McpError> {
     let (tab_id, host) = resolve_session(state, args)?;
+    // MCP 没有交互输入，也不能读会话里的提权密码：只支持直连或免密 sudo。
+    let elev = if state.config().docker_use_sudo {
+        command::Elevation::sudo_nopass("")
+    } else {
+        command::Elevation::direct()
+    };
     match name {
         "docker_list_containers" => {
             let all = bool_arg(args, "all", true);
-            let res = exec(state, &tab_id, command::ps(all), READ_TIMEOUT, 512 * 1024).await?;
+            let res = exec(state, &tab_id, command::ps(all, &elev), READ_TIMEOUT, 512 * 1024).await?;
             let parsed = parse::parse_ps(&res.stdout);
             let running = parsed
                 .rows
@@ -49,7 +55,7 @@ pub(super) async fn call(state: &SharedState, name: &str, args: &Value) -> Resul
             let container = str_arg(args, "container_id")?;
             let tail = int_arg(args, "tail", 200, 1, 2000) as u32;
             let timestamps = bool_arg(args, "timestamps", false);
-            let cmd = command::logs(&container, tail, timestamps)
+            let cmd = command::logs(&container, tail, timestamps, &elev)
                 .map_err(|_| McpError::Invalid("invalid container_id".into()))?;
             let res = exec(state, &tab_id, cmd, READ_TIMEOUT, 512 * 1024).await?;
             let (lines, truncated) = parse::parse_logs(&res.stdout, &res.stderr, tail as usize);
@@ -67,23 +73,23 @@ pub(super) async fn call(state: &SharedState, name: &str, args: &Value) -> Resul
             let force = bool_arg(args, "force", false);
             let (cmd, action) = match name {
                 "docker_start_container" => (
-                    command::start(&container).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
+                    command::start(&container, &elev).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
                     "start",
                 ),
                 "docker_stop_container" => (
-                    command::stop(&container).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
+                    command::stop(&container, &elev).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
                     "stop",
                 ),
                 "docker_restart_container" => (
-                    command::restart(&container).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
+                    command::restart(&container, &elev).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
                     "restart",
                 ),
                 "docker_remove_container" if force => (
-                    command::remove(&container, true).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
+                    command::remove(&container, true, &elev).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
                     "remove",
                 ),
                 "docker_remove_container" => (
-                    command::remove_sequence(&container).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
+                    command::remove_sequence(&container, &elev).map_err(|_| McpError::Invalid("invalid container_id".into()))?,
                     "remove",
                 ),
                 _ => return Err(McpError::Invalid(format!("unknown tool: {name}"))),

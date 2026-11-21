@@ -1,0 +1,144 @@
+//! Docker 页的二级竖向导航：概览 / 容器 / Compose / 本地镜像 / 镜像仓库 / 网络。
+//!
+//! 选中态用一条共享滑轨（与 `ui/interface_panel.slint:259-350` 的设置页侧栏同款）：
+//! 行自己只表达 hover，选中的底色与 1px 描边由滑轨一次性绘制并做位移动画。
+
+import { Theme, AnimationSettings } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+
+component DockerNavRow inherits Rectangle {
+    in property <string> icon;
+    in property <string> label;
+    in property <bool> active: false;
+    callback clicked();
+
+    height: Theme.row-h-lg;
+    border-radius: 6px * Theme.ui-scale;
+    // 1px 描边常驻（未选中时透明），避免切换时整行抖 1px。
+    border-width: 1px;
+    border-color: row-ta.has-hover ? Theme.accent-ring : transparent;
+    background: row-ta.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: row-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: row-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+
+    row-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.clicked(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.sp-10;
+        spacing: 9px * Theme.ui-scale;
+        IconText {
+            text: root.icon;
+            color: root.active ? Theme.accent : Theme.text-secondary;
+            font-size: 15px * Theme.panel-font;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.label;
+            color: root.active ? Theme.accent : Theme.text-secondary;
+            font-weight: root.active ? 600 : 400;
+            font-size: 13px * Theme.panel-font;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+}
+
+export component DockerSideNav inherits Rectangle {
+    in property <string> current: "overview";
+    callback selected(string);
+
+    width: Theme.settings-nav-w;
+    background: Theme.bg-panel;
+
+    function index-of(section: string) -> int {
+        return section == "overview" ? 0
+            : section == "containers" ? 1
+            : section == "compose" ? 2
+            : section == "images" ? 3
+            : section == "registries" ? 4
+            : section == "networks" ? 5
+            : -1;
+    }
+    property <int> current-index: root.index-of(root.current);
+
+    // 右缘分隔线：与内容区的 bg-root 形成边界。
+    Rectangle {
+        x: parent.width - 1px;
+        y: 0px;
+        width: 1px;
+        height: parent.height;
+        background: Theme.border-subtle;
+    }
+
+    // 选中滑轨：y 由行高 + 间距算出，切换时滑动。
+    Rectangle {
+        x: Theme.sp-10;
+        y: Theme.sp-10 + root.current-index * (Theme.row-h-lg + Theme.sp-5);
+        width: parent.width - 2 * Theme.sp-10;
+        height: Theme.row-h-lg;
+        border-radius: 6px * Theme.ui-scale;
+        background: Theme.state-selected;
+        border-width: 1px;
+        border-color: Theme.state-selected-border;
+        opacity: root.current-index >= 0 ? 1 : 0;
+        animate y {
+            duration: AnimationSettings.enter-container();
+            easing: AnimationSettings.s-default();
+            enabled: AnimationSettings.enabled;
+        }
+        animate opacity {
+            duration: AnimationSettings.enter-state();
+            enabled: AnimationSettings.enabled;
+        }
+    }
+
+    VerticalLayout {
+        padding: Theme.sp-10;
+        spacing: Theme.sp-5;
+        alignment: start;
+
+        DockerNavRow {
+            icon: "\u{E871}";   // dashboard
+            label: @tr("Overview");
+            active: root.current == "overview";
+            clicked => { root.selected("overview"); }
+        }
+        DockerNavRow {
+            icon: "\u{E30C}";   // desktop_windows
+            label: @tr("Containers");
+            active: root.current == "containers";
+            clicked => { root.selected("containers"); }
+        }
+        DockerNavRow {
+            icon: "\u{E53B}";   // layers
+            label: @tr("Compose");
+            active: root.current == "compose";
+            clicked => { root.selected("compose"); }
+        }
+        DockerNavRow {
+            icon: "\u{E3F4}";   // image
+            label: @tr("Local images");
+            active: root.current == "images";
+            clicked => { root.selected("images"); }
+        }
+        DockerNavRow {
+            icon: "\u{E1DB}";   // storage
+            label: @tr("Registry");
+            active: root.current == "registries";
+            clicked => { root.selected("registries"); }
+        }
+        DockerNavRow {
+            icon: "\u{E80B}";   // public
+            label: @tr("Networks");
+            active: root.current == "networks";
+            clicked => { root.selected("networks"); }
+        }
+    }
+}

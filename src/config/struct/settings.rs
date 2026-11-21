@@ -164,8 +164,12 @@ pub struct LayoutSettings {
     pub quick_panel_open: bool,
     pub quick_panel_collapsed: bool,
     pub quick_panel_width: f32,
-    /// 连接 SSH 成功后自动拉取一次 Docker 容器列表；Docker 页可见时每 10 秒刷新。
+    /// 连接 SSH 成功后自动打开对应主机的 Docker 管理标签。
     pub docker_auto_discover: bool,
+    /// 是否优先用 sudo 执行 docker 命令（UI 与 MCP）。
+    ///
+    /// 开启后仅在免密 sudo 可用或配置了提权凭据时才提权；能直连 docker 时自动跳过。
+    pub docker_use_sudo: bool,
     /// 窗口尺寸（逻辑像素；0 = 未设置 → 用内置默认）。
     pub window_width: f32,
     pub window_height: f32,
@@ -186,6 +190,7 @@ impl Default for LayoutSettings {
             quick_panel_collapsed: false,
             quick_panel_width: 260.0,
             docker_auto_discover: true,
+            docker_use_sudo: true,
             window_width: 0.0,
             window_height: 0.0,
         }

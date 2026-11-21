@@ -292,20 +292,79 @@ export component AppWindow inherits Window {
     in property <string> docker-session;
     in-out property <string> docker-filter;
     in-out property <bool> docker-auto-discover: true;
+    in-out property <bool> docker-use-sudo: true;
+    // Docker 欢迎页：只含 SSH 会话（Rust 侧过滤，含分组/折叠）。
+    in property <[SessionInfo]> docker-sessions;
+    // Docker 不可用阻塞弹窗。
+    in property <string> docker-blocker-kind;
+    in property <string> docker-blocker-host;
+    in property <string> docker-blocker-title;
+    in property <string> docker-blocker-detail;
+    in property <string> docker-blocker-session;
+    in property <string> docker-active-session;
+    in property <string> docker-permission;
+    in property <bool> docker-cred-open;
+    in property <string> docker-cred-session;
+    in property <string> docker-cred-host;
+    in property <string> docker-cred-mode;
+    in property <string> docker-cred-user;
+    in property <bool> docker-cred-has-password;
+    in property <bool> docker-cred-testing;
+    in property <string> docker-cred-test-text;
+    in property <bool> docker-cred-test-ok;
     in property <string> docker-pending-id;
     in property <bool> docker-log-open;
     in property <bool> docker-log-loading;
     in property <bool> docker-log-truncated;
     in property <string> docker-log-title;
     in property <[string]> docker-log-lines;
+    in property <string> docker-action-text;
+    in property <bool> docker-action-error;
+    // Docker 概览页：统计与 Docker 服务状态（-1 / "unknown" = 尚未采集）。
+    in property <int> docker-running: -1;
+    in property <int> docker-stopped: -1;
+    in property <int> docker-images: -1;
+    in property <int> docker-networks: -1;
+    in property <int> docker-compose-projects: -1;
+    in property <string> docker-service-state: "unknown";
+    in property <bool> docker-service-pending;
+    in property <string> docker-service-location;
+    in property <string> docker-service-autostart;
+    // 概览页监控曲线（按选中 Docker 主机的 tab_id 取快照）。
+    in property <string> docker-cpu-path;
+    in property <string> docker-mem-path;
+    in property <string> docker-net-up-path;
+    in property <string> docker-net-down-path;
+    in property <bool> docker-stats-ready;
+    in property <float> docker-cpu-percent;
+    in property <float> docker-mem-percent;
+    in property <string> docker-net-top-up;
+    in property <string> docker-net-top-down;
     callback refresh-docker();
+    callback refresh-docker-now();
     callback docker-switch-host(string /* host key */);
     callback docker-filter-changed(string);
     callback docker-action(string, int);
     callback docker-open-logs(string);
     callback docker-close-logs();
+    callback docker-copy-logs();
     callback docker-open-terminal(string);
+    callback docker-toggle-service(bool);
+    callback docker-close-host(string);
+    callback docker-select-welcome();
+    callback docker-open-saved-session(string);
+    callback docker-toggle-group(string);
+    callback docker-blocker-terminal();
+    callback docker-blocker-settings();
+    callback docker-blocker-retry();
+    callback docker-blocker-dismiss();
+    callback docker-configure-credentials(string);
+    callback docker-save-credentials(string, string, string, string);
+    callback docker-test-credentials(string, string, string, string);
+    callback docker-clear-credentials(string);
+    callback docker-dismiss-credentials();
     callback set-docker-auto-discover(bool);
+    callback set-docker-use-sudo(bool);
     // 综合页头卡：结构化字段，Rust 从远端 overview 直接写入，不按本地化标签反查。
     in property <string> host-name;
     in property <string> host-os;
@@ -1480,6 +1539,11 @@ export component AppWindow inherits Window {
                 height: parent.height;
                 background: Theme.bg-root;
 
+                // 普通 Rectangle 不接收指针事件，点击会漏到下面的分屏手柄 ——
+                // 没有这层，在 Docker / 笔记页上仍能拖动分屏分隔条。
+                // 必须声明在页面之前：放在后面会盖在 DockerPage 上，吞掉所有点击。
+                TouchArea {}
+
                 DockerPage {
                     visible: root.nav-page == 3;
                     width: parent.width;
@@ -1488,25 +1552,81 @@ export component AppWindow inherits Window {
                     hosts: root.docker-hosts;
                     active-host: root.docker-active-host;
                     page-visible: root.nav-page == 3;
-                    auto-refresh: root.docker-auto-discover;
                     filter-text: root.docker-filter;
+                    sessions: root.docker-sessions;
+                    search-query: "";
+                    blocker-kind: root.docker-blocker-kind;
+                    blocker-host: root.docker-blocker-host;
+                    blocker-title: root.docker-blocker-title;
+                    blocker-detail: root.docker-blocker-detail;
+                    blocker-session: root.docker-blocker-session;
+                    active-session: root.docker-active-session;
+                    permission-text: root.docker-permission;
+                    cred-open: root.docker-cred-open;
+                    cred-session: root.docker-cred-session;
+                    cred-host: root.docker-cred-host;
+                    cred-mode: root.docker-cred-mode;
+                    cred-user: root.docker-cred-user;
+                    cred-has-password: root.docker-cred-has-password;
+                    cred-testing: root.docker-cred-testing;
+                    cred-test-text: root.docker-cred-test-text;
+                    cred-test-ok: root.docker-cred-test-ok;
                     pending-id: root.docker-pending-id;
                     log-open: root.docker-log-open;
                     log-loading: root.docker-log-loading;
                     log-truncated: root.docker-log-truncated;
                     log-title: root.docker-log-title;
                     log-lines: root.docker-log-lines;
+                    action-text: root.docker-action-text;
+                    action-error: root.docker-action-error;
+                    running: root.docker-running;
+                    stopped: root.docker-stopped;
+                    images: root.docker-images;
+                    networks: root.docker-networks;
+                    compose-projects: root.docker-compose-projects;
+                    service-state: root.docker-service-state;
+                    service-pending: root.docker-service-pending;
+                    service-location: root.docker-service-location;
+                    service-autostart: root.docker-service-autostart;
+                    cpu-path: root.docker-cpu-path;
+                    mem-path: root.docker-mem-path;
+                    net-up-path: root.docker-net-up-path;
+                    net-down-path: root.docker-net-down-path;
+                    stats-ready: root.docker-stats-ready;
+                    cpu-percent: root.docker-cpu-percent;
+                    mem-percent: root.docker-mem-percent;
+                    net-top-up: root.docker-net-top-up;
+                    net-top-down: root.docker-net-top-down;
                     switch-host(key) => { root.docker-switch-host(key); }
+                    close-host(key) => { root.docker-close-host(key); }
+                    select-welcome() => { root.docker-select-welcome(); }
+                    open-saved-session(id) => { root.docker-open-saved-session(id); }
+                    toggle-group(group) => { root.docker-toggle-group(group); }
+                    blocker-terminal() => { root.docker-blocker-terminal(); }
+                    blocker-settings() => { root.docker-blocker-settings(); }
+                    blocker-retry() => { root.docker-blocker-retry(); }
+                    blocker-dismiss() => { root.docker-blocker-dismiss(); }
+                    configure-credentials(id) => { root.docker-configure-credentials(id); }
+                    save-credentials(session, mode, user, password) => {
+                        root.docker-save-credentials(session, mode, user, password);
+                    }
+                    test-credentials(session, mode, user, password) => {
+                        root.docker-test-credentials(session, mode, user, password);
+                    }
+                    clear-credentials(session) => { root.docker-clear-credentials(session); }
+                    dismiss-credentials() => { root.docker-dismiss-credentials(); }
                     filter-changed(text) => { root.docker-filter-changed(text); }
                     action(id, kind) => { root.docker-action(id, kind); }
                     open-logs(id) => { root.docker-open-logs(id); }
                     close-logs() => { root.docker-close-logs(); }
+                    copy-logs() => { root.docker-copy-logs(); }
                     open-terminal(id) => { root.docker-open-terminal(id); }
+                    toggle-service(on) => { root.docker-toggle-service(on); }
                     page-status: root.docker-status;
                     error-text: root.docker-error;
                     summary: root.docker-summary;
-                    session-name: root.docker-session;
                     refresh() => { root.refresh-docker(); }
+                    refresh-now() => { root.refresh-docker-now(); }
                 }
                 PlaceholderPage {
                     visible: root.nav-page == 5;
@@ -1516,10 +1636,6 @@ export component AppWindow inherits Window {
                     title: @tr("Notes");
                     subtitle: @tr("Planned");
                 }
-
-                // 普通 Rectangle 不接收指针事件，点击会漏到下面的分屏手柄 ——
-                // 没有这层，在 Docker / 笔记页上仍能拖动分屏分隔条。
-                TouchArea {}
             }
 
         }

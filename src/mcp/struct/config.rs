@@ -21,6 +21,8 @@ pub(crate) struct McpConfigSnapshot {
     pub(crate) consent: ConsentPolicy,
     /// `run_command` 走交互式 PTY（命令可见）而不是一次性 exec 通道。
     pub(crate) pty_commands: bool,
+    /// Docker 命令是否统一走 `sudo -n`（与 UI 的 Docker 设置同一个开关）。
+    pub(crate) docker_use_sudo: bool,
     pub(crate) audit: AuditConfig,
 }
 
@@ -75,6 +77,7 @@ impl McpConfigSnapshot {
                 client_grants,
                 consent: ConsentPolicy::Auto,
                 pty_commands: store.mcp_pty_commands(),
+                docker_use_sudo: store.docker_use_sudo(),
                 audit: AuditConfig {
                     enabled: true,
                     retention_days: audit.retention_days,
@@ -100,6 +103,7 @@ impl McpConfigSnapshot {
             // 连接一律走确认框；只有开发令牌那条口子会置成 Auto。
             consent: ConsentPolicy::Session,
             pty_commands: store.mcp_pty_commands(),
+            docker_use_sudo: store.docker_use_sudo(),
             audit,
         }
     }

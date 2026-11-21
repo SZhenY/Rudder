@@ -49,6 +49,7 @@ mod tests {
                 client_grants: Vec::new(),
                 consent: crate::mcp::ConsentPolicy::Auto,
                 pty_commands: false,
+                docker_use_sudo: false,
                 audit: crate::mcp::types::AuditConfig::default(),
             },
             AppHandles {

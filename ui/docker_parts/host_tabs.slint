@@ -1,0 +1,329 @@
+//! Docker 顶部主机标签栏。
+//!
+//! 外观与交互照抄终端页的 `SingleTab`（`ui/tabs.slint:149-186`）：`Theme.tab-h`
+//! 项高、100..320 宽、圆点手动垂直居中、标题按 `title_len` 三档字号、右侧常驻 ×。
+//! 第一个「欢迎」标签固定存在且不可关闭；`active-host == ""` 时它就是选中态。
+//!
+//! 不复用 `TabBar`（它带关闭 / 新建 / 重排 / 分屏 / 右键菜单），但保留同一套
+//! 「active 标签上报几何 + 共享滑轨」的机制，参考 `ui/tabs.slint:49-96 / 243-356`。
+
+import { Theme, AnimationSettings } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
+import { IconButton } from "../widgets.slint";
+import { DockerHostTab } from "types.slint";
+
+component DockerTabItem inherits Rectangle {
+    in property <string> label;
+    in property <int> title-len: 0;
+    in property <bool> active: false;
+    in property <bool> connected: true;
+    in property <int> session-count: 0;
+    in property <int> count: -1;
+    in property <bool> closable: true;
+    callback selected();
+    callback closed();
+    /// 把自己在 strip 里的位置报给 `DockerHostTabs` 的滑动块（与 `ui/tabs.slint` 同构）。
+    callback report-geometry(length, length, bool /* animate */);
+
+    property <length> obs-x: root.x;
+    property <length> obs-w: root.width;
+    property <length> sent-x: -1px;
+    property <length> sent-w: -1px;
+    property <bool> animate-hint: false;
+    property <int> report-retry: 0;
+
+    function queue-report(animate: bool) {
+        if (!root.active) { return; }
+        if (animate) { root.animate-hint = true; }
+        report-timer.running = true;
+    }
+
+    report-timer := Timer {
+        interval: 1ms;
+        running: false;
+        triggered => {
+            report-timer.running = false;
+            if (!root.active) { return; }
+            if (root.width <= 0px) {
+                if (root.report-retry < 3) {
+                    root.report-retry += 1;
+                    report-timer.running = true;
+                }
+                return;
+            }
+            root.report-retry = 0;
+            if (root.sent-x == root.x && root.sent-w == root.width && !root.animate-hint) {
+                return;
+            }
+            root.sent-x = root.x;
+            root.sent-w = root.width;
+            root.report-geometry(root.x, root.width, root.animate-hint);
+            root.animate-hint = false;
+        }
+    }
+
+    init => { root.queue-report(false); }
+    changed active => { if (root.active) { root.queue-report(true); } }
+    changed obs-x => { root.queue-report(false); }
+    changed obs-w => { root.queue-report(false); }
+
+    height: Theme.tab-h;
+    min-width: 100px * Theme.ui-scale;
+    max-width: 320px * Theme.ui-scale;
+    horizontal-stretch: 0;
+    border-radius: Theme.radius-sm;
+    // 选中底色与描边交给 DockerHostTabs 的共享滑轨；这里只表达 hover。
+    background: tab-ta.has-hover ? Theme.state-hover : transparent;
+    animate background {
+        duration: tab-ta.has-hover ? AnimationSettings.enter-state() : AnimationSettings.exit-state();
+        easing: tab-ta.has-hover ? AnimationSettings.e-enter() : AnimationSettings.e-exit();
+        enabled: AnimationSettings.enabled;
+    }
+
+    // 交互区必须先声明：后声明的关闭按钮才能拿到点击。
+    tab-ta := TouchArea {
+        mouse-cursor: pointer;
+        clicked => { root.selected(); }
+    }
+
+    HorizontalLayout {
+        padding-left: Theme.sp-10;
+        padding-right: Theme.sp-6;
+        spacing: Theme.sp-8;
+        alignment: start;
+
+        Rectangle {
+            width: 8px * Theme.ui-scale;
+            height: 8px * Theme.ui-scale;
+            border-radius: 4px * Theme.ui-scale;
+            y: (parent.height - self.height) / 2;
+            background: root.connected ? Theme.success : Theme.text-muted;
+        }
+        Text {
+            text: root.label;
+            font-size: root.title-len > 24 ? 9px * Theme.ui-scale
+                : root.title-len > 12 ? 10px * Theme.ui-scale
+                : Theme.fs-sm;
+            color: root.active ? Theme.text-primary : Theme.text-secondary;
+            vertical-alignment: center;
+            overflow: elide;
+            horizontal-stretch: 1;
+        }
+        if root.session-count > 1 : Text {
+            text: "(" + root.session-count + ")";
+            font-size: Theme.fs-xs;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+        }
+        if root.count >= 0 : Text {
+            text: root.count;
+            font-size: Theme.fs-xs;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+        }
+        if root.closable : IconButton {
+            glyph: "×";
+            size: Theme.icon-btn;
+            y: (parent.height - self.height) / 2;
+            clicked => { root.closed(); }
+        }
+    }
+}
+
+export component DockerHostTabs inherits Rectangle {
+    in property <[DockerHostTab]> hosts;
+    in property <string> active-host;
+    in property <bool> welcome-active: false;
+    in property <bool> show-refresh: true;
+
+    callback switch-host(string);
+    callback close-host(string);
+    callback select-welcome();
+    callback refresh-now();
+
+    // 共享滑动高亮：几何由 active 标签上报（与 `ui/tabs.slint:243-356` 同款）。
+    in-out property <length> ind-x: 0px;
+    in-out property <length> ind-w: 0px;
+    property <bool> ind-ready: false;
+    property <bool> ind-primed: false;
+    property <bool> ind-anim: true;
+
+    // 只在标签清空时藏掉滑轨；增删/改名造成的位移由 active 项的
+    // `changed obs-x/obs-w` 无动画上报，不会让后续切换失去滑动。
+    changed hosts => {
+        if (root.hosts.length == 0) { root.ind-ready = false; }
+    }
+
+    anim-restore := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => { anim-restore.running = false; root.ind-anim = true; }
+    }
+
+    height: Theme.tabbar-h;
+    background: Theme.bg-panel-alt;
+
+    property <bool> overflow: strip.preferred-width > flick.width;
+    property <bool> can-scroll-left: flick.content-x > 0px;
+    property <bool> can-scroll-right: flick.content-x < flick.content-width - flick.width - 0.5px;
+
+    function scroll-by(delta: length) {
+        flick.content-x = clamp(flick.content-x + delta, 0px, max(0px, flick.content-width - flick.width));
+    }
+
+    HorizontalLayout {
+        padding: Theme.sp-3;
+        padding-right: Theme.sp-3 + 2px;
+        spacing: Theme.sp-2;
+
+        Rectangle {
+            horizontal-stretch: 1;
+            height: parent.height;
+            clip: true;
+
+            flick := Flickable {
+                width: parent.width;
+                height: parent.height;
+                content-width: max(self.width, strip.preferred-width);
+                content-height: parent.height;
+                interactive: root.overflow;
+                content-x: 0px;
+                content-y: 0px;
+
+                // 滑动高亮块：声明在 strip 之前 → 绘制在标签下层；位置/宽度
+                // 听 active 标签上报，切换时平滑滑动。
+                Rectangle {
+                    x: root.ind-x;
+                    y: 0px;
+                    width: root.ind-w;
+                    height: parent.height;
+                    border-radius: Theme.radius-sm;
+                    border-width: 1px;
+                    border-color: Theme.state-selected-border;
+                    background: Theme.state-selected;
+                    opacity: root.ind-ready ? 1 : 0;
+                    animate x {
+                        duration: AnimationSettings.enter-container();
+                        easing: AnimationSettings.s-default();
+                        enabled: AnimationSettings.enabled && root.ind-anim;
+                    }
+                    animate width {
+                        duration: AnimationSettings.enter-container();
+                        easing: AnimationSettings.s-default();
+                        enabled: AnimationSettings.enabled && root.ind-anim;
+                    }
+                    animate opacity {
+                        duration: AnimationSettings.short2();
+                        easing: AnimationSettings.e-standard-decelerate();
+                        enabled: AnimationSettings.enabled;
+                    }
+                }
+
+                strip := HorizontalLayout {
+                    spacing: Theme.sp-2;
+                    alignment: start;
+
+                    // 固定「欢迎」标签：不可关闭，active 由外壳传。
+                    DockerTabItem {
+                        label: @tr("Welcome");
+                        title-len: 7;
+                        active: root.welcome-active;
+                        connected: false;
+                        closable: false;
+                        selected => { root.select-welcome(); }
+                        report-geometry(x, w, animate) => {
+                            if (animate && root.ind-primed && root.ind-ready) {
+                                root.ind-x = x;
+                                root.ind-w = w;
+                            } else {
+                                root.ind-anim = false;
+                                root.ind-x = x;
+                                root.ind-w = w;
+                                root.ind-ready = true;
+                                anim-restore.running = true;
+                            }
+                            root.ind-primed = true;
+                        }
+                    }
+
+                    for h in root.hosts : DockerTabItem {
+                        label: h.label;
+                        title-len: h.title_len;
+                        active: h.key == root.active-host;
+                        connected: h.connected;
+                        session-count: h.session_count;
+                        count: h.count;
+                        closable: true;
+                        selected => { root.switch-host(h.key); }
+                        closed => { root.close-host(h.key); }
+                        report-geometry(x, w, animate) => {
+                            if (animate && root.ind-primed && root.ind-ready) {
+                                root.ind-x = x;
+                                root.ind-w = w;
+                            } else {
+                                root.ind-anim = false;
+                                root.ind-x = x;
+                                root.ind-w = w;
+                                root.ind-ready = true;
+                                anim-restore.running = true;
+                            }
+                            root.ind-primed = true;
+                        }
+                    }
+                }
+            }
+
+            // 左右滚动箭头：绝对定位在视口两侧，不参与 strip 布局。
+            if root.overflow && root.can-scroll-left : Rectangle {
+                x: 0px;
+                y: (parent.height - self.height) / 2;
+                width: 24px * Theme.ui-scale;
+                height: 24px * Theme.ui-scale;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-panel-alt;
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.scroll-by(-120px * Theme.ui-scale); }
+                }
+                IconText {
+                    text: "\u{E5CB}";
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-md;
+                    centered: true;
+                }
+            }
+            if root.overflow && root.can-scroll-right : Rectangle {
+                x: parent.width - self.width;
+                y: (parent.height - self.height) / 2;
+                width: 24px * Theme.ui-scale;
+                height: 24px * Theme.ui-scale;
+                border-radius: Theme.radius-sm;
+                background: Theme.bg-panel-alt;
+                TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.scroll-by(120px * Theme.ui-scale); }
+                }
+                IconText {
+                    text: "\u{E5CC}";
+                    color: Theme.text-secondary;
+                    font-size: Theme.fs-md;
+                    centered: true;
+                }
+            }
+        }
+
+        if root.show-refresh : StateSurface {
+            width: 30px * Theme.ui-zoom;
+            height: 26px * Theme.ui-zoom;
+            radius: Theme.radius-sm;
+            clicked => { root.refresh-now(); }
+            IconText {
+                text: "\u{E5D5}";
+                color: Theme.text-secondary;
+                font-size: Theme.fs-md;
+                centered: true;
+            }
+        }
+    }
+}

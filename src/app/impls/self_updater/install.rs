@@ -482,7 +482,8 @@ pub(crate) fn restart_app() -> Result<()> {
     {
         cmd.spawn().context("spawn new instance")?;
         // 新进程已经起来，当前进程直接退出；调用方不会拿到返回值。
-        std::process::exit(0);
+        // 走统一的硬终止：顺带收掉本地 shell 子进程，也不进 CRT/DLL detach。
+        crate::app::exit_process_now();
     }
     #[cfg(not(windows))]
     {

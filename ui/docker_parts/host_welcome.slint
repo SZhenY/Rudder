@@ -1,0 +1,148 @@
+//! Docker 欢迎页：选择一个已保存的 SSH 主机，打开它的 Docker 管理。
+//!
+//! 列表数据来自 Rust 的专用模型（只含 SSH 会话，已排除本地 shell / 串口 /
+//! Telnet），分组、排序与折叠状态与主机页共用；本页只允许“连接并打开”，
+//! 不提供编辑 / 复制 / 删除 / 移动分组等主机配置操作。
+
+import { Theme } from "../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { IconText } from "../components/text.slint";
+import { SessionInfo, SessionRow } from "../welcome_rows.slint";
+
+export component DockerHostWelcome inherits Rectangle {
+    in property <[SessionInfo]> sessions;
+    in property <string> search-query: "";
+
+    callback open-saved-session(string);
+    callback toggle-group(string);
+    /// 打开该会话的 Docker 提权凭据弹窗。
+    callback configure-credentials(string);
+
+    // 页面根已铺 `Theme.bg-root`；这里再铺一层会让欢迎页比主机页欢迎页更暗。
+    // 保持透明，壁纸与底色由 DockerPage 根负责。
+    background: transparent;
+
+    // 覆盖层空白处也要吃掉点击，避免穿透到下面的容器列表。
+    TouchArea { }
+
+    VerticalLayout {
+        padding: Theme.sp-24;
+        spacing: Theme.sp-16;
+
+        VerticalLayout {
+            spacing: Theme.sp-6;
+            Text {
+                text: @tr("Docker");
+                font-size: 26px * Theme.ui-scale;
+                font-weight: 600;
+                color: Theme.text-primary;
+            }
+            Text {
+                text: @tr("Pick a saved host to open its Docker workspace");
+                font-size: Theme.fs-sm;
+                color: Theme.text-muted;
+            }
+        }
+
+        Rectangle {
+            vertical-stretch: 1;
+            background: Theme.bg-panel;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+
+            VerticalLayout {
+                padding: Theme.sp-16;
+                spacing: Theme.sp-8;
+
+                if root.sessions.length == 0 : VerticalLayout {
+                    vertical-stretch: 1;
+                    alignment: center;
+                    spacing: Theme.sp-8;
+                    IconText {
+                        text: "\u{E30C}";
+                        color: Theme.text-muted;
+                        font-size: 30px * Theme.ui-zoom;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: @tr("No saved SSH hosts yet");
+                        font-size: Theme.fs-sm;
+                        color: Theme.text-muted;
+                        horizontal-alignment: center;
+                    }
+                    Text {
+                        text: @tr("Add one on the Hosts page first");
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-muted;
+                        horizontal-alignment: center;
+                    }
+                }
+
+                if root.sessions.length > 0 : ScrollView {
+                    vertical-stretch: 1;
+                    content-width: self.visible-width;
+                    content-height: max(self.visible-height, list.preferred-height);
+
+                    list := VerticalLayout {
+                        spacing: 0px;
+                        for session[i] in root.sessions : VerticalLayout {
+                            // 折叠时只保留组头那一行（与主机页一致）。
+                            visible: session.group-header != "" || !session.collapsed;
+                            padding-top: self.visible && i > 0 ? 2px * Theme.ui-scale : 0px;
+                            spacing: Theme.sp-2;
+
+                            if session.group-header != "" : Rectangle {
+                                height: Theme.control-h-sm;
+                                HorizontalLayout {
+                                    padding-top: Theme.sp-6;
+                                    padding-left: Theme.sp-4;
+                                    spacing: Theme.sp-4;
+                                    IconText {
+                                        text: session.collapsed ? "\u{E5CC}" : "\u{E5CF}";
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    IconText {
+                                        text: "\u{E2C7}";
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-sm;
+                                        vertical-alignment: center;
+                                    }
+                                    Text {
+                                        text: session.group-header;
+                                        color: Theme.text-muted;
+                                        font-size: Theme.fs-xs;
+                                        font-weight: 700;
+                                        vertical-alignment: center;
+                                        horizontal-stretch: 1;
+                                        horizontal-alignment: left;
+                                    }
+                                }
+                                TouchArea {
+                                    mouse-cursor: pointer;
+                                    clicked => {
+                                        if (root.search-query == "") {
+                                            root.toggle-group(session.group);
+                                        }
+                                    }
+                                }
+                            }
+
+                            if session.id != "" && !session.collapsed : SessionRow {
+                                session: session;
+                                all-sessions: root.sessions;
+                                manage-enabled: false;
+                                reorder-enabled: false;
+                                show-credentials: true;
+                                credentials => { root.configure-credentials(session.id); }
+                                connect => { root.open-saved-session(session.id); }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}

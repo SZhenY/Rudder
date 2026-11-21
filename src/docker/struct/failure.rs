@@ -3,6 +3,8 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum DockerFailure {
     NoPermission,
+    /// sudo / su 已经拿到密码但认证被拒（密码错或账号无提权权限）。
+    SudoAuthFailed,
     NoCli,
     DaemonDown,
     Timeout,

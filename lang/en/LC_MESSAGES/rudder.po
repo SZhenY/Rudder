@@ -821,3 +821,145 @@ msgstr "Start"
 
 msgid "Status"
 msgstr "Status"
+
+msgid "No matching containers"
+msgstr "No matching containers"
+
+msgid "Running containers are stopped first. Volumes are not removed."
+msgstr "Running containers are stopped first. Volumes are not removed."
+
+msgid "Start container"
+msgstr "Start container"
+
+msgid "Stop container"
+msgstr "Stop container"
+
+msgid "Restart container"
+msgstr "Restart container"
+
+msgid "View logs"
+msgstr "View logs"
+
+msgid "Remove container"
+msgstr "Remove container"
+
+msgid "Docker"
+msgstr "Docker"
+
+msgid "Containers"
+msgstr "Containers"
+
+msgid "Compose"
+msgstr "Compose"
+
+msgid "Local images"
+msgstr "Local images"
+
+msgid "Registry"
+msgstr "Registry"
+
+msgid "Networks"
+msgstr "Networks"
+
+msgid "Healthy"
+msgstr "Healthy"
+
+msgid "All services running normally"
+msgstr "All services running normally"
+
+msgid "Docker service is stopped"
+msgstr "Docker service is stopped"
+
+msgid "Service state unknown"
+msgstr "Service state unknown"
+
+msgid "Docker service"
+msgstr "Docker service"
+
+msgid "Running"
+msgstr "Running"
+
+msgid "Stopped"
+msgstr "Stopped"
+
+msgid "Unknown"
+msgstr "Unknown"
+
+msgid "Storage location"
+msgstr "Storage location"
+
+msgid "Start on boot"
+msgstr "Start on boot"
+
+msgid "Info monitoring"
+msgstr "Info monitoring"
+
+msgid "No monitoring data"
+msgstr "No monitoring data"
+
+msgid "Compose projects will be listed here in a later release"
+msgstr "Compose projects will be listed here in a later release"
+
+msgid "Local images will be listed here in a later release"
+msgstr "Local images will be listed here in a later release"
+
+msgid "Registry settings will be available in a later release"
+msgstr "Registry settings will be available in a later release"
+
+msgid "Docker networks will be listed here in a later release"
+msgstr "Docker networks will be listed here in a later release"
+
+
+msgid "Welcome"
+msgstr "Welcome"
+
+msgid "Pick a saved host to open its Docker workspace"
+msgstr "Pick a saved host to open its Docker workspace"
+
+msgid "No saved SSH hosts yet"
+msgstr "No saved SSH hosts yet"
+
+msgid "Add one on the Hosts page first"
+msgstr "Add one on the Hosts page first"
+
+msgid "Docker is unavailable"
+msgstr "Docker is unavailable"
+
+msgid "Docker settings"
+msgstr "Docker settings"
+
+msgid "Docker credentials"
+msgstr "Docker credentials"
+
+msgid "Elevation"
+msgstr "Elevation"
+
+msgid "Target account"
+msgstr "Target account"
+
+msgid "Target user (blank = root)"
+msgstr "Target user (blank = root)"
+
+msgid "Account name"
+msgstr "Account name"
+
+msgid "Saved — leave blank to keep"
+msgstr "Saved — leave blank to keep"
+
+msgid "su asks for the target account's own password."
+msgstr "su asks for the target account's own password."
+
+msgid "sudo asks for the signed-in user's sudo password."
+msgstr "sudo asks for the signed-in user's sudo password."
+
+msgid "Testing…"
+msgstr "Testing…"
+
+msgid "Test"
+msgstr "Test"
+
+msgid "Docker permission"
+msgstr "Docker permission"
+
+msgid "Configure"
+msgstr "Configure"

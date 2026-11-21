@@ -41,6 +41,11 @@ export component SessionRow inherits Rectangle {
     // Drag is only allowed outside search (visible indices would not match
     // stored order) and never on built-in system rows.
     in property <bool> reorder-enabled: false;
+    /// false = 只读列表（Docker 欢迎页）：不弹右键管理菜单，只保留左键连接。
+    in property <bool> manage-enabled: true;
+    /// 行尾显示 Docker 凭据按钮（仅 Docker 欢迎页用）。
+    in property <bool> show-credentials: false;
+    callback credentials();
     // Shared list-level drag state (see Welcome): which session is being
     // dragged and its offset. The lifted card follows the dragged session's
     // DATA, not the component holding the pointer grab — rows swap contents
@@ -68,7 +73,8 @@ export component SessionRow inherits Rectangle {
             // Built-in PowerShell/CMD/WSL rows have no edit/move/delete actions.
             // All menu items are conditional on !system-row, so opening the
             // popup for them only produces an empty rectangle (#336).
-            if (!root.system-row
+            if (root.manage-enabled
+                    && !root.system-row
                     && e.kind == PointerEventKind.down
                     && e.button == PointerEventButton.right) {
                 ctx-x = self.mouse-x;
@@ -316,6 +322,24 @@ export component SessionRow inherits Rectangle {
             font-size: Theme.fs-sm;
             vertical-alignment: center;
             horizontal-stretch: 1;
+        }
+        // 交互区（整行 touch）声明在前，这个按钮声明在后才能拿到点击。
+        if root.show-credentials : Rectangle {
+            width: 22px * Theme.ui-zoom;
+            height: 22px * Theme.ui-zoom;
+            y: (parent.height - self.height) / 2;
+            border-radius: Theme.radius-sm;
+            background: cred-hit.has-hover ? Theme.state-hover : transparent;
+            IconText {
+                centered: true;
+                text: "\u{E0DA}";   // vpn_key
+                color: Theme.text-muted;
+                font-size: Theme.fs-sm;
+            }
+            cred-hit := TouchArea {
+                mouse-cursor: pointer;
+                clicked => { root.credentials(); }
+            }
         }
     }
     } // card

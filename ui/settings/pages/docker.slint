@@ -11,8 +11,10 @@ import { Theme } from "../../theme.slint";
 export component DockerPage inherits VerticalLayout {
     in property <bool> lang-en;
     in-out property <bool> docker-auto-discover;
+    in-out property <bool> docker-use-sudo: true;
     callback reset-page(string);
     callback set-docker-auto-discover(bool);
+    callback set-docker-use-sudo(bool);
 
     padding-left: Theme.sp-20;
     padding-right: Theme.sp-20;
@@ -33,6 +35,22 @@ export component DockerPage inherits VerticalLayout {
             show-divider: false;
             checked <=> root.docker-auto-discover;
             toggled(v) => { root.set-docker-auto-discover(v); }
+        }
+    }
+
+    SettingsSection {
+        section-id: "docker.permissions";
+        lang-en: root.lang-en;
+        title-zh: "执行权限";
+        title-en: "PERMISSIONS";
+        SettingSwitch {
+            label: root.lang-en ? "Prefer sudo for Docker commands" : "优先使用 sudo 运行 Docker 命令";
+            desc: root.lang-en
+                ? "Uses sudo only when it runs without a prompt; direct docker access is used otherwise. Add elevation credentials from the Docker welcome page when a password is required."
+                : "仅在免密 sudo 可用时提权；当前用户已能直接访问 docker 时自动跳过。需要密码时在 Docker 欢迎页配置提权凭据。";
+            show-divider: false;
+            checked <=> root.docker-use-sudo;
+            toggled(v) => { root.set-docker-use-sudo(v); }
         }
     }
 

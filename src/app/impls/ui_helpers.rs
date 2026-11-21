@@ -12,6 +12,90 @@ pub(crate) fn should_block_close(exit_confirmed: bool, has_live_sessions: bool) 
     !exit_confirmed && has_live_sessions
 }
 
+/// 统一的关窗收尾：保存布局 → 隐藏窗口 → 关子窗 → 断开会话 → 杀本地 shell
+/// → 刷盘 → 退出事件循环。
+///
+/// 三条 UI 路径（原生 X / 自绘 X / 确认弹窗）都走这里，避免某条路径漏掉
+/// `flush_logging` 或会话清理。幂等：重复的关窗请求只执行一次。
+pub(crate) fn begin_shutdown(
+    window: &AppWindow,
+    store: &Rc<RefCell<ConfigStore>>,
+    handles: &Rc<RefCell<HashMap<String, crate::ssh::SessionHandle>>>,
+    sftp_handles: &crate::sftp::SftpHandles,
+) {
+    use std::sync::atomic::{AtomicBool, Ordering};
+    static SHUTTING_DOWN: AtomicBool = AtomicBool::new(false);
+    if SHUTTING_DOWN.swap(true, Ordering::SeqCst) {
+        return;
+    }
+    tracing::warn!("shutdown: begin");
+    save_layout(window, store);
+    {
+        use slint::ComponentHandle as _;
+        let _ = window.hide();
+    }
+    super::settings_window::close_if_open();
+    super::sub_windows::release_process();
+    {
+        let mut sessions = handles.borrow_mut();
+        for handle in sessions.values() {
+            handle.close();
+        }
+        sessions.clear();
+    }
+    if let Ok(mut sftp) = sftp_handles.lock() {
+        for handle in sftp.values() {
+            handle.close();
+        }
+        sftp.clear();
+    }
+    crate::terminal::local::kill_all_children();
+    store.borrow_mut().flush_logging();
+    // 兜底：事件循环若因漏掉的隐藏窗口 / 卡住的析构没能结束，4 秒后硬终止。
+    arm_exit_watchdog();
+    if let Err(err) = slint::quit_event_loop() {
+        tracing::warn!("shutdown: quit_event_loop failed: {err}");
+    }
+}
+
+/// 立即结束进程。
+///
+/// Windows 用 `TerminateProcess` 跳过 CRT / `ExitProcess` / DLL detach：打开过
+/// 会话后，wgpu / 显卡驱动可能在 detach 阶段卡住，表现为窗口已关、任务管理器
+/// 里还剩一个单线程的 `rudder.exe`。终止前先收掉本地 shell 子进程。
+pub(crate) fn exit_process_now() -> ! {
+    crate::terminal::local::kill_all_children();
+    #[cfg(windows)]
+    {
+        unsafe extern "system" {
+            fn GetCurrentProcess() -> *mut core::ffi::c_void;
+            fn TerminateProcess(handle: *mut core::ffi::c_void, code: u32) -> i32;
+        }
+        // SAFETY: 只终止当前进程；不需要返回值，也不会再执行后续代码。
+        unsafe {
+            let _ = TerminateProcess(GetCurrentProcess(), 0);
+        }
+    }
+    std::process::exit(0)
+}
+
+/// 关窗兜底：4 秒后进程仍在就强制退出。
+///
+/// Slint 的 winit 后端只在 keepalive 计数归零时结束事件循环；任何漏掉的隐藏窗口
+/// 或卡在析构里的路径都会留下一个没有窗口的进程。这里保证用户关掉窗口后进程
+/// 一定消失，并在 `error.log` 留一条 warn，方便定位是哪条路径没有退出。
+pub(crate) fn arm_exit_watchdog() {
+    use std::sync::Once;
+    static ONCE: Once = Once::new();
+    ONCE.call_once(|| {
+        std::thread::spawn(|| {
+            std::thread::sleep(std::time::Duration::from_secs(4));
+            tracing::warn!("shutdown watchdog: event loop still running, forcing exit");
+            exit_process_now();
+        });
+    });
+}
+
 /// Tab ids currently shown in a pane (`term.id == pane.active-id` in Slint).
 pub(crate) fn visible_tab_ids(win: &AppWindow) -> HashSet<String> {
     use slint::Model as _;

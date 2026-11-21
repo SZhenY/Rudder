@@ -161,6 +161,16 @@ impl ConfigStore {
                 let enc = Self::encrypt(&self.key, session.proxy_pass.as_str())?;
                 session.proxy_pass = Secret::new(enc);
             }
+            // Docker 提权密码同样不能裸存。
+            if !session.docker_sudo_password.is_empty()
+                && !session
+                    .docker_sudo_password
+                    .as_str()
+                    .starts_with(Self::ENC_PREFIX)
+            {
+                let enc = Self::encrypt(&self.key, session.docker_sudo_password.as_str())?;
+                session.docker_sudo_password = Secret::new(enc);
+            }
             // Trigger responses are credentials too — the documented use case
             // is auto-answering a `Password:` prompt — so they get exactly the
             // same at-rest treatment as the session password. `Secret` has no

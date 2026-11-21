@@ -304,6 +304,26 @@ pub(crate) fn sync_sessions_to_model(store: &ConfigStore, model: &VecModel<Sessi
     sync_sessions_to_model_with_filter(store, model, "");
 }
 
+/// Docker 欢迎页的会话列表：只保留 SSH 会话，不含本地 shell / 串口 / Telnet。
+///
+/// 与主机页共用分组、排序与折叠状态；`builtin_sessions` 传空，所以
+/// “Local terminal / WSL / PowerShell”整组不会出现。
+pub(crate) fn docker_session_rows(store: &ConfigStore) -> Vec<SessionInfo> {
+    let ssh: Vec<Session> = store
+        .sessions()
+        .iter()
+        .filter(|s| s.kind == crate::config::SessionKind::Ssh)
+        .cloned()
+        .collect();
+    build_session_rows(
+        &ssh,
+        store.groups(),
+        store.collapsed_session_groups(),
+        &[],
+        "",
+    )
+}
+
 /// Same rows as `sync_sessions_to_model_with_filter`, but when the row count
 /// is unchanged the rows are written with `set_row_data` instead of `set_vec`:
 /// the `for` loop keeps its elements (and a drag's pointer grab) alive. Used
@@ -455,6 +475,9 @@ pub(crate) fn session_from_draft(
 
     Session {
         id: draft.id.to_string(),
+        docker_elevation: String::new(),
+        docker_sudo_user: String::new(),
+        docker_sudo_password: crate::config::Secret::default(),
         name: if draft.name.is_empty() {
             auto_name
         } else {

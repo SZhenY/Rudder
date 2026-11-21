@@ -292,14 +292,6 @@ pub(super) fn show_process(main: &AppWindow, rows: &Rc<VecModel<ProcRow>>, ctx: 
     proc.window().with_winit_window(|ww| ww.focus_window());
 }
 
-pub(super) fn hide_process() {
-    PROC.with(|slot| {
-        if let Some(proc) = slot.borrow().as_ref() {
-            let _ = proc.hide();
-        }
-    });
-}
-
 /// 关闭进程窗并归还 wgpu 设备。
 pub(super) fn release_process() {
     let proc = PROC.with(|slot| slot.borrow_mut().take());

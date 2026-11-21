@@ -187,6 +187,8 @@ pub(crate) fn spawn_monitoring_channels(
 /// 排队中的一次性命令。
 pub(crate) struct ExecRequest {
     pub(crate) command: String,
+    /// 提权密码：有值时请求 PTY、关 ECHO，等提示后写入 stdin。
+    pub(crate) password: Option<crate::config::Secret>,
     pub(crate) timeout: std::time::Duration,
     pub(crate) max_output_bytes: usize,
     pub(crate) reply: tokio::sync::oneshot::Sender<ExecResult>,
@@ -219,6 +221,8 @@ pub(crate) async fn run_exec(
     request: ExecRequest,
     done: tokio::sync::mpsc::UnboundedSender<()>,
 ) {
+    use zeroize::Zeroize as _;
+
     let started = std::time::Instant::now();
     let mut result = ExecResult {
         exit_code: None,
@@ -230,8 +234,15 @@ pub(crate) async fn run_exec(
         error: None,
     };
 
+    let privileged = request.password.is_some();
     let opened = auxiliary_timeout(AUXILIARY_CHANNEL_TIMEOUT, async {
         let channel = handle.channel_open_session().await?;
+        if privileged {
+            // sudo 的 PAM 常要求控制终端；关 ECHO，口令不会回显到通道输出 / 日志。
+            channel
+                .request_pty(true, "xterm", 200, 24, 0, 0, &[(russh::Pty::ECHO, 0)])
+                .await?;
+        }
         channel.exec(true, request.command.as_str()).await?;
         Ok::<_, russh::Error>(channel)
     })
@@ -262,9 +273,29 @@ pub(crate) async fn run_exec(
     // 个别实现不发 CLOSE，不能一直等到整体超时。
     const EXIT_STATUS_GRACE: std::time::Duration = std::time::Duration::from_millis(500);
     let mut saw_eof = false;
+    // 密码模式：等 sudo / su 打出提示再写；提示没出现（时间戳仍有效）时 3 秒兜底。
+    let mut password_sent = request.password.is_none();
+    let prompt_deadline =
+        tokio::time::Instant::now() + std::time::Duration::from_secs(3);
     let read = async {
         loop {
-            let message = if saw_eof {
+            let message = if !password_sent {
+                match tokio::time::timeout_at(prompt_deadline, channel.wait()).await {
+                    Ok(message) => message,
+                    Err(_) => {
+                        if let Some(password) = request.password.as_ref() {
+                            let mut input = password.as_str().as_bytes().to_vec();
+                            input.push(b'\n');
+                            let _ = channel.data(&input[..]).await;
+                            input.zeroize();
+                            // 关掉 stdin：密码错误时 sudo 不会再等第二次输入。
+                            let _ = channel.eof().await;
+                        }
+                        password_sent = true;
+                        continue;
+                    }
+                }
+            } else if saw_eof {
                 match tokio::time::timeout(EXIT_STATUS_GRACE, channel.wait()).await {
                     Ok(message) => message,
                     Err(_) => break,
@@ -279,6 +310,18 @@ pub(crate) async fn run_exec(
                         result.truncated = true;
                     }
                     stdout.extend_from_slice(&data[..data.len().min(room)]);
+                    if !password_sent
+                        && looks_like_sudo_password_prompt(&String::from_utf8_lossy(&data))
+                    {
+                        if let Some(password) = request.password.as_ref() {
+                            let mut input = password.as_str().as_bytes().to_vec();
+                            input.push(b'\n');
+                            let _ = channel.data(&input[..]).await;
+                            input.zeroize();
+                            let _ = channel.eof().await;
+                        }
+                        password_sent = true;
+                    }
                 }
                 Some(ChannelMsg::ExtendedData { data, ext }) => {
                     if ext != 1 {
@@ -289,6 +332,18 @@ pub(crate) async fn run_exec(
                         result.truncated = true;
                     }
                     stderr.extend_from_slice(&data[..data.len().min(room)]);
+                    if !password_sent
+                        && looks_like_sudo_password_prompt(&String::from_utf8_lossy(&data))
+                    {
+                        if let Some(password) = request.password.as_ref() {
+                            let mut input = password.as_str().as_bytes().to_vec();
+                            input.push(b'\n');
+                            let _ = channel.data(&input[..]).await;
+                            input.zeroize();
+                            let _ = channel.eof().await;
+                        }
+                        password_sent = true;
+                    }
                 }
                 Some(ChannelMsg::ExitStatus { exit_status }) => {
                     result.exit_code = Some(exit_status as i32);
@@ -308,6 +363,12 @@ pub(crate) async fn run_exec(
     // 远端可能是 GBK 等非 UTF-8 编码；这里按 UTF-8 有损解码，与读屏口径一致。
     result.stdout = String::from_utf8_lossy(&stdout).into_owned();
     result.stderr = String::from_utf8_lossy(&stderr).into_owned();
+    if privileged {
+        // 提示文本会混进 PTY 输出；解析器不该把它当成 docker 的一行。
+        let scrub = |text: String| text.replace("Password: ", "").replace("Password:", "");
+        result.stdout = scrub(result.stdout);
+        result.stderr = scrub(result.stderr);
+    }
     let _ = request.reply.send(result);
 }
 

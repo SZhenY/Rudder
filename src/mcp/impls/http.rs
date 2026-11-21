@@ -323,6 +323,7 @@ mod tests {
                 client_grants: Vec::new(),
                 consent,
                 pty_commands: false,
+                docker_use_sudo: false,
                 audit: super::super::types::AuditConfig {
                     enabled: false,
                     retention_days: 0,

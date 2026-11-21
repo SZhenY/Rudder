@@ -843,3 +843,145 @@ msgstr "启动"
 
 msgid "Status"
 msgstr "状态"
+
+msgid "No matching containers"
+msgstr "无匹配容器"
+
+msgid "Running containers are stopped first. Volumes are not removed."
+msgstr "运行中的容器会先被停止，数据卷不会删除。"
+
+msgid "Start container"
+msgstr "启动容器"
+
+msgid "Stop container"
+msgstr "停止容器"
+
+msgid "Restart container"
+msgstr "重启容器"
+
+msgid "View logs"
+msgstr "查看日志"
+
+msgid "Remove container"
+msgstr "删除容器"
+
+msgid "Docker"
+msgstr "Docker"
+
+msgid "Containers"
+msgstr "容器"
+
+msgid "Compose"
+msgstr "Compose"
+
+msgid "Local images"
+msgstr "本地镜像"
+
+msgid "Registry"
+msgstr "镜像仓库"
+
+msgid "Networks"
+msgstr "网络"
+
+msgid "Healthy"
+msgstr "健康"
+
+msgid "All services running normally"
+msgstr "所有服务运行状态健康"
+
+msgid "Docker service is stopped"
+msgstr "Docker 服务已停止"
+
+msgid "Service state unknown"
+msgstr "服务状态未知"
+
+msgid "Docker service"
+msgstr "Docker 服务"
+
+msgid "Running"
+msgstr "运行中"
+
+msgid "Stopped"
+msgstr "已停止"
+
+msgid "Unknown"
+msgstr "未知"
+
+msgid "Storage location"
+msgstr "存储位置"
+
+msgid "Start on boot"
+msgstr "开机自启"
+
+msgid "Info monitoring"
+msgstr "信息监控"
+
+msgid "No monitoring data"
+msgstr "暂无监控数据"
+
+msgid "Compose projects will be listed here in a later release"
+msgstr "Compose 项目将在后续版本中展示"
+
+msgid "Local images will be listed here in a later release"
+msgstr "本地镜像将在后续版本中展示"
+
+msgid "Registry settings will be available in a later release"
+msgstr "镜像仓库配置将在后续版本中提供"
+
+msgid "Docker networks will be listed here in a later release"
+msgstr "Docker 网络将在后续版本中展示"
+
+
+msgid "Welcome"
+msgstr "欢迎"
+
+msgid "Pick a saved host to open its Docker workspace"
+msgstr "选择一个已保存的主机，连接后打开它的 Docker 管理"
+
+msgid "No saved SSH hosts yet"
+msgstr "还没有已保存的 SSH 主机"
+
+msgid "Add one on the Hosts page first"
+msgstr "请先在主机页添加一个"
+
+msgid "Docker is unavailable"
+msgstr "Docker 不可用"
+
+msgid "Docker settings"
+msgstr "Docker 设置"
+
+msgid "Docker credentials"
+msgstr "Docker 提权凭据"
+
+msgid "Elevation"
+msgstr "提权方式"
+
+msgid "Target account"
+msgstr "目标账号"
+
+msgid "Target user (blank = root)"
+msgstr "目标用户（留空 = root）"
+
+msgid "Account name"
+msgstr "账号名"
+
+msgid "Saved — leave blank to keep"
+msgstr "已保存 — 留空则不修改"
+
+msgid "su asks for the target account's own password."
+msgstr "su 需要目标账号本人的密码。"
+
+msgid "sudo asks for the signed-in user's sudo password."
+msgstr "sudo 需要当前登录用户的 sudo 密码。"
+
+msgid "Testing…"
+msgstr "测试中…"
+
+msgid "Test"
+msgstr "测试"
+
+msgid "Docker permission"
+msgstr "Docker 权限"
+
+msgid "Configure"
+msgstr "配置"

@@ -1,0 +1,35 @@
+//! Docker 页的数据契约（叶子层）。
+//!
+//! 这里只放 struct，不 import 任何组件 —— `app.slint` 与各子页都从这里取类型，
+//! 避免 `app.slint → docker_page → containers → docker_page` 的循环引用。
+
+export struct DockerHostTab {
+    key: string,
+    label: string,
+    connected: bool,
+    session_count: int,
+    count: int,          // -1 = 尚未加载；0 = 已加载但无容器
+    /// 标题显示宽度（ASCII=1、非 ASCII=2），与终端标签同一套三档字号。
+    title_len: int,
+    /// 代表标签对应的已保存会话 id（凭据弹窗按它定位），空 = 无会话。
+    session_id: string,
+}
+
+export struct DockerContainer {
+    id: string,
+    name: string,
+    image: string,
+    state: string,     // running / exited / paused / created / restarting / dead
+    status: string,    // docker 原文，如 "Up 3 hours"
+    ports: string,
+    created: string,
+}
+
+/// 概览页的资源统计；`-1` = 本轮尚未采集（界面显示破折号）。
+export struct DockerOverviewStats {
+    running: int,
+    stopped: int,
+    images: int,
+    networks: int,
+    compose_projects: int,
+}

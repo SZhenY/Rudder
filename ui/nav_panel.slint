@@ -79,7 +79,7 @@ component NavRow inherits Rectangle {
     // 只滑 10px，让左缘最终与图标右缘齐平 —— 不能滑到 x = 0（会压到图标上，
     // 中途出现文字叠图标）；剩下的交给淡出与裁剪。
     Text {
-        x: (38px * Theme.ui-scale - root.progress * 10px * Theme.ui-scale) * Theme.ui-scale;
+        x: 38px * Theme.ui-scale - root.progress * 10px * Theme.ui-scale;
         width: max(0px, root.row-w - self.x - 10px * Theme.ui-scale);
         height: parent.height;
         text: root.label;
@@ -140,12 +140,12 @@ export component NavPanel inherits Rectangle {
     // 声明在 `VerticalLayout` **之前** → 绘制在下层，行的图标 / 文字 / 命中区
     // 都压在它上面。几何与行严格对齐：
     //   x = 8                         → VerticalLayout 的 padding
-    //   y = 8 + 38 + 2 + 6 + 2 = 56   → 首行顶
-    //   步长 = 行高 38 + 间距 2 = 40
+    //   y = 8 + 38 + 5 + 6 + 5 = 62   → 首行顶
+    //   步长 = 行高 38 + 间距 5 = 43
     // 宽度直接取 `row-w`，折叠动画期间自动跟随（184 → 38），无需再 animate。
     Rectangle {
         x: 8px * Theme.ui-scale;
-        y: (56px * Theme.ui-scale + max(0, root.nav-row-index(root.current-page)) * 40px * Theme.ui-scale) * Theme.ui-scale;
+        y: 62px * Theme.ui-scale + max(0, root.nav-row-index(root.current-page)) * 43px * Theme.ui-scale;
         width: root.row-w;
         height: 38px * Theme.ui-scale;
         border-radius: Theme.radius-sm;
@@ -172,7 +172,7 @@ export component NavPanel inherits Rectangle {
         width: 100%;
         height: 100%;
         padding: Theme.sp-8;
-        spacing: Theme.sp-2;
+        spacing: Theme.sp-5;
 
         // 头部：展开态（标题 + 收起按钮）与收起态（展开按钮）**都常驻**，
         // 靠 opacity 交叉淡化 —— 用 `if` 会导致元素随条件生死，没有过渡。

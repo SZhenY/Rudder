@@ -108,10 +108,9 @@ pub(crate) fn apply_session_event_to_window<'a>(
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses);
             }
-            // 连接后自动探索：开关打开时拉一次；是否轮询由 Docker 页自己控制。
-            if win.get_docker_auto_discover() {
-                win.invoke_refresh_docker();
-            }
+            // 始终同步一次主机表：自动探索的开关只决定“要不要自动开标签”，
+            // 欢迎页的已保存会话 / pending 打开也依赖这次同步。
+            super::docker::on_session_connected(win, tab_id);
         }
         SessionEvent::Closed(reason) => {
             // Print the hint into the terminal itself (FinalShell-style), via a
@@ -153,6 +152,8 @@ pub(crate) fn apply_session_event_to_window<'a>(
             // 注意：意外断线（网络 / 远端挂掉）**保留**回滚历史 —— 用户正要看断线前发生了什么，
             // 此时清掉是最不该做的事。释放只发生在用户**主动关标签页**时
             // （`tab_callbacks.rs` 的 pane-tab-closed）。
+            // 欢迎页发起的连接失败：清 pending 并弹「无法连接」。
+            super::docker::on_session_closed(win, tab_id, &reason);
             if win.get_active_tab_id().as_str() == tab_id {
                 refresh_sidebar(win, statuses);
             }

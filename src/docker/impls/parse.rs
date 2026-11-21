@@ -46,7 +46,7 @@ pub(crate) fn parse_ps(stdout: &str) -> ParseResult {
                     image: row.image,
                     state,
                     status: row.status,
-                    ports: row.ports,
+                    ports: mapped_ports(&row.ports),
                     created: row.created,
                 });
             }
@@ -75,6 +75,19 @@ fn first_name(names: &str) -> &str {
     names.split(',').next().unwrap_or("").trim()
 }
 
+/// 只保留真实端口映射（`host:port->container/tcp`）。
+///
+/// `docker ps` 的 `Ports` 里还会混着只声明未发布的项（如 `80/tcp`），以及 host
+/// 网络容器的空串；这些对用户没有信息量，列表里一律不展示。
+fn mapped_ports(ports: &str) -> String {
+    ports
+        .split(',')
+        .map(str::trim)
+        .filter(|item| item.contains("->"))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -84,6 +97,20 @@ mod tests {
         assert_eq!(first_name("web,web-1"), "web");
         assert_eq!(first_name(" solo "), "solo");
         assert_eq!(first_name(""), "");
+    }
+
+    #[test]
+    fn ports_keep_only_published_mappings() {
+        assert_eq!(
+            mapped_ports("0.0.0.0:8080->80/tcp, 80/tcp"),
+            "0.0.0.0:8080->80/tcp"
+        );
+        assert_eq!(
+            mapped_ports("0.0.0.0:80->80/tcp, :::80->80/tcp"),
+            "0.0.0.0:80->80/tcp, :::80->80/tcp"
+        );
+        assert_eq!(mapped_ports("80/tcp"), "");
+        assert_eq!(mapped_ports(""), "");
     }
 
     #[test]

@@ -5,6 +5,9 @@ fn main() {
     // maps msgids to Chinese and `lang/en/...` keeps the identity mapping.  No
     // per-component context, so msgids are the raw English strings.
     println!("cargo:rerun-if-changed=lang");
+    // 目录级声明在某些增量场景下不会因文件内容变化触发；逐个 .po 再声明一次，
+    // 保证改完翻译重建就生效（否则界面会一直停在旧文案）。
+    emit_lang_watch(std::path::Path::new("lang"));
     slint_build::compile_with_config(
         "ui/app.slint",
         slint_build::CompilerConfiguration::new()
@@ -179,4 +182,19 @@ fn parse_lock_packages(lock: &str) -> Vec<(String, String)> {
         deps.push((name, version));
     }
     deps
+}
+
+/// 递归为 `lang/` 下每个文件声明 `rerun-if-changed`。
+fn emit_lang_watch(dir: &std::path::Path) {
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            emit_lang_watch(&path);
+        } else {
+            println!("cargo:rerun-if-changed={}", path.display());
+        }
+    }
 }

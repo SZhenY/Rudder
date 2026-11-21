@@ -1,0 +1,48 @@
+//! Docker 页共用的小组件：tooltip 宿主与行内操作图标。
+//!
+//! `DockerTip` 由 `ActionIcon` 写入、由页面在顶层绘制 —— 气泡不能挂在 ListView
+//! 行内，否则会被视口裁掉。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+
+export global DockerTip {
+    in-out property <string> text;
+    in-out property <length> x;
+    in-out property <length> y;
+}
+
+export component ActionIcon inherits Rectangle {
+    in property <string> glyph;
+    in property <string> tip;
+    in property <bool> enabled: true;
+    in property <bool> danger: false;
+    callback clicked();
+
+    width: 24px * Theme.ui-zoom;
+    height: 24px * Theme.ui-zoom;
+    border-radius: Theme.radius-sm;
+    background: hit.has-hover && root.enabled ? Theme.state-hover : transparent;
+    opacity: root.enabled ? 1 : 0.35;
+    hit := TouchArea {
+        enabled: root.enabled;
+        mouse-cursor: pointer;
+        clicked => { if (root.enabled) { root.clicked(); } }
+        // 页面级气泡：这里只上报文案与窗口坐标，避免被 ListView 的视口裁掉。
+        changed has-hover => {
+            if (self.has-hover && root.tip != "") {
+                DockerTip.text = root.tip;
+                DockerTip.x = root.absolute-position.x + root.width / 2;
+                DockerTip.y = root.absolute-position.y;
+            } else if (DockerTip.text == root.tip) {
+                DockerTip.text = "";
+            }
+        }
+    }
+    IconText {
+        text: root.glyph;
+        color: root.danger ? Theme.danger : Theme.text-secondary;
+        font-size: Theme.fs-sm;
+        centered: true;
+    }
+}

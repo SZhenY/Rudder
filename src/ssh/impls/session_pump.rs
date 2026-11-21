@@ -692,9 +692,16 @@ fn mon_cmd(interval: u32) -> Vec<u8> {
                             let _ = reply.send(result);
                         });
                     }
-                    Some(SessionCommand::Exec { command, timeout, max_output_bytes, reply }) => {
+                    Some(SessionCommand::Exec {
+                        command,
+                        password,
+                        timeout,
+                        max_output_bytes,
+                        reply,
+                    }) => {
                         pending_execs.push_back(ExecRequest {
                             command,
+                            password,
                             timeout,
                             max_output_bytes,
                             reply,

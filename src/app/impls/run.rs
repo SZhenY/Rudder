@@ -194,6 +194,7 @@ pub fn run() -> Result<()> {
         let docker_runtime = ctx.runtime.clone();
         let docker_tabs = tabs_model.clone();
         let docker_statuses = tab_statuses.clone();
+        let docker_store = store.clone();
         window.on_refresh_docker(move || {
             if let Some(w) = weak.upgrade() {
                 super::docker::refresh(
@@ -202,6 +203,26 @@ pub fn run() -> Result<()> {
                     &docker_handles,
                     &docker_tabs,
                     &docker_statuses,
+                    &docker_store.borrow(),
+                );
+            }
+        });
+
+        let now_weak = window.as_weak();
+        let now_runtime = ctx.runtime.clone();
+        let now_handles = handles.clone();
+        let now_tabs = tabs_model.clone();
+        let now_statuses = tab_statuses.clone();
+        let now_store = store.clone();
+        window.on_refresh_docker_now(move || {
+            if let Some(w) = now_weak.upgrade() {
+                super::docker::refresh_forced(
+                    &w,
+                    &now_runtime,
+                    &now_handles,
+                    &now_tabs,
+                    &now_statuses,
+                    &now_store.borrow(),
                 );
             }
         });
@@ -241,6 +262,13 @@ pub fn run() -> Result<()> {
             }
         });
 
+        let copy_logs_weak = window.as_weak();
+        window.on_docker_copy_logs(move || {
+            if let Some(w) = copy_logs_weak.upgrade() {
+                super::docker::copy_logs(&w);
+            }
+        });
+
         let filter_weak = window.as_weak();
         window.on_docker_filter_changed(move |text| {
             if let Some(w) = filter_weak.upgrade() {
@@ -260,6 +288,206 @@ pub fn run() -> Result<()> {
                     &switch_handles,
                     key.as_str(),
                 );
+            }
+        });
+
+        let service_weak = window.as_weak();
+        let service_runtime = ctx.runtime.clone();
+        let service_handles = handles.clone();
+        window.on_docker_toggle_service(move |start| {
+            if let Some(w) = service_weak.upgrade() {
+                let key = w.get_docker_active_host().to_string();
+                if !key.is_empty() {
+                    super::docker::toggle_service(
+                        &w,
+                        &service_runtime,
+                        &service_handles,
+                        &key,
+                        start,
+                    );
+                }
+            }
+        });
+
+        let close_host_weak = window.as_weak();
+        let close_host_store = store.clone();
+        window.on_docker_close_host(move |key| {
+            if let Some(w) = close_host_weak.upgrade() {
+                super::docker::close_host(&w, &close_host_store.borrow(), key.as_str());
+            }
+        });
+
+        let welcome_weak = window.as_weak();
+        let welcome_store = store.clone();
+        window.on_docker_select_welcome(move || {
+            if let Some(w) = welcome_weak.upgrade() {
+                super::docker::goto_welcome(&w, &welcome_store.borrow());
+            }
+        });
+
+        let open_saved_weak = window.as_weak();
+        let open_saved_store = store.clone();
+        let open_saved_runtime = ctx.runtime.clone();
+        let open_saved_handles = handles.clone();
+        let open_saved_tabs = tabs_model.clone();
+        let open_saved_statuses = tab_statuses.clone();
+        window.on_docker_open_saved_session(move |id| {
+            if let Some(w) = open_saved_weak.upgrade() {
+                super::docker::open_saved_session(
+                    &w,
+                    &open_saved_store.borrow(),
+                    &open_saved_runtime,
+                    &open_saved_handles,
+                    &open_saved_tabs,
+                    &open_saved_statuses,
+                    id.as_str(),
+                );
+            }
+        });
+
+        let group_weak = window.as_weak();
+        let group_store = store.clone();
+        window.on_docker_toggle_group(move |group| {
+            if let Some(w) = group_weak.upgrade() {
+                super::docker::toggle_group(&w, &mut group_store.borrow_mut(), group.as_str());
+            }
+        });
+
+        let blocker_terminal_weak = window.as_weak();
+        window.on_docker_blocker_terminal(move || {
+            if let Some(w) = blocker_terminal_weak.upgrade() {
+                let host = w.get_docker_blocker_host().to_string();
+                super::docker::focus_host_terminal(&w, &host);
+            }
+        });
+
+        let blocker_settings_weak = window.as_weak();
+        window.on_docker_blocker_settings(move || {
+            if let Some(w) = blocker_settings_weak.upgrade()
+                && let Ok(sw) = sub_windows::ensure_settings(&w)
+            {
+                sw.set_ifd_page("docker".into());
+                settings_window::open_settings_window(&w, &sw);
+                w.set_interface_open(true);
+            }
+        });
+
+        let blocker_retry_weak = window.as_weak();
+        let blocker_retry_runtime = ctx.runtime.clone();
+        let blocker_retry_handles = handles.clone();
+        let blocker_retry_tabs = tabs_model.clone();
+        let blocker_retry_statuses = tab_statuses.clone();
+        let blocker_retry_store = store.clone();
+        window.on_docker_blocker_retry(move || {
+            if let Some(w) = blocker_retry_weak.upgrade() {
+                super::docker::retry_blocker(
+                    &w,
+                    &blocker_retry_runtime,
+                    &blocker_retry_handles,
+                    &blocker_retry_tabs,
+                    &blocker_retry_statuses,
+                    &blocker_retry_store.borrow(),
+                );
+            }
+        });
+
+        let blocker_dismiss_weak = window.as_weak();
+        window.on_docker_blocker_dismiss(move || {
+            if let Some(w) = blocker_dismiss_weak.upgrade() {
+                super::docker::dismiss_blocker(&w);
+            }
+        });
+
+        let cred_open_weak = window.as_weak();
+        let cred_open_store = store.clone();
+        window.on_docker_configure_credentials(move |session_id| {
+            if let Some(w) = cred_open_weak.upgrade() {
+                super::docker::open_credentials(&w, &cred_open_store.borrow(), session_id.as_str());
+            }
+        });
+
+        let cred_save_weak = window.as_weak();
+        let cred_save_store = store.clone();
+        let cred_save_runtime = ctx.runtime.clone();
+        let cred_save_handles = handles.clone();
+        let cred_save_tabs = tabs_model.clone();
+        let cred_save_statuses = tab_statuses.clone();
+        window.on_docker_save_credentials(move |session_id, mode, user, password| {
+            if let Some(w) = cred_save_weak.upgrade() {
+                let saved = {
+                    let mut store = cred_save_store.borrow_mut();
+                    super::docker::save_credentials(
+                        &w,
+                        &mut store,
+                        session_id.as_str(),
+                        mode.as_str(),
+                        user.as_str(),
+                        password.as_str(),
+                    )
+                };
+                if saved {
+                    super::docker::refresh_forced(
+                        &w,
+                        &cred_save_runtime,
+                        &cred_save_handles,
+                        &cred_save_tabs,
+                        &cred_save_statuses,
+                        &cred_save_store.borrow(),
+                    );
+                }
+            }
+        });
+
+        let cred_test_weak = window.as_weak();
+        let cred_test_store = store.clone();
+        let cred_test_runtime = ctx.runtime.clone();
+        let cred_test_handles = handles.clone();
+        let cred_test_statuses = tab_statuses.clone();
+        window.on_docker_test_credentials(move |session_id, mode, user, password| {
+            if let Some(w) = cred_test_weak.upgrade() {
+                super::docker::test_credentials(
+                    &w,
+                    &cred_test_runtime,
+                    &cred_test_handles,
+                    &cred_test_statuses,
+                    &cred_test_store.borrow(),
+                    super::docker::CredentialInput {
+                        session_id: session_id.as_str(),
+                        mode: mode.as_str(),
+                        user: user.as_str(),
+                        password: password.as_str(),
+                    },
+                );
+            }
+        });
+
+        let cred_clear_weak = window.as_weak();
+        let cred_clear_store = store.clone();
+        let cred_clear_runtime = ctx.runtime.clone();
+        let cred_clear_handles = handles.clone();
+        let cred_clear_tabs = tabs_model.clone();
+        let cred_clear_statuses = tab_statuses.clone();
+        window.on_docker_clear_credentials(move |session_id| {
+            if let Some(w) = cred_clear_weak.upgrade() {
+                {
+                    let mut store = cred_clear_store.borrow_mut();
+                    super::docker::clear_credentials(&w, &mut store, session_id.as_str());
+                }
+                super::docker::refresh_forced(
+                    &w,
+                    &cred_clear_runtime,
+                    &cred_clear_handles,
+                    &cred_clear_tabs,
+                    &cred_clear_statuses,
+                    &cred_clear_store.borrow(),
+                );
+            }
+        });
+
+        let cred_dismiss_weak = window.as_weak();
+        window.on_docker_dismiss_credentials(move || {
+            if let Some(w) = cred_dismiss_weak.upgrade() {
+                super::docker::dismiss_credentials(&w);
             }
         });
     }
@@ -928,15 +1156,9 @@ pub fn run() -> Result<()> {
                             return EventResult::PreventDefault;
                         }
                         ev_exit_confirmed.set(true);
-                        // No sessions → the window is about to close; persist layout.
                         if let Some(win) = weak.upgrade() {
-                            save_layout(&win, &ev_store);
+                            begin_shutdown(&win, &ev_store, &close_handles, &sh);
                         }
-                        // ⚠ 这里**没有** `quit_event_loop`：走 Slint 的默认行为（隐藏主窗口，
-                        // 最后一个窗口消失后事件循环自然退出）。而设置窗口是独立 root 窗口 ——
-                        // 它自己就足以让循环继续活着，所以必须在这里显式收掉；否则就是
-                        // "程序关了、设置还挂在桌面上"（用户报的现象）。
-                        settings_window::close_if_open();
                     }
                     _ => {}
                 }
@@ -956,38 +1178,13 @@ pub fn run() -> Result<()> {
             if close_exit_confirmed.replace(true) {
                 return;
             }
-            if let Some(w) = weak.upgrade() {
-                w.set_confirm_close_open(false);
-                save_layout(&w, &cc_store);
-                let _ = w.hide();
-            }
-            sub_windows::hide_process();
-            // 设置窗口是独立 root 窗口 —— 它自己就足以让事件循环继续活着。主窗口关了而它
-            // 还开着的话，用户看到的就是"程序关了、设置还挂在桌面上"，所以这里一并收掉。
-            settings_window::close_if_open();
-            // Ask every worker to stop before the runtime/event loop is torn
-            // down. Clearing the maps also makes any repeated close request see
-            // no live sessions and pass through immediately.
-            {
-                let mut sessions = close_handles.borrow_mut();
-                for handle in sessions.values() {
-                    handle.close();
-                }
-                sessions.clear();
-            }
-            if let Ok(mut sftp) = close_sftp_handles.lock() {
-                for handle in sftp.values() {
-                    handle.close();
-                }
-                sftp.clear();
-            }
-            // 防抖的写盘必须在这里收尾：事件循环一停，挂起的设置改动就没机会落盘了。
-            cc_store.borrow_mut().flush_logging();
-            let _ = slint::quit_event_loop();
+            let Some(w) = weak.upgrade() else { return };
+            w.set_confirm_close_open(false);
+            begin_shutdown(&w, &cc_store, &close_handles, &close_sftp_handles);
         });
     }
 
-    wire_window_chrome(&window, &handles, &store, &exit_confirmed);
+    wire_window_chrome(&window, &handles, &store, &exit_confirmed, &sftp_handles);
 
     // 尺寸已经在建窗前设好，事件驱动的恢复重试不必再跑：留着会在首帧再 request 一次同尺寸，
     // 多出一次 Resized 与重绘。门在这里直接关掉；只有配置里没有尺寸（首次运行）才留给重试。
@@ -1025,5 +1222,8 @@ pub fn run() -> Result<()> {
             return Err(fatal);
         }
     }
-    Ok(())
+    // 事件循环已退出、配置已落盘；在 window / ctx 析构与 CRT 收尾之前直接终止进程，
+    // 避免 Runtime::drop 等 blocking 任务、以及 ExitProcess 在 DLL detach 阶段卡死。
+    tracing::warn!("shutdown: event loop exited, terminating process");
+    exit_process_now()
 }

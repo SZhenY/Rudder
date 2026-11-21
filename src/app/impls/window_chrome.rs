@@ -12,13 +12,14 @@ use crate::ssh::SessionHandle;
 use crate::ui::AppWindow;
 use std::collections::HashMap;
 
-use super::{center_window, save_layout, schedule_slint_pointer_ungrab, should_block_close};
+use super::{center_window, schedule_slint_pointer_ungrab, should_block_close};
 
 pub(crate) fn wire_window_chrome(
     window: &AppWindow,
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     store: &Rc<RefCell<ConfigStore>>,
     exit_confirmed: &Rc<Cell<bool>>,
+    sftp_handles: &crate::sftp::SftpHandles,
 ) {
     // --- Custom title-bar window controls (#119) --------------------------
     {
@@ -56,6 +57,7 @@ pub(crate) fn wire_window_chrome(
         let weak = window.as_weak();
         let close_handles = handles.clone();
         let wc_store = store.clone();
+        let wc_sftp = sftp_handles.clone();
         let wc_exit_confirmed = exit_confirmed.clone();
         window.on_win_close(move || {
             if let Some(w) = weak.upgrade() {
@@ -63,8 +65,8 @@ pub(crate) fn wire_window_chrome(
                 if !should_block_close(wc_exit_confirmed.get(), !close_handles.borrow().is_empty())
                 {
                     wc_exit_confirmed.set(true);
-                    save_layout(&w, &wc_store);
-                    let _ = slint::quit_event_loop();
+                    // 与原生 X / 确认弹窗同一条收尾路径。
+                    super::begin_shutdown(&w, &wc_store, &close_handles, &wc_sftp);
                 } else {
                     w.set_confirm_close_open(true);
                 }

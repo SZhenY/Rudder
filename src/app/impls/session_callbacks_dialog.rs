@@ -104,6 +104,9 @@ pub(super) fn wire_session_dialog(window: &AppWindow, ctx: &AppContext, scope: &
             };
             let new_session = Session {
                 id,
+                docker_elevation: String::new(),
+                docker_sudo_user: String::new(),
+                docker_sudo_password: crate::config::Secret::default(),
                 name: if draft.name.is_empty() {
                     auto_name
                 } else {

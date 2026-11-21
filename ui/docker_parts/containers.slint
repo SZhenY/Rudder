@@ -1,0 +1,387 @@
+//! Docker「容器」页：原 Docker 页的顶栏 / 搜索 / 表头 / ListView 整体迁入。
+//!
+//! 列宽以本页宽度（= 内容区宽度）为基准。窗口最小时左侧主导航展开 200px，
+//! 内容区只剩约 560px，固定列放不下 —— 所以 `tight` 档收起端口列、缩小状态列
+//! 与列间距，保证 960px 窗口不横向溢出。
+//!
+//! Slint 布局的 `alignment` 控制的是**主轴**，这里不写 `alignment: center`，
+//! 否则列会按 preferred 宽度整组居中、并放弃 stretch。
+
+import { Theme, AnimationSettings } from "../theme.slint";
+import { ListView, LineEdit } from "std-widgets.slint";
+import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
+import { DockerContainer } from "types.slint";
+import { ActionIcon, DockerTip } from "common.slint";
+
+export component DockerContainersPage inherits Rectangle {
+    in property <[DockerContainer]> containers;
+    /// idle / loading / ok / empty / error / disconnected / no-session
+    in property <string> page-status: "idle";
+    in property <string> error-text;
+    in property <string> summary;
+    in property <string> pending-id;
+    in-out property <string> filter-text;
+
+    callback refresh-now();
+    callback filter-changed(string);
+    callback action(string, int);
+    callback open-logs(string);
+    callback open-terminal(string);
+    /// 删除先上抛给外壳（确认框是整页模态，挂在外壳层）。
+    callback request-remove(string);
+
+    background: transparent;
+
+    // ---- 列宽（表头与行共用）------------------------------------------
+    private property <bool> tight: root.width < 720px * Theme.ui-zoom;
+    private property <length> cell-pad: Theme.sp-16;
+    private property <length> col-gap: root.tight ? Theme.sp-8 : Theme.sp-12;
+    private property <length> col-status: (root.tight ? 96px : 104px) * Theme.ui-zoom;
+    private property <length> col-ports: root.tight ? 0px : 150px * Theme.ui-zoom;
+    private property <length> col-actions: 156px * Theme.ui-zoom;
+    private property <length> col-id: 88px * Theme.ui-zoom;
+    private property <int> n-gaps: root.tight ? 3 : 4;
+    // 容器 + 镜像分剩余宽度；显式算出来才能保证表头与行逐像素一致。
+    private property <length> col-flex: max((root.tight ? 180px : 220px) * Theme.ui-zoom, (
+        root.width - 2 * Theme.sp-20 - root.cell-pad - (root.cell-pad + Theme.sp-6)
+        - root.n-gaps * root.col-gap - root.col-status - root.col-ports - root.col-actions));
+    private property <length> col-name:  root.col-flex * 0.42;
+    private property <length> col-image: root.col-flex - root.col-name;
+
+    // 搜索框的失焦落点：点行 / 按钮 / 空白时把焦点挪到这里，光标立即停止闪烁。
+    blur-sink := FocusScope {
+        x: 0px;
+        y: 0px;
+        width: 1px;
+        height: 1px;
+    }
+
+    function blur-search() {
+        blur-sink.focus();
+    }
+
+    /// 点击页面空白处让搜索框失焦（同时挡住下面的分屏手柄）。
+    TouchArea {
+        clicked => { root.blur-search(); }
+    }
+
+    VerticalLayout {
+        padding-left: Theme.sp-20;
+        padding-right: Theme.sp-20;
+        padding-top: Theme.sp-16;
+        padding-bottom: Theme.sp-16;
+        spacing: Theme.sp-10;
+
+        // --- 工具条 -----------------------------------------------------
+        HorizontalLayout {
+            height: 32px * Theme.ui-zoom;
+            spacing: Theme.sp-10;
+
+            Rectangle { horizontal-stretch: 1; }
+            Text {
+                text: root.summary;
+                font-size: Theme.fs-sm;
+                color: Theme.text-secondary;
+                vertical-alignment: center;
+            }
+            LineEdit {
+                width: 210px * Theme.ui-zoom;
+                text: root.filter-text;
+                font-family: Theme.ui-font-family;
+                placeholder-text: @tr("Search name / image / port");
+                edited => { root.filter-changed(self.text); }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        // --- 整页状态 ---------------------------------------------------
+        if root.containers.length == 0 && root.page-status == "no-session" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E30C}"; color: Theme.text-muted; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: @tr("Connect a host on the left first"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; }
+        }
+
+        if root.containers.length == 0 && (root.page-status == "loading" || root.page-status == "idle") : Text {
+            text: @tr("Loading containers…");
+            font-size: Theme.fs-sm;
+            color: Theme.text-muted;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+        }
+
+        if root.containers.length == 0 && root.page-status == "error" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-10;
+            IconText { text: "\u{E002}"; color: Theme.danger; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 520px * Theme.ui-zoom; }
+            StateSurface {
+                width: 96px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm;
+                clicked => { root.blur-search(); root.refresh-now(); }
+                Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+            }
+        }
+
+        if root.containers.length == 0 && root.page-status == "empty" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E30C}"; color: Theme.text-muted; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: @tr("No containers on this host"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; }
+        }
+
+        // 过滤后为空：数据在，只是没有匹配项。
+        if root.containers.length == 0 && root.page-status == "ok" : VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E8B6}"; color: Theme.text-muted; font-size: 28px * Theme.ui-zoom; horizontal-alignment: center; }
+            Text { text: @tr("No matching containers"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; }
+        }
+
+        // 断线但有缓存：顶部警告条 + 列表继续显示（数据可能过期）。
+        if root.containers.length > 0 && root.page-status == "disconnected" : Rectangle {
+            height: 30px * Theme.ui-zoom;
+            border-radius: Theme.radius-sm;
+            background: Theme.state-hover;
+            HorizontalLayout {
+                padding-left: Theme.sp-10; padding-right: Theme.sp-10; spacing: Theme.sp-8;
+                IconText { text: "\u{E002}"; color: Theme.warning; font-size: Theme.fs-sm; vertical-alignment: center; }
+                Text { text: @tr("Session disconnected — showing cached data"); font-size: Theme.fs-xs; color: Theme.text-secondary; vertical-alignment: center; horizontal-stretch: 1; }
+                StateSurface {
+                    width: 64px * Theme.ui-zoom; height: 22px * Theme.ui-zoom; radius: Theme.radius-sm;
+                    clicked => { root.blur-search(); root.refresh-now(); }
+                    Text { text: @tr("Retry"); font-size: Theme.fs-xs; color: Theme.text-primary; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        }
+
+        // --- 表头 -------------------------------------------------------
+        if root.containers.length > 0 : Rectangle {
+            height: 26px * Theme.ui-zoom;
+            HorizontalLayout {
+                width: parent.width;
+                height: parent.height;
+                padding-left: root.cell-pad;
+                padding-right: root.cell-pad + Theme.sp-6;
+                spacing: root.col-gap;
+                Text {
+                    text: @tr("Container");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    width: root.col-name;
+                }
+                Text {
+                    text: @tr("Status");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    width: root.col-status;
+                }
+                Text {
+                    text: @tr("Image");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    width: root.col-image;
+                }
+                if !root.tight : Text {
+                    text: @tr("Ports");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    width: root.col-ports;
+                }
+                Text {
+                    text: @tr("Actions");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-alignment: left;
+                    width: root.col-actions;
+                }
+            }
+            Rectangle {
+                y: parent.height - 1px;
+                height: 1px;
+                width: parent.width;
+                background: Theme.border-subtle;
+            }
+        }
+
+        // --- 容器列表 ---------------------------------------------------
+        if root.containers.length > 0 : ListView {
+            vertical-stretch: 1;
+            min-height: 0px;
+            for c in root.containers : Rectangle {
+                // ListView 的隐式布局会把未指定宽度的行居中；显式 100% 让它铺满整行。
+                width: 100%;
+                height: 36px * Theme.ui-zoom;
+                background: row-ta.has-hover ? Theme.state-hover : transparent;
+                animate background { duration: AnimationSettings.enter-state(); }
+                opacity: root.pending-id == c.id ? 0.55 : 1;
+                row-ta := TouchArea {
+                    mouse-cursor: pointer;
+                    clicked => { root.blur-search(); }
+                }
+
+                HorizontalLayout {
+                    width: parent.width;
+                    height: parent.height;
+                    padding-left: root.cell-pad;
+                    padding-right: root.cell-pad + Theme.sp-6;   // 给右侧滚动条留白
+                    spacing: root.col-gap;
+
+                    // 容器：名称 + 短 ID 同一行
+                    HorizontalLayout {
+                        width: root.col-name;
+                        spacing: Theme.sp-8;
+                        Text {
+                            text: c.name;
+                            width: max(60px * Theme.ui-zoom, root.col-name - root.col-id - Theme.sp-8);
+                            font-size: Theme.fs-sm;
+                            color: Theme.text-primary;
+                            horizontal-alignment: left;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                        Text {
+                            text: c.id;
+                            width: root.col-id;
+                            font-size: Theme.fs-xs;
+                            color: Theme.text-muted;
+                            horizontal-alignment: left;
+                            vertical-alignment: center;
+                            overflow: elide;
+                        }
+                    }
+
+                    // 状态：圆点 + 文案
+                    HorizontalLayout {
+                        width: root.col-status;
+                        spacing: Theme.sp-6;
+                        VerticalLayout {
+                            width: 8px * Theme.ui-scale;
+                            alignment: center;
+                            Rectangle {
+                                width: 8px * Theme.ui-scale;
+                                height: 8px * Theme.ui-scale;
+                                border-radius: 4px * Theme.ui-scale;
+                                background: c.state == "running" ? Theme.success
+                                    : c.state == "paused" || c.state == "restarting" ? Theme.warning
+                                    : c.state == "dead" ? Theme.danger : Theme.text-muted;
+                            }
+                        }
+                        Text {
+                            text: c.state;
+                            font-size: Theme.fs-xs;
+                            color: c.state == "running" ? Theme.success
+                                : c.state == "paused" || c.state == "restarting" ? Theme.warning
+                                : c.state == "dead" ? Theme.danger : Theme.text-muted;
+                            horizontal-alignment: left;
+                            vertical-alignment: center;
+                            overflow: elide;
+                            horizontal-stretch: 1;
+                        }
+                    }
+
+                    Text {
+                        text: c.image;
+                        width: root.col-image;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-secondary;
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
+                        overflow: elide;
+                    }
+
+                    if !root.tight : Text {
+                        text: c.ports;
+                        font-size: Theme.fs-xs;
+                        color: Theme.text-muted;
+                        width: root.col-ports;
+                        vertical-alignment: center;
+                        horizontal-alignment: left;
+                        overflow: elide;
+                    }
+
+                    VerticalLayout {
+                        width: root.col-actions;
+                        alignment: center;
+                        HorizontalLayout {
+                            height: 24px * Theme.ui-zoom;
+                            spacing: 2px;
+                            if c.state == "exited" || c.state == "created" || c.state == "dead" : ActionIcon {
+                                glyph: "\u{E037}"; tip: @tr("Start container");
+                                enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.action(c.id, 0); }
+                            }
+                            if c.state == "running" || c.state == "restarting" : ActionIcon {
+                                glyph: "\u{E047}"; tip: @tr("Stop container");
+                                enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.action(c.id, 1); }
+                            }
+                            if c.state == "running" : ActionIcon {
+                                glyph: "\u{E5D5}"; tip: @tr("Restart container");
+                                enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.action(c.id, 2); }
+                            }
+                            ActionIcon {
+                                glyph: "\u{E3A8}"; tip: @tr("Open terminal");
+                                enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.open-terminal(c.id); }
+                            }
+                            ActionIcon {
+                                glyph: "\u{E873}"; tip: @tr("View logs");
+                                enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.open-logs(c.id); }
+                            }
+                            ActionIcon {
+                                glyph: "\u{E872}"; tip: @tr("Remove container");
+                                danger: true; enabled: root.pending-id != c.id;
+                                clicked => { root.blur-search(); root.request-remove(c.id); }
+                            }
+                        }
+                    }
+                }
+
+                Rectangle {
+                    y: parent.height - 1px;
+                    height: 1px;
+                    width: parent.width;
+                    background: Theme.border-subtle;
+                }
+            }
+        }
+    }
+
+    // 图标提示的宿主：容器页自己画（外壳在同一个坐标系里再画一个也可以，这里就近）。
+    if DockerTip.text != "" : Rectangle {
+        x: max(Theme.sp-8, min(
+            DockerTip.x - root.absolute-position.x - self.width / 2,
+            root.width - self.width - Theme.sp-8));
+        y: max(Theme.sp-8, DockerTip.y - root.absolute-position.y - self.height - 8px * Theme.ui-scale);
+        width: tip-label.preferred-width + 16px * Theme.ui-scale;
+        height: 22px * Theme.ui-scale;
+        background: Theme.bg-elevated;
+        border-radius: Theme.radius-sm;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        tip-label := Text {
+            text: DockerTip.text;
+            font-size: Theme.fs-xs;
+            color: Theme.text-primary;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+            width: parent.width;
+            height: parent.height;
+        }
+    }
+}

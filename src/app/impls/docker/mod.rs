@@ -3,8 +3,8 @@
 //! 所有 SSH 命令都在 tokio worker 上执行；本模块的公开函数只在 Slint UI 线程调用，
 //! 结果通过 `invoke_from_event_loop` 回到 UI 线程再写模型。
 
-use std::cell::RefCell;
-use std::collections::HashMap;
+use std::cell::{Cell, RefCell};
+use std::collections::{HashMap, HashSet};
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -12,15 +12,16 @@ use std::time::{Duration, Instant};
 use slint::{ComponentHandle, Model, ModelRc, VecModel};
 use tokio::runtime::Runtime;
 
-use crate::config::SessionKind;
+use crate::config::{ConfigStore, Secret, SessionKind};
 use crate::docker::classify::classify as classify_docker;
 use crate::docker::{
     command, parse, ContainerState, DockerContainerInfo, DockerFailure, DockerHostKey, HostStatus,
 };
 use crate::i18n::t;
+use crate::resource::system::format_bytes_per_sec;
 use crate::resource::TabStatuses;
 use crate::ssh::{ExecResult, SessionHandle};
-use crate::ui::{AppWindow, DockerContainer, DockerHostTab, TabInfo};
+use crate::ui::{AppWindow, DockerContainer, DockerHostTab, SessionInfo, TabInfo};
 
 const PS_TIMEOUT: Duration = Duration::from_secs(10);
 const PS_MAX_OUTPUT: usize = 512 * 1024;
@@ -31,8 +32,14 @@ thread_local! {
     static HUB: RefCell<DockerHub> = RefCell::new(DockerHub::new());
     /// UI 线程上的刷新上下文；异步任务只带回结果，需要续跑时在这里取句柄。
     static REFRESH_CTX: RefCell<Option<RefreshCtx>> = const { RefCell::new(None) };
+    /// 最近一次刷新用的资源快照表：概览页的曲线按选中主机的 tab_id 从这里取。
+    static LAST_STATUSES: RefCell<Option<TabStatuses>> = const { RefCell::new(None) };
     /// 新开标签在 Connected 之前要注入的命令：tab_id -> 命令。
     static PENDING_TERMINAL: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
+    /// 欢迎页发起的连接：tab_id -> 待打开的主机。连上后由 sync_hosts 消费。
+    static PENDING_OPEN: RefCell<HashMap<String, PendingOpen>> = RefCell::new(HashMap::new());
+    /// 操作结果条的序号，旧定时器不能清掉新消息。
+    static ACTION_SEQ: Cell<u64> = const { Cell::new(0) };
 }
 
 struct RefreshCtx {
@@ -40,8 +47,19 @@ struct RefreshCtx {
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
 }
 
+#[derive(Clone)]
+struct PendingOpen {
+    session_id: String,
+    key: String,
+    name: String,
+}
+
 struct HostRuntime {
     tab_id: String,
+    /// 会话显示名（`TabInfo.title`），标签上显示这个而不是 `user@host`。
+    title: String,
+    title_len: i32,
+    session_count: i32,
     containers: Vec<DockerContainerInfo>,
     status: HostStatus,
     failure: Option<DockerFailure>,
@@ -51,24 +69,63 @@ struct HostRuntime {
     busy: bool,
     queued: bool,
     backoff_until: Option<Instant>,
+    /// 本轮同步时是否有 state == 1 的会话。
+    connected: bool,
+    /// 代表标签对应的已保存会话 id；凭据按会话存。
+    session_id: String,
+    /// `docker ps` 能否直接用登录用户跑通；None = 尚未探测。
+    direct: Option<bool>,
+    /// `sudo -n true` 是否可用；None = 尚未探测。
+    sudo_nopass: Option<bool>,
+    /// 最近一次 docker 命令实际用的提权方式，错误文案按它分支。
+    last_mode: command::Mode,
+    /// Docker 提权方式："" / "sudo" / "su"。
+    docker_elevation: String,
+    /// sudo 目标用户；空 = root。
+    docker_sudo_user: String,
+    /// 提权密码（来自会话配置，加密落盘）。
+    docker_sudo_password: Secret,
+    /// `systemctl is-active docker`：None = 未知（未采集 / 非 systemd）。
+    service_up: Option<bool>,
+    /// `systemctl is-enabled docker`：None = 未知。
+    service_enabled: Option<bool>,
+    service_pending: bool,
+    /// 已经弹过的不可用原因；同类原因不重复弹。
+    blocker_kind: Option<DockerFailure>,
+    /// 用户主动关掉过的弹窗原因，重试或成功后才清。
+    blocker_dismissed: Option<DockerFailure>,
 }
 
 struct DockerHub {
     hosts: HashMap<String, HostRuntime>,
+    /// 当前可见的 Docker 主机标签，顺序即标签顺序。
+    open: Vec<String>,
+    /// 用户手动关掉的 host；阻止自动重开，直到手动打开或 host 消失。
+    suppressed: HashSet<String>,
     active: Option<String>,
     filter: String,
+    /// 上一轮看到的自动探索开关，用于识别上升/下降沿。
+    auto_last: Option<bool>,
+    /// 用户明确停在「欢迎」标签；有打开的标签也保持欢迎页，不被自动刷新拉走。
+    welcome_selected: bool,
     hosts_model: Rc<VecModel<DockerHostTab>>,
     containers_model: Rc<VecModel<DockerContainer>>,
+    welcome_model: Rc<VecModel<SessionInfo>>,
 }
 
 impl DockerHub {
     fn new() -> Self {
         Self {
             hosts: HashMap::new(),
+            open: Vec::new(),
+            suppressed: HashSet::new(),
             active: None,
             filter: String::new(),
+            auto_last: None,
+            welcome_selected: false,
             hosts_model: Rc::new(VecModel::default()),
             containers_model: Rc::new(VecModel::default()),
+            welcome_model: Rc::new(VecModel::default()),
         }
     }
 }
@@ -80,6 +137,7 @@ pub(crate) fn refresh(
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     tabs: &Rc<VecModel<TabInfo>>,
     statuses: &TabStatuses,
+    store: &ConfigStore,
 ) {
     REFRESH_CTX.with(|ctx| {
         *ctx.borrow_mut() = Some(RefreshCtx {
@@ -87,15 +145,54 @@ pub(crate) fn refresh(
             handles: handles.clone(),
         });
     });
-    HUB.with(|hub| {
+    LAST_STATUSES.with(|s| *s.borrow_mut() = Some(statuses.clone()));
+    let key = HUB.with(|hub| {
         let mut hub = hub.borrow_mut();
-        sync_hosts(&mut hub, window, tabs, statuses);
+        sync_hosts(&mut hub, window, tabs, statuses, store);
         let Some(key) = hub.active.clone() else {
             clear_view(window, &mut hub);
-            return;
+            return None;
         };
         refresh_key(window, runtime, handles, &mut hub, &key, false);
+        Some(key)
     });
+    if let Some(key) = key {
+        probe_service(window, runtime, handles, &key);
+    }
+}
+
+/// 强制刷新当前主机：跳过失败退避，供刷新按钮 / 重试 / 操作完成使用。
+pub(crate) fn refresh_forced(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    tabs: &Rc<VecModel<TabInfo>>,
+    statuses: &TabStatuses,
+    store: &ConfigStore,
+) {
+    REFRESH_CTX.with(|ctx| {
+        *ctx.borrow_mut() = Some(RefreshCtx {
+            runtime: runtime.clone(),
+            handles: handles.clone(),
+        });
+    });
+    LAST_STATUSES.with(|s| *s.borrow_mut() = Some(statuses.clone()));
+    let key = HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        sync_hosts(&mut hub, window, tabs, statuses, store);
+        let Some(key) = hub.active.clone() else {
+            clear_view(window, &mut hub);
+            return None;
+        };
+        if let Some(rt) = hub.hosts.get_mut(&key) {
+            rt.backoff_until = None;
+        }
+        refresh_key(window, runtime, handles, &mut hub, &key, true);
+        Some(key)
+    });
+    if let Some(key) = key {
+        probe_service(window, runtime, handles, &key);
+    }
 }
 
 /// 切换主机标签：只切缓存；缓存缺失或过期才请求。
@@ -105,6 +202,9 @@ pub(crate) fn select_host(
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     key: &str,
 ) {
+    if key.is_empty() {
+        return;
+    }
     REFRESH_CTX.with(|ctx| {
         *ctx.borrow_mut() = Some(RefreshCtx {
             runtime: runtime.clone(),
@@ -113,9 +213,10 @@ pub(crate) fn select_host(
     });
     HUB.with(|hub| {
         let mut hub = hub.borrow_mut();
-        if !hub.hosts.contains_key(key) {
+        if !hub.open.iter().any(|k| k == key) {
             return;
         }
+        hub.welcome_selected = false;
         hub.active = Some(key.to_string());
         window.set_docker_active_host(key.into());
         apply_active(window, &mut hub);
@@ -126,6 +227,692 @@ pub(crate) fn select_host(
         if stale {
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
+    });
+    probe_service(window, runtime, handles, key);
+}
+
+/// 打开（或聚焦）某台主机的 Docker 标签。欢迎页手动打开走这里。
+pub(crate) fn open_host(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    tabs: &Rc<VecModel<TabInfo>>,
+    statuses: &TabStatuses,
+    store: &ConfigStore,
+    key: &str,
+) {
+    REFRESH_CTX.with(|ctx| {
+        *ctx.borrow_mut() = Some(RefreshCtx {
+            runtime: runtime.clone(),
+            handles: handles.clone(),
+        });
+    });
+    LAST_STATUSES.with(|s| *s.borrow_mut() = Some(statuses.clone()));
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        sync_hosts(&mut hub, window, tabs, statuses, store);
+        if !hub.hosts.contains_key(key) {
+            return;
+        }
+        if !hub.open.iter().any(|k| k == key) {
+            hub.open.push(key.to_string());
+        }
+        hub.suppressed.remove(key);
+        hub.welcome_selected = false;
+        hub.active = Some(key.to_string());
+        if let Some(rt) = hub.hosts.get_mut(key) {
+            rt.blocker_dismissed = None;
+        }
+        window.set_docker_active_host(key.into());
+        rebuild_hosts_model(&mut hub, window);
+        apply_active(window, &mut hub);
+        let stale = hub
+            .hosts
+            .get(key)
+            .is_none_or(|h| h.last_ok.is_none_or(|t| t.elapsed() > FRESH_FOR));
+        if stale {
+            refresh_key(window, runtime, handles, &mut hub, key, false);
+        }
+    });
+    probe_service(window, runtime, handles, key);
+}
+
+/// 关闭某台主机的 Docker 标签（不影响 SSH 会话）；关掉后阻止自动重开。
+pub(crate) fn close_host(window: &AppWindow, store: &ConfigStore, key: &str) {
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        let Some(index) = hub.open.iter().position(|k| k == key) else {
+            return;
+        };
+        hub.open.remove(index);
+        hub.suppressed.insert(key.to_string());
+        PENDING_OPEN.with(|pending| {
+            pending.borrow_mut().retain(|_, v| v.key != key);
+        });
+        if hub.open.is_empty() {
+            hub.welcome_selected = true;
+        }
+        if hub.active.as_deref() == Some(key) {
+            hub.active = hub
+                .open
+                .get(index)
+                .cloned()
+                .or_else(|| hub.open.last().cloned());
+        }
+        window.set_docker_log_open(false);
+        if window.get_docker_blocker_host().as_str() == key {
+            clear_blocker(window);
+        }
+        window.set_docker_active_host(hub.active.clone().unwrap_or_default().into());
+        rebuild_hosts_model(&mut hub, window);
+        if hub.active.is_some() {
+            apply_active(window, &mut hub);
+        } else {
+            clear_view(window, &mut hub);
+            refresh_welcome(window, &mut hub, store);
+        }
+    });
+}
+
+/// 回到固定的「欢迎」标签。
+pub(crate) fn goto_welcome(window: &AppWindow, store: &ConfigStore) {
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        hub.welcome_selected = true;
+        hub.active = None;
+        window.set_docker_active_host("".into());
+        window.set_docker_log_open(false);
+        clear_blocker(window);
+        clear_view(window, &mut hub);
+        refresh_welcome(window, &mut hub, store);
+    });
+}
+
+/// 打开某会话的 Docker 提权凭据弹窗。
+pub(crate) fn open_credentials(window: &AppWindow, store: &ConfigStore, session_id: &str) {
+    let Some(session) = store.get(session_id) else { return };
+    let label = if session.name.is_empty() {
+        format!("{}@{}", session.user, session.host)
+    } else {
+        session.name.clone()
+    };
+    window.set_docker_cred_session(session_id.into());
+    window.set_docker_cred_host(label.as_str().into());
+    window.set_docker_cred_mode(
+        if session.docker_elevation == "su" { "su" } else { "sudo" }.into(),
+    );
+    window.set_docker_cred_user(session.docker_sudo_user.as_str().into());
+    window.set_docker_cred_has_password(!session.docker_sudo_password.is_empty());
+    window.set_docker_cred_testing(false);
+    window.set_docker_cred_test_text("".into());
+    window.set_docker_cred_test_ok(false);
+    window.set_docker_cred_open(true);
+}
+
+pub(crate) fn dismiss_credentials(window: &AppWindow) {
+    window.set_docker_cred_open(false);
+}
+
+fn write_credentials(
+    store: &mut ConfigStore,
+    session_id: &str,
+    mode: &str,
+    user: &str,
+    password: &str,
+) -> Result<(), &'static str> {
+    let mode = if mode == "su" { "su" } else { "sudo" };
+    let user = user.trim();
+    if mode == "su" && user.is_empty() {
+        return Err(t(
+            "su 模式需要填写目标账号",
+            "su needs a target account",
+        ));
+    }
+    let Some(mut session) = store.get(session_id).cloned() else {
+        return Err(t("会话不存在", "The session no longer exists"));
+    };
+    session.docker_elevation = mode.to_string();
+    session.docker_sudo_user = user.to_string();
+    // 留空 = 保留已保存的密码。
+    if !password.is_empty() {
+        session.docker_sudo_password = Secret::new(password.to_string());
+    }
+    store.upsert(session);
+    store.save_logging();
+    Ok(())
+}
+
+/// 保存凭据；返回是否需要刷新（成功写入）。
+pub(crate) fn save_credentials(
+    window: &AppWindow,
+    store: &mut ConfigStore,
+    session_id: &str,
+    mode: &str,
+    user: &str,
+    password: &str,
+) -> bool {
+    match write_credentials(store, session_id, mode, user, password) {
+        Ok(()) => {
+            // 留空保存时沿用旧密码，状态要按落盘后的真实值回显。
+            let has_password = store
+                .get(session_id)
+                .is_some_and(|s| !s.docker_sudo_password.is_empty());
+            window.set_docker_cred_has_password(has_password);
+            window.set_docker_cred_test_text("".into());
+            window.set_docker_cred_test_ok(false);
+            window.set_docker_cred_open(false);
+            true
+        }
+        Err(message) => {
+            window.set_docker_cred_test_text(message.into());
+            window.set_docker_cred_test_ok(false);
+            false
+        }
+    }
+}
+
+pub(crate) fn clear_credentials(
+    window: &AppWindow,
+    store: &mut ConfigStore,
+    session_id: &str,
+) {
+    if let Some(mut session) = store.get(session_id).cloned() {
+        session.docker_elevation.clear();
+        session.docker_sudo_user.clear();
+        session.docker_sudo_password = Secret::default();
+        store.upsert(session);
+        store.save_logging();
+    }
+    window.set_docker_cred_has_password(false);
+    window.set_docker_cred_test_text(t("已清除", "Cleared").into());
+    window.set_docker_cred_test_ok(true);
+}
+
+/// 弹窗里的输入；打包成一个结构，避免回调函数参数过多。
+pub(crate) struct CredentialInput<'a> {
+    pub session_id: &'a str,
+    pub mode: &'a str,
+    pub user: &'a str,
+    pub password: &'a str,
+}
+
+/// 用当前输入试跑一条只读命令，结果回弹窗。
+pub(crate) fn test_credentials(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    statuses: &TabStatuses,
+    store: &ConfigStore,
+    input: CredentialInput<'_>,
+) {
+    let CredentialInput {
+        session_id,
+        mode,
+        user,
+        password,
+    } = input;
+    let saved = store
+        .get(session_id)
+        .map(|s| s.docker_sudo_password.clone())
+        .unwrap_or_default();
+    let secret = if !password.is_empty() {
+        Secret::new(password.to_string())
+    } else {
+        saved
+    };
+    if secret.is_empty() {
+        window.set_docker_cred_testing(false);
+        window.set_docker_cred_test_text(t("请先输入密码", "Enter the password first").into());
+        window.set_docker_cred_test_ok(false);
+        return;
+    }
+
+    let tab_id = {
+        let Ok(statuses) = statuses.lock() else { return };
+        statuses
+            .iter()
+            .find(|(_, st)| st.session_id == session_id && st.state == 1)
+            .map(|(id, _)| id.clone())
+    };
+    let Some(tab_id) = tab_id else {
+        window.set_docker_cred_testing(false);
+        window.set_docker_cred_test_text(t(
+            "该主机尚未连接，先连接再测试",
+            "Connect the host before testing",
+        ).into());
+        window.set_docker_cred_test_ok(false);
+        return;
+    };
+
+    let elev = if mode == "su" {
+        command::Elevation::su(user)
+    } else {
+        command::Elevation::sudo_password(user)
+    };
+    let cmd = command::ps(false, &elev);
+    let mode = elev.mode;
+    let rx = {
+        let hs = handles.borrow();
+        hs.get(&tab_id)
+            .map(|handle| handle.exec_privileged(cmd, secret, Duration::from_secs(15), 64 * 1024))
+    };
+    let Some(rx) = rx else {
+        window.set_docker_cred_testing(false);
+        window.set_docker_cred_test_text(
+            t("会话不可用，无法测试", "The session is unavailable").into(),
+        );
+        window.set_docker_cred_test_ok(false);
+        return;
+    };
+
+    window.set_docker_cred_testing(true);
+    window.set_docker_cred_test_text("".into());
+    let weak = window.as_weak();
+    runtime.spawn(async move {
+        let result = rx.await;
+        let (text, ok) = match result {
+            Ok(res) if !res.timed_out && res.error.is_none() && res.exit_code.unwrap_or(1) == 0 => {
+                (t("认证成功", "Authentication succeeded").to_string(), true)
+            }
+            Ok(res) => (
+                error_text(
+                    Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
+                    mode,
+                )
+                .to_string(),
+                false,
+            ),
+            Err(_) => (
+                t("会话已关闭，无法测试", "The session closed during the test").to_string(),
+                false,
+            ),
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            if let Some(window) = weak.upgrade() {
+                window.set_docker_cred_testing(false);
+                window.set_docker_cred_test_text(text.into());
+                window.set_docker_cred_test_ok(ok);
+            }
+        });
+    });
+}
+
+/// 欢迎页点击某个已保存的 SSH 会话：已连接直接开标签，未连接先建会话。
+pub(crate) fn open_saved_session(
+    window: &AppWindow,
+    store: &ConfigStore,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    tabs: &Rc<VecModel<TabInfo>>,
+    statuses: &TabStatuses,
+    session_id: &str,
+) {
+    let Some(session) = store
+        .sessions()
+        .iter()
+        .find(|s| s.id.as_str() == session_id)
+        .cloned()
+    else {
+        return;
+    };
+    if session.kind != SessionKind::Ssh {
+        return;
+    }
+    let Some(key) = DockerHostKey::parse(&session.host, &session.user) else {
+        return;
+    };
+    let key = key.as_str().to_string();
+
+    // 先用最新的 SSH 标签表刷新一次，避免把“已经连上”误判成“未连接”。
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        sync_hosts(&mut hub, window, tabs, statuses, store);
+    });
+
+    // 已经连上：直接开/聚焦标签。
+    let connected = HUB.with(|hub| {
+        hub.borrow()
+            .hosts
+            .get(&key)
+            .is_some_and(|rt| rt.connected)
+    });
+    if connected {
+        open_host(window, runtime, handles, tabs, statuses, store, &key);
+        return;
+    }
+
+    // 已在连接中：不重复发起。
+    let already_pending = PENDING_OPEN.with(|p| {
+        p.borrow()
+            .values()
+            .any(|v| v.session_id == session_id)
+    });
+    if already_pending {
+        return;
+    }
+
+    let before: HashSet<String> = (0..tabs.row_count())
+        .filter_map(|i| tabs.row_data(i).map(|t| t.id.to_string()))
+        .collect();
+    window.invoke_connect_session(session_id.into());
+    let new_tab = (0..tabs.row_count())
+        .filter_map(|i| tabs.row_data(i).map(|t| t.id.to_string()))
+        .find(|id| !before.contains(id));
+    if let Some(tab_id) = new_tab {
+        PENDING_OPEN.with(|p| {
+            p.borrow_mut().insert(
+                tab_id,
+                PendingOpen {
+                    session_id: session_id.to_string(),
+                    key,
+                    name: session.name.clone(),
+                },
+            );
+        });
+    }
+}
+
+/// 欢迎页分组折叠：与主机页共用同一份 store 状态。
+pub(crate) fn toggle_group(window: &AppWindow, store: &mut ConfigStore, group: &str) {
+    let collapsed = store
+        .collapsed_session_groups()
+        .is_some_and(|groups| groups.iter().any(|g| g == group));
+    store.set_session_group_collapsed(group, !collapsed);
+    if let Err(err) = store.save() {
+        tracing::warn!("failed to save Docker folder state: {err:#}");
+    }
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        refresh_welcome(window, &mut hub, store);
+    });
+}
+
+/// SSH 连接成功：触发一次同步；如果是欢迎页发起的连接，连上后切回 Docker 页。
+pub(crate) fn on_session_connected(window: &AppWindow, tab_id: &str) {
+    let from_welcome = PENDING_OPEN.with(|p| p.borrow().contains_key(tab_id));
+    window.invoke_refresh_docker();
+    if from_welcome {
+        window.set_nav_page(3);
+    }
+}
+
+/// SSH 连接失败：如果这条连接是欢迎页发起的，弹「无法连接」并清 pending。
+pub(crate) fn on_session_closed(window: &AppWindow, tab_id: &str, reason: &str) {
+    let pending = PENDING_OPEN.with(|p| p.borrow_mut().remove(tab_id));
+    let Some(pending) = pending else { return };
+    let detail = t(
+        "SSH 会话未能建立：{reason}",
+        "The SSH session could not be established: {reason}",
+    )
+    .replace("{reason}", reason);
+    // 从欢迎页发起时连接过程会把界面切到终端，失败要把用户带回 Docker 页看弹窗。
+    window.set_nav_page(3);
+    window.set_docker_blocker_kind("connect-failed".into());
+    window.set_docker_blocker_host(pending.key.clone().into());
+    window.set_docker_blocker_title(pending.name.into());
+    window.set_docker_blocker_detail(detail.into());
+    window.set_docker_blocker_session(pending.session_id.into());
+}
+
+/// 标签在 Connected 之前被关掉：清掉待打开记录。
+pub(crate) fn cancel_pending(tab_id: &str) {
+    PENDING_OPEN.with(|p| {
+        p.borrow_mut().remove(tab_id);
+    });
+}
+
+fn blocker_kind_key(kind: DockerFailure) -> &'static str {
+    match kind {
+        DockerFailure::NoCli => "no-cli",
+        DockerFailure::NoPermission => "no-permission",
+        DockerFailure::SudoAuthFailed => "sudo-auth",
+        DockerFailure::DaemonDown => "daemon-down",
+        _ => "",
+    }
+}
+
+fn clear_blocker(window: &AppWindow) {
+    window.set_docker_blocker_kind("".into());
+    window.set_docker_blocker_host("".into());
+    window.set_docker_blocker_title("".into());
+    window.set_docker_blocker_detail("".into());
+    window.set_docker_blocker_session("".into());
+}
+
+/// 关掉不可用弹窗；同一原因在本次打开期间不再重弹。
+pub(crate) fn dismiss_blocker(window: &AppWindow) {
+    let host = window.get_docker_blocker_host().to_string();
+    HUB.with(|hub| {
+        if let Some(rt) = hub.borrow_mut().hosts.get_mut(&host) {
+            rt.blocker_dismissed = rt.blocker_kind;
+            rt.blocker_kind = None;
+        }
+    });
+    clear_blocker(window);
+}
+
+/// 弹窗里的「重试」：清掉已弹标记后强制刷新当前主机。
+pub(crate) fn retry_blocker(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    tabs: &Rc<VecModel<TabInfo>>,
+    statuses: &TabStatuses,
+    store: &ConfigStore,
+) {
+    let host = window.get_docker_blocker_host().to_string();
+    let session = window.get_docker_blocker_session().to_string();
+    window.set_docker_blocker_kind("".into());
+    if !session.is_empty() {
+        open_saved_session(window, store, runtime, handles, tabs, statuses, &session);
+        return;
+    }
+    if host.is_empty() {
+        return;
+    }
+    HUB.with(|hub| {
+        if let Some(rt) = hub.borrow_mut().hosts.get_mut(&host) {
+            rt.blocker_kind = None;
+            rt.blocker_dismissed = None;
+            rt.backoff_until = None;
+        }
+    });
+    refresh_forced(window, runtime, handles, tabs, statuses, store);
+}
+
+/// 切到该主机已有的 SSH 终端标签（弹窗里的「打开终端」）。
+pub(crate) fn focus_host_terminal(window: &AppWindow, key: &str) {
+    let tab_id = HUB.with(|hub| {
+        hub.borrow()
+            .hosts
+            .get(key)
+            .map(|rt| rt.tab_id.clone())
+            .filter(|id| !id.is_empty())
+    });
+    let Some(tab_id) = tab_id else {
+        // 连接失败场景：没有可用标签，退回主机页让用户重连。
+        window.set_nav_page(0);
+        return;
+    };
+    window.set_nav_page(1);
+    let panes = window.get_panes();
+    for index in 0..panes.row_count() {
+        let Some(pane) = panes.row_data(index) else { continue };
+        let found = (0..pane.tabs.row_count())
+            .any(|i| pane.tabs.row_data(i).is_some_and(|t| t.id.as_str() == tab_id));
+        if found {
+            window.invoke_pane_tab_selected(pane.id, tab_id.into());
+            return;
+        }
+    }
+    window.set_active_tab_id(tab_id.into());
+}
+
+/// 查询 `systemctl is-active / is-enabled docker`；失败只把状态留在「未知」。
+///
+/// 与容器列表刷新分开走：daemon 没起来时 `docker ps` 会失败，但服务状态仍然要能显示。
+fn probe_service(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    key: &str,
+) {
+    let (tab_id, generation) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts
+            .get(key)
+            .map_or((None, 0), |h| (Some(h.tab_id.clone()), h.generation))
+    });
+    let Some(tab_id) = tab_id else { return };
+    let rx = {
+        let hs = handles.borrow();
+        hs.get(&tab_id).map(|handle| {
+            handle.exec(command::probe(), Duration::from_secs(8), 16 * 1024)
+        })
+    };
+    let Some(rx) = rx else { return };
+
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    runtime.spawn(async move {
+        let Ok(res) = rx.await else { return };
+        if res.timed_out {
+            return;
+        }
+        let probe = command::parse_probe(&res.stdout);
+        if probe.is_empty() {
+            return;
+        }
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                {
+                    let Some(rt) = hub.hosts.get_mut(&key_owned) else { return };
+                    if rt.generation != generation {
+                        return;
+                    }
+                    rt.service_up = probe.service_up;
+                    rt.service_enabled = probe.service_enabled;
+                    rt.direct = probe.direct;
+                    rt.sudo_nopass = probe.sudo_nopass;
+                }
+                apply_active(&window, &mut hub);
+            });
+        });
+    });
+}
+
+/// 启动 / 停止 Docker 服务。`sudo -n` 没有免密授权时直接失败，不弹提权框。
+pub(crate) fn toggle_service(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    key: &str,
+    start: bool,
+) {
+    let (tab_id, pending) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts
+            .get(key)
+            .map_or((None, true), |h| (Some(h.tab_id.clone()), h.service_pending))
+    });
+    if pending {
+        return;
+    }
+    let Some(tab_id) = tab_id else { return };
+
+    let (elev, password) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts.get(key).map_or_else(
+            || (command::Elevation::direct(), None),
+            |rt| {
+                let elev = elevation_for(rt, window.get_docker_use_sudo(), true);
+                let password = password_for(rt, &elev);
+                (elev, password)
+            },
+        )
+    });
+    let mode = elev.mode;
+    HUB.with(|hub| {
+        if let Some(rt) = hub.borrow_mut().hosts.get_mut(key) {
+            rt.last_mode = mode;
+        }
+    });
+    let cmd = if start {
+        command::service_start(&elev)
+    } else {
+        command::service_stop(&elev)
+    };
+    let rx = {
+        let hs = handles.borrow();
+        hs.get(&tab_id).map(|handle| match password {
+            Some(password) => {
+                handle.exec_privileged(cmd, password, Duration::from_secs(25), 32 * 1024)
+            }
+            None => handle.exec(cmd, Duration::from_secs(25), 32 * 1024),
+        })
+    };
+    let Some(rx) = rx else {
+        show_action(
+            window,
+            t("当前主机没有可用的 SSH 会话", "No live SSH session for this host"),
+            true,
+        );
+        return;
+    };
+
+    HUB.with(|hub| {
+        if let Some(rt) = hub.borrow_mut().hosts.get_mut(key) {
+            rt.service_pending = true;
+        }
+    });
+    window.set_docker_service_pending(true);
+
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    runtime.spawn(async move {
+        let result = rx.await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            let failure = match &result {
+                Ok(res) if !res.timed_out && res.error.is_none() && res.exit_code == Some(0) => None,
+                Ok(res) => Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
+                Err(_) => Some(DockerFailure::SessionLost),
+            };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                {
+                    let Some(rt) = hub.hosts.get_mut(&key_owned) else { return };
+                    rt.service_pending = false;
+                    if failure.is_none() {
+                        rt.service_up = Some(start);
+                    }
+                }
+                apply_active(&window, &mut hub);
+            });
+            window.set_docker_service_pending(false);
+            match failure {
+                None => {
+                    show_action(
+                        &window,
+                        if start {
+                            t("Docker 服务已启动", "Docker service started")
+                        } else {
+                            t("Docker 服务已停止", "Docker service stopped")
+                        },
+                        false,
+                    );
+                    window.invoke_refresh_docker_now();
+                }
+                Some(DockerFailure::NoPermission) => show_action(
+                    &window,
+                    error_text(Some(DockerFailure::NoPermission), mode),
+                    true,
+                ),
+                Some(other) => show_action(&window, error_text(Some(other), mode), true),
+            }
+        });
     });
 }
 
@@ -138,15 +925,31 @@ pub(crate) fn act(
     container_id: &str,
     action: i32,
 ) {
+    let container_id = container_id.trim();
+    // 同一容器已有操作在飞：忽略重复点击，避免连点下发多条命令。
+    if !container_id.is_empty() && window.get_docker_pending_id().as_str() == container_id {
+        return;
+    }
+    let (elev, password) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts.get(key).map_or_else(
+            || (command::Elevation::direct(), None),
+            |rt| {
+                let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+                let password = password_for(rt, &elev);
+                (elev, password)
+            },
+        )
+    });
     let cmd = match action {
-        0 => command::start(container_id),
-        1 => command::stop(container_id),
-        2 => command::restart(container_id),
-        3 => command::remove_sequence(container_id),
+        0 => command::start(container_id, &elev),
+        1 => command::stop(container_id, &elev),
+        2 => command::restart(container_id, &elev),
+        3 => command::remove_sequence(container_id, &elev),
         _ => return,
     };
     let Ok(cmd) = cmd else {
-        window.set_docker_error(t("容器 ID 非法", "Invalid container id").into());
+        show_action(window, t("容器 ID 非法", "Invalid container id"), true);
         return;
     };
     let timeout = match action {
@@ -154,10 +957,17 @@ pub(crate) fn act(
         3 => Duration::from_secs(60),
         _ => Duration::from_secs(30),
     };
-    run_mutation(window, runtime, handles, key, cmd, timeout);
+    let mutation = Mutation {
+        cmd,
+        password,
+        done: action_done(action),
+        timeout,
+        mode: elev.mode,
+    };
+    run_mutation(window, runtime, handles, key, container_id, mutation);
 }
 
-/// 拉取日志尾部；结果写入日志抽屉模型。
+/// 拉取日志尾部；结果写入日志抽屉模型。失败时把原因写进抽屉，不留「加载中」。
 pub(crate) fn fetch_logs(
     window: &AppWindow,
     runtime: &Arc<Runtime>,
@@ -165,36 +975,74 @@ pub(crate) fn fetch_logs(
     key: &str,
     container_id: &str,
 ) {
-    let Ok(cmd) = command::logs(container_id, 200, false) else {
-        window.set_docker_error(t("容器 ID 非法", "Invalid container id").into());
+    let (elev, password) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts.get(key).map_or_else(
+            || (command::Elevation::direct(), None),
+            |rt| {
+                let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+                let password = password_for(rt, &elev);
+                (elev, password)
+            },
+        )
+    });
+    let mode = elev.mode;
+    let Ok(cmd) = command::logs(container_id, 200, false, &elev) else {
+        show_action(window, t("容器 ID 非法", "Invalid container id"), true);
         return;
     };
     let Some(tab_id) = HUB.with(|hub| hub.borrow().hosts.get(key).map(|h| h.tab_id.clone())) else {
+        show_action(
+            window,
+            t("当前主机没有可用的 SSH 会话", "No live SSH session for this host"),
+            true,
+        );
         return;
     };
     window.set_docker_log_open(true);
     window.set_docker_log_loading(true);
+    window.set_docker_log_truncated(false);
     window.set_docker_log_title(container_id.into());
     window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::<slint::SharedString>::default())));
 
     let rx = {
         let hs = handles.borrow();
-        hs.get(&tab_id)
-            .map(|h| h.exec(cmd, Duration::from_secs(20), PS_MAX_OUTPUT))
+        hs.get(&tab_id).map(|h| match password {
+            Some(password) => {
+                h.exec_privileged(cmd, password, Duration::from_secs(20), PS_MAX_OUTPUT)
+            }
+            None => h.exec(cmd, Duration::from_secs(20), PS_MAX_OUTPUT),
+        })
     };
-    let Some(rx) = rx else { return };
+    let Some(rx) = rx else {
+        window.set_docker_log_loading(false);
+        show_action(
+            window,
+            t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
+            true,
+        );
+        return;
+    };
     let weak = window.as_weak();
     runtime.spawn(async move {
         let result = rx.await;
         let _ = slint::invoke_from_event_loop(move || {
             let Some(window) = weak.upgrade() else { return };
+            window.set_docker_log_loading(false);
             let Ok(res) = result else {
-                window.set_docker_log_loading(false);
+                set_log_lines(&window, &[t("会话已关闭，无法读取日志", "The session closed; cannot read logs")]);
                 return;
             };
+            if res.timed_out || res.error.is_some() || res.exit_code.unwrap_or(1) != 0 {
+                let why = error_text(
+                    Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
+                    mode,
+                );
+                set_log_lines(&window, &[why]);
+                return;
+            }
             let (lines, truncated) = parse::parse_logs(&res.stdout, &res.stderr, 200);
             window.set_docker_log_truncated(truncated);
-            window.set_docker_log_loading(false);
             window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::from(
                 lines.into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
             ))));
@@ -202,37 +1050,144 @@ pub(crate) fn fetch_logs(
     });
 }
 
+fn set_log_lines(window: &AppWindow, lines: &[&str]) {
+    window.set_docker_log_truncated(false);
+    window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::from(
+        lines
+            .iter()
+            .map(|line| slint::SharedString::from(*line))
+            .collect::<Vec<_>>(),
+    ))));
+}
+
+/// 复制当前日志抽屉的全部内容。
+pub(crate) fn copy_logs(window: &AppWindow) {
+    let lines = window.get_docker_log_lines();
+    let mut text = String::new();
+    for line in lines.iter() {
+        if !text.is_empty() {
+            text.push('\n');
+        }
+        text.push_str(line.as_str());
+    }
+    if text.is_empty() {
+        show_action(window, t("日志为空", "There is nothing to copy"), true);
+        return;
+    }
+    std::thread::spawn(move || crate::app::clipboard_set_text(text));
+    show_action(window, t("已复制日志", "Logs copied"), false);
+}
+
+/// 操作结果条：4 秒后自动清空，序号防止旧定时器清掉新消息。
+fn show_action(window: &AppWindow, text: impl Into<slint::SharedString>, is_error: bool) {
+    let seq = ACTION_SEQ.with(|s| {
+        let next = s.get() + 1;
+        s.set(next);
+        next
+    });
+    window.set_docker_action_text(text.into());
+    window.set_docker_action_error(is_error);
+    let weak = window.as_weak();
+    slint::Timer::single_shot(Duration::from_secs(4), move || {
+        let Some(window) = weak.upgrade() else { return };
+        if ACTION_SEQ.with(|s| s.get()) == seq {
+            window.set_docker_action_text("".into());
+            window.set_docker_action_error(false);
+        }
+    });
+}
+
+fn action_done(action: i32) -> &'static str {
+    match action {
+        0 => t("已启动", "Started"),
+        1 => t("已停止", "Stopped"),
+        2 => t("已重启", "Restarted"),
+        _ => t("已删除", "Removed"),
+    }
+}
+
+/// 一次容器操作：命令、成功文案与超时打包，避免函数参数过多。
+struct Mutation {
+    cmd: String,
+    /// 提权密码；None = 不需要密码。
+    password: Option<Secret>,
+    done: &'static str,
+    timeout: Duration,
+    /// 本次命令实际用的提权方式，失败文案按它分支。
+    mode: command::Mode,
+}
+
 fn run_mutation(
     window: &AppWindow,
     runtime: &Arc<Runtime>,
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     key: &str,
-    cmd: String,
-    timeout: Duration,
+    container_id: &str,
+    mutation: Mutation,
 ) {
+    let Mutation {
+        cmd,
+        password,
+        done,
+        timeout,
+        mode,
+    } = mutation;
     let Some(tab_id) = HUB.with(|hub| hub.borrow().hosts.get(key).map(|h| h.tab_id.clone())) else {
+        show_action(
+            window,
+            t("当前主机没有可用的 SSH 会话", "No live SSH session for this host"),
+            true,
+        );
         return;
     };
     let rx = {
         let hs = handles.borrow();
-        hs.get(&tab_id).map(|h| h.exec(cmd, timeout, 64 * 1024))
+        hs.get(&tab_id).map(|h| match password {
+            Some(password) => h.exec_privileged(cmd, password, timeout, 64 * 1024),
+            None => h.exec(cmd, timeout, 64 * 1024),
+        })
     };
-    let Some(rx) = rx else { return };
-    window.set_docker_pending_id(tab_id.clone().into());
+    let Some(rx) = rx else {
+        show_action(
+            window,
+            t("会话已关闭，操作未下发", "The session closed; the action was not sent"),
+            true,
+        );
+        return;
+    };
+    window.set_docker_pending_id(container_id.into());
     let weak = window.as_weak();
+    let id = container_id.to_string();
     runtime.spawn(async move {
         let result = rx.await;
         let _ = slint::invoke_from_event_loop(move || {
             let Some(window) = weak.upgrade() else { return };
             window.set_docker_pending_id("".into());
-            let Ok(res) = result else { return };
-            if res.timed_out || res.error.is_some() || res.exit_code.unwrap_or(1) != 0 {
-                window.set_docker_error(
-                    error_text(Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)))
-                        .into(),
-                );
+            match result {
+                Err(_) => show_action(
+                    &window,
+                    t("会话已关闭，操作结果未知", "The session closed before the action finished"),
+                    true,
+                ),
+                Ok(res) => {
+                    let ok =
+                        !res.timed_out && res.error.is_none() && res.exit_code.unwrap_or(1) == 0;
+                    if ok {
+                        show_action(&window, format!("{} {}", done, id), false);
+                    } else {
+                        let why = error_text(
+                            Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
+                            mode,
+                        );
+                        show_action(
+                            &window,
+                            format!("{}: {}", t("操作失败", "Action failed"), why),
+                            true,
+                        );
+                    }
+                }
             }
-            window.invoke_refresh_docker();
+            window.invoke_refresh_docker_now();
         });
     });
 }
@@ -242,8 +1197,17 @@ pub(crate) fn open_terminal(window: &AppWindow, key: &str, container_id: &str) {
     let Some(tab_id) = HUB.with(|hub| hub.borrow().hosts.get(key).map(|h| h.tab_id.clone())) else {
         return;
     };
-    let Ok(cmd) = command::exec_shell(container_id) else {
-        window.set_docker_error(t("容器 ID 非法", "Invalid container id").into());
+    let elev = HUB.with(|hub| {
+        hub.borrow()
+            .hosts
+            .get(key)
+            .map_or_else(command::Elevation::direct, |rt| {
+                // 交互式终端不自动喂密码：需要密码时让 sudo 在终端里提示，用户自己输入。
+                elevation_for(rt, window.get_docker_use_sudo(), false)
+            })
+    });
+    let Ok(cmd) = command::exec_shell(container_id, &elev) else {
+        show_action(window, t("容器 ID 非法", "Invalid container id"), true);
         return;
     };
 
@@ -252,25 +1216,33 @@ pub(crate) fn open_terminal(window: &AppWindow, key: &str, container_id: &str) {
         .iter()
         .map(|t| t.id.to_string())
         .collect();
+    // `invoke_tab_duplicate` 是同步回调：返回时新标签已经在模型里，不必等定时器。
     window.invoke_tab_duplicate(tab_id.into());
 
-    let weak = window.as_weak();
-    slint::Timer::single_shot(Duration::from_millis(150), move || {
-        let Some(w) = weak.upgrade() else { return };
-        for tab in w.get_tabs().iter() {
-            let id = tab.id.to_string();
-            if !before.contains(&id) {
-                PENDING_TERMINAL.with(|p| p.borrow_mut().insert(id, cmd.clone()));
-                return;
-            }
+    let new_tab = window
+        .get_tabs()
+        .iter()
+        .map(|t| t.id.to_string())
+        .find(|id| !before.contains(id));
+    match new_tab {
+        Some(id) => {
+            PENDING_TERMINAL.with(|p| p.borrow_mut().insert(id, cmd));
         }
-        // 手动复制的兜底：至少把命令放到日志抽屉里。
-        w.set_docker_log_open(true);
-        w.set_docker_log_title("docker exec".into());
-        w.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::from(vec![
-            slint::SharedString::from(cmd),
-        ]))));
-    });
+        None => {
+            // 兜底：把命令放进日志抽屉，用户可复制后自己粘贴。
+            window.set_docker_log_open(true);
+            window.set_docker_log_title("docker exec".into());
+            set_log_lines(window, &[cmd.as_str()]);
+            show_action(
+                window,
+                t(
+                    "未能自动打开新标签，命令已放到日志面板",
+                    "Could not open a tab automatically; the command is shown in the log panel",
+                ),
+                true,
+            );
+        }
+    }
 }
 
 /// Connected 时取走待注入命令；没有则返回 None。
@@ -287,18 +1259,57 @@ pub(crate) fn set_filter(window: &AppWindow, text: &str) {
     });
 }
 
+struct HostFacts {
+    count: i32,
+    connected: bool,
+    tab_id: String,
+    session_id: String,
+    title: String,
+    title_len: i32,
+    last: Option<Instant>,
+}
+
+fn new_host_runtime(tab_id: &str) -> HostRuntime {
+    HostRuntime {
+        tab_id: tab_id.to_string(),
+        title: String::new(),
+        title_len: 0,
+        session_count: 0,
+        containers: Vec::new(),
+        status: HostStatus::Idle,
+        failure: None,
+        last_ok: None,
+        last_attempt: None,
+        generation: 0,
+        busy: false,
+        queued: false,
+        backoff_until: None,
+        connected: false,
+        session_id: String::new(),
+        direct: None,
+        sudo_nopass: None,
+        last_mode: command::Mode::Direct,
+        docker_elevation: String::new(),
+        docker_sudo_user: String::new(),
+        docker_sudo_password: Secret::default(),
+        service_up: None,
+        service_enabled: None,
+        service_pending: false,
+        blocker_kind: None,
+        blocker_dismissed: None,
+    }
+}
+
 fn sync_hosts(
     hub: &mut DockerHub,
     window: &AppWindow,
     tabs: &VecModel<TabInfo>,
     statuses: &TabStatuses,
+    store: &ConfigStore,
 ) {
-    let statuses = match statuses.lock() {
-        Ok(s) => s,
-        Err(_) => return,
-    };
+    let Ok(statuses) = statuses.lock() else { return };
 
-    let mut by_host: HashMap<String, (usize, bool, Option<Instant>, String)> = HashMap::new();
+    let mut by_host: HashMap<String, HostFacts> = HashMap::new();
     for index in 0..tabs.row_count() {
         let Some(tab) = tabs.row_data(index) else { continue };
         let id = tab.id.to_string();
@@ -310,63 +1321,315 @@ fn sync_hosts(
             continue;
         };
         let key = key.as_str().to_string();
-        let entry = by_host.entry(key).or_insert((0, false, None, id.clone()));
-        entry.0 += 1;
-        entry.1 |= st.state == 1;
-        if st.state == 1 && entry.2.is_none_or(|t| st.last_stats_at.is_some_and(|x| x > t)) {
-            entry.2 = st.last_stats_at;
-            entry.3 = id;
+        let title = tab.title.to_string();
+        let title_len = tab.title_len;
+        let session_id = st.session_id.clone();
+        let entry = by_host.entry(key).or_insert_with(|| HostFacts {
+            count: 0,
+            connected: false,
+            tab_id: id.clone(),
+            session_id: session_id.clone(),
+            title: title.clone(),
+            title_len,
+            last: None,
+        });
+        entry.count += 1;
+        entry.connected |= st.state == 1;
+        if st.state == 1 && entry.last.is_none_or(|t| st.last_stats_at.is_some_and(|x| x > t)) {
+            entry.last = st.last_stats_at;
+            entry.tab_id = id;
+            entry.session_id = session_id;
+            entry.title = title;
+            entry.title_len = title_len;
         }
     }
+    drop(statuses);
 
-    let mut keys: Vec<_> = by_host.keys().cloned().collect();
-    keys.sort();
-    let mut rows = Vec::with_capacity(keys.len());
-    for key in &keys {
-        let (count, connected, _, tab_id) = by_host.get(key).cloned().unwrap_or((0, false, None, String::new()));
-        let rt = hub.hosts.entry(key.clone()).or_insert_with(|| HostRuntime {
-            tab_id: tab_id.clone(),
-            containers: Vec::new(),
-            status: HostStatus::Idle,
-            failure: None,
-            last_ok: None,
-            last_attempt: None,
-            generation: 0,
-            busy: false,
-            queued: false,
-            backoff_until: None,
-        });
-        rt.tab_id = tab_id;
-        if !connected {
+    // 主机彻底消失（SSH 标签关闭）：连缓存、关闭抑制、待打开一起清掉。
+    let vanished: Vec<String> = hub
+        .hosts
+        .keys()
+        .filter(|key| !by_host.contains_key(*key))
+        .cloned()
+        .collect();
+    for key in vanished {
+        hub.hosts.remove(&key);
+        hub.open.retain(|k| k != &key);
+        hub.suppressed.remove(&key);
+    }
+    PENDING_OPEN.with(|p| p.borrow_mut().retain(|_, v| by_host.contains_key(&v.key)));
+
+    let mut became_connected: HashSet<String> = HashSet::new();
+    for (key, facts) in &by_host {
+        let rt = hub
+            .hosts
+            .entry(key.clone())
+            .or_insert_with(|| new_host_runtime(&facts.tab_id));
+        let was = rt.connected;
+        rt.connected = facts.connected;
+        rt.tab_id = facts.tab_id.clone();
+        rt.session_id = facts.session_id.clone();
+        let (elevation, sudo_user, sudo_password) =
+            load_credentials(store, &facts.session_id, key);
+        rt.docker_elevation = elevation;
+        rt.docker_sudo_user = sudo_user;
+        rt.docker_sudo_password = sudo_password;
+        rt.title = facts.title.clone();
+        rt.title_len = facts.title_len;
+        rt.session_count = facts.count;
+        if facts.connected && !was {
+            became_connected.insert(key.clone());
+        }
+        if !facts.connected {
             rt.status = HostStatus::Offline;
         }
-        rows.push(DockerHostTab {
-            key: key.as_str().into(),
-            label: key.as_str().into(),
-            connected,
-            session_count: count as i32,
-            count: if rt.containers.is_empty() && rt.last_ok.is_none() {
-                -1
-            } else {
-                rt.containers.len() as i32
-            },
+    }
+
+    // 断开后重连：清掉“用户关过”的抑制，允许按自动探索重新打开。
+    for key in &became_connected {
+        hub.suppressed.remove(key);
+    }
+
+    let auto = window.get_docker_auto_discover();
+    if hub.auto_last != Some(auto) {
+        hub.auto_last = Some(auto);
+        if auto {
+            hub.welcome_selected = false;
+            for (key, facts) in &by_host {
+                if facts.connected && !hub.suppressed.contains(key) && !hub.open.contains(key) {
+                    hub.open.push(key.clone());
+                }
+            }
+        } else {
+            // 关闭自动探索：回到欢迎页；手动打开由 open_host 负责。
+            hub.open.clear();
+            hub.suppressed.clear();
+            hub.active = None;
+            hub.welcome_selected = true;
+        }
+    }
+
+    let pending_keys: Vec<String> = PENDING_OPEN.with(|p| {
+        p.borrow().values().map(|v| v.key.clone()).collect()
+    });
+    for (key, facts) in &by_host {
+        if !facts.connected {
+            continue;
+        }
+        let auto_open = auto && !hub.suppressed.contains(key) && became_connected.contains(key);
+        let pending_open = pending_keys.iter().any(|pending| pending == key);
+        if (auto_open || pending_open) && !hub.open.contains(key) {
+            hub.open.push(key.clone());
+            if pending_open {
+                hub.welcome_selected = false;
+            }
+        }
+    }
+    PENDING_OPEN.with(|pending| {
+        pending.borrow_mut().retain(|_, v| {
+            by_host.get(&v.key).is_some_and(|f| f.connected) && !hub.open.contains(&v.key)
         });
-    }
+    });
 
-    hub.hosts.retain(|key, _| by_host.contains_key(key));
-    hub.hosts_model.set_vec(rows);
-
-    if hub.active.as_ref().is_none_or(|key| !by_host.contains_key(key)) {
-        hub.active = keys
+    if hub.welcome_selected {
+        hub.active = None;
+    } else if hub
+        .active
+        .as_ref()
+        .is_none_or(|key| !hub.open.contains(key))
+    {
+        hub.active = hub
+            .open
             .iter()
-            .find(|key| by_host.get(*key).is_some_and(|v| v.1))
+            .find(|key| hub.hosts.get(*key).is_some_and(|rt| rt.connected))
             .cloned()
-            .or_else(|| keys.first().cloned());
+            .or_else(|| hub.open.first().cloned());
     }
-    if let Some(key) = hub.active.clone() {
-        window.set_docker_active_host(key.into());
+    window.set_docker_active_host(hub.active.clone().unwrap_or_default().into());
+    rebuild_hosts_model(hub, window);
+    if hub.active.is_none() {
+        window.set_docker_log_open(false);
+        refresh_welcome(window, hub, store);
+    }
+}
+
+/// 按 `open` 的顺序重建标签模型（不同步整个 hosts 表）。
+fn rebuild_hosts_model(hub: &mut DockerHub, window: &AppWindow) {
+    let rows: Vec<DockerHostTab> = hub
+        .open
+        .iter()
+        .filter_map(|key| {
+            let rt = hub.hosts.get(key)?;
+            Some(DockerHostTab {
+                key: key.as_str().into(),
+                label: if rt.title.is_empty() {
+                    key.as_str().into()
+                } else {
+                    rt.title.as_str().into()
+                },
+                connected: rt.connected,
+                session_count: rt.session_count,
+                count: if rt.containers.is_empty() && rt.last_ok.is_none() {
+                    -1
+                } else {
+                    rt.containers.len() as i32
+                },
+                title_len: rt.title_len,
+                session_id: rt.session_id.as_str().into(),
+            })
+        })
+        .collect();
+
+    let unchanged = hub.hosts_model.row_count() == rows.len()
+        && (0..rows.len()).all(|i| hub.hosts_model.row_data(i).as_ref() == rows.get(i));
+    if !unchanged {
+        hub.hosts_model.set_vec(rows);
     }
     window.set_docker_hosts(ModelRc::from(hub.hosts_model.clone()));
+}
+
+/// 欢迎页的已保存 SSH 会话（分组/折叠与主机页共用）。
+fn refresh_welcome(window: &AppWindow, hub: &mut DockerHub, store: &ConfigStore) {
+    let rows = super::session_models::docker_session_rows(store);
+    let unchanged = hub.welcome_model.row_count() == rows.len()
+        && (0..rows.len()).all(|i| hub.welcome_model.row_data(i).as_ref() == rows.get(i));
+    if !unchanged {
+        hub.welcome_model.set_vec(rows);
+    }
+    window.set_docker_sessions(ModelRc::from(hub.welcome_model.clone()));
+}
+
+/// 选提权方式：开关关闭一律直连；否则免密 sudo > 直连 > 回退。
+///
+/// 直连探测为 `None`（探测失败 / 还没跑）时也先直连：宁可跑一次真实命令拿到
+/// 准确错误，也不要凭猜测强上 `sudo -n` 报「需要免密 sudo」。
+fn elevation_for(rt: &HostRuntime, setting_on: bool, needs_root: bool) -> command::Elevation {
+    let mode = choose_mode(
+        setting_on,
+        rt.direct,
+        rt.sudo_nopass,
+        !rt.docker_sudo_password.is_empty(),
+        needs_root,
+    );
+    match mode {
+        command::Mode::Direct => command::Elevation::direct(),
+        command::Mode::SudoNoPass => command::Elevation::sudo_nopass(&rt.docker_sudo_user),
+        command::Mode::SudoPassword => {
+            if rt.docker_elevation == "su" {
+                command::Elevation::su(&rt.docker_sudo_user)
+            } else {
+                command::Elevation::sudo_password(&rt.docker_sudo_user)
+            }
+        }
+        command::Mode::SuPassword => command::Elevation::su(&rt.docker_sudo_user),
+    }
+}
+
+/// 纯策略：给定开关与探测结果，选哪种执行方式。
+///
+/// 顺序即优先级：免密 sudo > 直连 > 密码凭据 > root 命令回退。
+fn choose_mode(
+    setting_on: bool,
+    direct: Option<bool>,
+    sudo_nopass: Option<bool>,
+    has_password: bool,
+    needs_root: bool,
+) -> command::Mode {
+    if !setting_on {
+        return command::Mode::Direct;
+    }
+    if sudo_nopass == Some(true) {
+        return command::Mode::SudoNoPass;
+    }
+    // 服务启停必须 root：能直连 docker 不代表能 systemctl。
+    if needs_root {
+        return if has_password {
+            command::Mode::SudoPassword
+        } else {
+            command::Mode::SudoNoPass
+        };
+    }
+    // 直连已知不可用、sudo 还没探测：先用 sudo 试一次（首次进页面的兜底）。
+    if direct == Some(false) && sudo_nopass.is_none() {
+        return command::Mode::SudoNoPass;
+    }
+    // 探测未知也先直连：别凭猜测强上 sudo 报「需要免密 sudo」。
+    if direct != Some(false) {
+        return command::Mode::Direct;
+    }
+    if has_password {
+        return command::Mode::SudoPassword;
+    }
+    command::Mode::Direct
+}
+
+/// 概览页显示的权限状态（Rust 侧翻译，Slint 只负责排版）。
+fn permission_text(rt: &HostRuntime, setting_on: bool) -> &'static str {
+    if !setting_on {
+        return t("按登录用户执行", "Runs as the signed-in user");
+    }
+    if rt.sudo_nopass == Some(true) {
+        return t("免密 sudo 可用", "Passwordless sudo available");
+    }
+    if rt.direct == Some(true) {
+        return t("已可直接访问 docker", "Direct docker access");
+    }
+    if !rt.docker_sudo_password.is_empty() {
+        return t("已保存提权凭据", "Elevation credentials saved");
+    }
+    if rt.direct == Some(false) {
+        return t("没有权限，需配置凭据", "No permission — configure credentials");
+    }
+    t("未知（刷新可重新探测）", "Unknown — refresh to probe")
+}
+
+/// 凭据优先取代表会话；同一 `user@host` 的其它会话配置了也能用上。
+fn load_credentials(
+    store: &ConfigStore,
+    session_id: &str,
+    host_key: &str,
+) -> (String, String, Secret) {
+    let configured = |s: &crate::config::Session| {
+        !s.docker_elevation.is_empty()
+            || !s.docker_sudo_user.is_empty()
+            || !s.docker_sudo_password.is_empty()
+    };
+    if let Some(session) = store.get(session_id)
+        && configured(session)
+    {
+        return (
+            session.docker_elevation.clone(),
+            session.docker_sudo_user.clone(),
+            session.docker_sudo_password.clone(),
+        );
+    }
+    let (user, host) = host_key.split_once('@').unwrap_or(("", host_key));
+    store
+        .sessions()
+        .iter()
+        .find(|s| {
+            s.kind == SessionKind::Ssh
+                && s.user == user
+                && s.host == host
+                && !s.docker_sudo_password.is_empty()
+        })
+        .map(|s| {
+            (
+                s.docker_elevation.clone(),
+                s.docker_sudo_user.clone(),
+                s.docker_sudo_password.clone(),
+            )
+        })
+        .unwrap_or_default()
+}
+
+/// 本机是否要带密码执行：仅当命令需要提权且配置了密码。
+fn password_for(rt: &HostRuntime, elev: &command::Elevation) -> Option<Secret> {
+    if elev.mode.uses_password() && !rt.docker_sudo_password.is_empty() {
+        Some(rt.docker_sudo_password.clone())
+    } else {
+        None
+    }
 }
 
 fn refresh_key(
@@ -386,10 +1649,18 @@ fn refresh_key(
         apply_active(window, hub);
         return;
     }
+    let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+    rt.last_mode = elev.mode;
+    let password = password_for(rt, &elev);
+    let cmd = command::ps(true, &elev);
     let Some(rx) = ({
         let hs = handles.borrow();
-        hs.get(&rt.tab_id)
-            .map(|handle| handle.exec(command::ps(true), PS_TIMEOUT, PS_MAX_OUTPUT))
+        hs.get(&rt.tab_id).map(|handle| match password {
+            Some(password) => {
+                handle.exec_privileged(cmd, password, PS_TIMEOUT, PS_MAX_OUTPUT)
+            }
+            None => handle.exec(cmd, PS_TIMEOUT, PS_MAX_OUTPUT),
+        })
     }) else {
         rt.status = HostStatus::Offline;
         rt.failure = Some(DockerFailure::SessionLost);
@@ -468,8 +1739,34 @@ fn apply_result(
                 }
             }
         }
+        // 首次还没探测过权限：直连被拒就立刻用 sudo -n 再试一次，避免
+        // 「NOPASSWD 用户第一次进页面先闪一次无权限」。只重试一次。
+        if rt.status == HostStatus::Error
+            && rt.last_mode == command::Mode::Direct
+            && rt.direct.is_none()
+            && matches!(rt.failure, Some(DockerFailure::NoPermission))
+        {
+            rt.direct = Some(false);
+            rt.queued = true;
+        }
         if rt.status == HostStatus::Error {
             rt.backoff_until = Some(Instant::now() + BACKOFF);
+            if let Some(kind) = rt.failure
+                && matches!(
+                    kind,
+                    DockerFailure::NoCli
+                        | DockerFailure::NoPermission
+                        | DockerFailure::SudoAuthFailed
+                        | DockerFailure::DaemonDown
+                )
+                && rt.blocker_kind != Some(kind)
+                && rt.blocker_dismissed != Some(kind)
+            {
+                rt.blocker_kind = Some(kind);
+            }
+        } else {
+            rt.blocker_kind = None;
+            rt.blocker_dismissed = None;
         }
         rt.queued
     };
@@ -479,6 +1776,34 @@ fn apply_result(
         apply_active(window, hub);
     } else {
         sync_host_count(hub, key);
+    }
+
+    // 不可用弹窗：只在该主机是当前标签、且这一轮确实失败时弹一次。
+    let blocker = hub
+        .hosts
+        .get(key)
+        .filter(|_| hub.active.as_deref() == Some(key))
+        .and_then(|rt| {
+        if rt.status == HostStatus::Error {
+            rt.blocker_kind
+                .map(|kind| (kind, rt.title.clone(), rt.last_mode))
+        } else {
+            None
+        }
+    });
+    if let Some((kind, title, mode)) = blocker {
+        window.set_docker_blocker_kind(blocker_kind_key(kind).into());
+        window.set_docker_blocker_host(key.into());
+        window.set_docker_blocker_title(title.into());
+        window.set_docker_blocker_detail(error_text(Some(kind), mode).into());
+        window.set_docker_blocker_session("".into());
+    } else if hub
+        .hosts
+        .get(key)
+        .is_some_and(|rt| rt.status != HostStatus::Error)
+        && window.get_docker_blocker_host().as_str() == key
+    {
+        clear_blocker(window);
     }
     if queued {
         REFRESH_CTX.with(|ctx| {
@@ -515,6 +1840,14 @@ fn clear_view(window: &AppWindow, hub: &mut DockerHub) {
     window.set_docker_error("".into());
     window.set_docker_summary("".into());
     window.set_docker_session("".into());
+    window.set_docker_active_session("".into());
+    window.set_docker_permission("".into());
+    window.set_docker_running(-1);
+    window.set_docker_stopped(-1);
+    window.set_docker_service_state("unknown".into());
+    window.set_docker_service_pending(false);
+    window.set_docker_service_autostart("".into());
+    clear_monitor(window);
 }
 
 fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
@@ -524,8 +1857,10 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
     };
     let Some(rt) = hub.hosts.get(&key) else { return };
     window.set_docker_session(key.as_str().into());
+    window.set_docker_active_session(rt.session_id.as_str().into());
+    window.set_docker_permission(permission_text(rt, window.get_docker_use_sudo()).into());
     window.set_docker_status(rt.status.key().into());
-    window.set_docker_error(error_text(rt.failure).into());
+    window.set_docker_error(error_text(rt.failure, rt.last_mode).into());
     let running = rt
         .containers
         .iter()
@@ -539,6 +1874,35 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
             .replace("{total}", &rt.containers.len().to_string())
     };
     window.set_docker_summary(summary.into());
+
+    // 概览统计用**未过滤**列表：搜索框只影响容器页的可见行，不该改变数字。
+    let (run_count, stop_count) = if rt.last_ok.is_some() {
+        let r = running as i32;
+        (r, rt.containers.len() as i32 - r)
+    } else {
+        (-1, -1)
+    };
+    window.set_docker_running(run_count);
+    window.set_docker_stopped(stop_count);
+    window.set_docker_service_state(
+        match rt.service_up {
+            Some(true) => "running",
+            Some(false) => "stopped",
+            None => "unknown",
+        }
+        .into(),
+    );
+    window.set_docker_service_pending(rt.service_pending);
+    window.set_docker_service_autostart(
+        match rt.service_enabled {
+            Some(true) => t("已启用", "Enabled"),
+            Some(false) => t("未启用", "Disabled"),
+            None => "",
+        }
+        .into(),
+    );
+    apply_monitor(window, &rt.tab_id);
+
     let needle = hub.filter.as_str();
     hub.containers_model.set_vec(
         rt.containers
@@ -564,12 +1928,72 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
     window.set_docker_containers(ModelRc::from(hub.containers_model.clone()));
 }
 
-fn error_text(failure: Option<DockerFailure>) -> &'static str {
+/// 概览页的监控曲线：按**选中 Docker 主机自己的 tab_id** 取快照，不能用
+/// `active-tab-id` —— 切 Docker 主机标签时，活动 SSH 标签可能属于另一台主机。
+fn apply_monitor(window: &AppWindow, tab_id: &str) {
+    let snapshot = LAST_STATUSES.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .and_then(|statuses| statuses.lock().ok().and_then(|map| map.get(tab_id).cloned()))
+    });
+    let Some(st) = snapshot.filter(|st| st.state == 1 && !st.is_local) else {
+        clear_monitor(window);
+        return;
+    };
+
+    let cpu: Vec<f32> = st.cpu_hist.iter().map(|v| v / 100.0).collect();
+    window.set_docker_cpu_path(super::resource_ui::smooth_path(&cpu, 60).into());
+    window.set_docker_mem_path(super::resource_ui::smooth_path(&st.mem_hist, 60).into());
+    // 上下行共用同一个峰值：两条线画在同一刻度上才可比（与综合页一致）。
+    let peak = st
+        .net_hist
+        .iter()
+        .chain(st.net_up_hist.iter())
+        .fold(1.0_f32, |m, v| m.max(*v));
+    let down: Vec<f32> = st.net_hist.iter().map(|v| (v / peak).clamp(0.0, 1.0)).collect();
+    let up: Vec<f32> = st.net_up_hist.iter().map(|v| (v / peak).clamp(0.0, 1.0)).collect();
+    window.set_docker_net_down_path(super::resource_ui::smooth_path(&down, 60).into());
+    window.set_docker_net_up_path(super::resource_ui::smooth_path(&up, 60).into());
+    window.set_docker_cpu_percent(st.cpu);
+    window.set_docker_mem_percent(super::sidebar::usage_pct(st.mem_used_kib, st.mem_total_kib));
+    let (_, rx, tx) = super::terminal_ui::selected_iface(&st);
+    window.set_docker_net_top_down(format_bytes_per_sec(rx).into());
+    window.set_docker_net_top_up(format_bytes_per_sec(tx).into());
+    window.set_docker_stats_ready(!st.cpu_hist.is_empty() && !st.mem_hist.is_empty());
+}
+
+fn clear_monitor(window: &AppWindow) {
+    window.set_docker_cpu_path("".into());
+    window.set_docker_mem_path("".into());
+    window.set_docker_net_up_path("".into());
+    window.set_docker_net_down_path("".into());
+    window.set_docker_cpu_percent(0.0);
+    window.set_docker_mem_percent(0.0);
+    window.set_docker_net_top_up("".into());
+    window.set_docker_net_top_down("".into());
+    window.set_docker_stats_ready(false);
+}
+
+fn error_text(failure: Option<DockerFailure>, mode: command::Mode) -> &'static str {
     match failure {
-        Some(DockerFailure::NoPermission) => t(
-            "当前用户没有 Docker 权限，需要加入 docker 组后重新登录",
-            "No Docker permission — join the docker group and sign in again",
+        Some(DockerFailure::SudoAuthFailed) => t(
+            "提权认证失败：密码错误，或该账号没有 sudo 权限",
+            "Elevation was rejected — wrong password, or the account may not use sudo",
         ),
+        Some(DockerFailure::NoPermission) => match mode {
+            command::Mode::SudoPassword | command::Mode::SuPassword => t(
+                "提权认证失败：密码错误，或该账号没有 sudo 权限",
+                "Elevation was rejected — wrong password, or the account may not use sudo",
+            ),
+            command::Mode::SudoNoPass => t(
+                "已开启 sudo，但该用户需要密码：请配置提权凭据，或为当前用户配置免密 sudo（NOPASSWD）",
+                "sudo is enabled but needs a password — configure elevation credentials, or set up NOPASSWD",
+            ),
+            command::Mode::Direct => t(
+                "当前用户没有 Docker 权限：配置提权凭据、开启「优先使用 sudo」，或把用户加入 docker 组后重新登录",
+                "No Docker permission — configure elevation credentials, enable \"Prefer sudo\", or add the user to the docker group",
+            ),
+        },
         Some(DockerFailure::NoCli) => t(
             "远端未安装 docker CLI",
             "docker CLI is not installed on the remote host",
@@ -588,5 +2012,76 @@ fn error_text(failure: Option<DockerFailure>) -> &'static str {
         Some(DockerFailure::Parse) => t("无法解析 docker 输出", "Cannot parse docker output"),
         Some(DockerFailure::Other) => t("docker 命令执行失败，请查看远端日志", "docker command failed — check the remote logs"),
         None => "",
+    }
+}
+
+#[cfg(test)]
+mod elevation_tests {
+    use super::*;
+
+    #[test]
+    fn docker_group_user_falls_back_to_direct() {
+        // 用户已在 docker 组、没有免密 sudo：开关打开也必须直连。
+        assert_eq!(
+            choose_mode(true, Some(true), Some(false), false, false),
+            command::Mode::Direct
+        );
+    }
+
+    #[test]
+    fn passwordless_sudo_wins_over_direct() {
+        assert_eq!(
+            choose_mode(true, Some(true), Some(true), false, false),
+            command::Mode::SudoNoPass
+        );
+    }
+
+    #[test]
+    fn saved_password_is_used_only_when_direct_is_denied() {
+        assert_eq!(
+            choose_mode(true, Some(false), Some(false), true, false),
+            command::Mode::SudoPassword
+        );
+        assert_eq!(
+            choose_mode(true, Some(true), Some(false), true, false),
+            command::Mode::Direct
+        );
+    }
+
+    #[test]
+    fn unprobed_sudo_is_tried_after_direct_failure() {
+        assert_eq!(
+            choose_mode(true, Some(false), None, false, false),
+            command::Mode::SudoNoPass
+        );
+    }
+
+    #[test]
+    fn unknown_probe_defaults_to_direct() {
+        assert_eq!(
+            choose_mode(true, None, None, false, false),
+            command::Mode::Direct
+        );
+    }
+
+    #[test]
+    fn switch_off_always_runs_direct() {
+        assert_eq!(
+            choose_mode(false, Some(false), Some(true), true, true),
+            command::Mode::Direct
+        );
+    }
+
+    #[test]
+    fn service_control_falls_back_to_sudo_for_root() {
+        // 直连 docker 可用也必须走 sudo：systemctl 需要 root。
+        assert_eq!(
+            choose_mode(true, Some(true), Some(false), false, true),
+            command::Mode::SudoNoPass
+        );
+        assert_eq!(
+            choose_mode(true, Some(true), Some(false), true, true),
+            command::Mode::SudoPassword
+        );
     }
 }

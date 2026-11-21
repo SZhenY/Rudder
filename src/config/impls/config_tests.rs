@@ -785,6 +785,41 @@ mod tests {
     }
 
     #[test]
+    fn docker_sudo_password_is_encrypted_at_rest() {
+        // Docker 提权密码等同于 sudo 口令，不能明文躺在 sessions.json 里。
+        let mut store = temp_store();
+        let secret = "docker-sudo-s3cret-hunter2";
+        store.cache.sessions.push(Session {
+            name: "docker-host".into(),
+            host: "10.1.2.4".into(),
+            docker_elevation: "sudo".into(),
+            docker_sudo_user: "deploy".into(),
+            docker_sudo_password: Secret::new(secret),
+            ..Session::new_empty()
+        });
+
+        store.save().unwrap();
+        let raw = std::fs::read_to_string(&store.path).unwrap();
+        assert!(!raw.contains(secret), "docker sudo password written in the clear");
+        let disk: ConfigFile = serde_json::from_str(&raw).unwrap();
+        assert_eq!(disk.sessions[0].docker_elevation, "sudo");
+        assert_eq!(disk.sessions[0].docker_sudo_user, "deploy");
+        let encrypted = disk.sessions[0].docker_sudo_password.as_str();
+        assert!(encrypted.starts_with(ConfigStore::ENC_PREFIX));
+        assert_eq!(
+            ConfigStore::try_decrypt(&store.key, encrypted).as_deref(),
+            Some(secret)
+        );
+
+        // 便携导出不带提权密码。
+        let (exported, _) = store.export_json().unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(&exported).unwrap();
+        assert_eq!(parsed["sessions"][0]["docker_sudo_password"], "");
+
+        let _ = std::fs::remove_file(&store.path);
+    }
+
+    #[test]
     fn trigger_responses_are_encrypted_at_rest() {
         // `SessionTrigger::response` documents itself as "stored encrypted like
         // the session password" — the usual way a user fills it in is with the

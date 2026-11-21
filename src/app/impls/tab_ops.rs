@@ -203,6 +203,8 @@ pub(crate) fn close_tab(env: &TabEnv<'_>, id: &str) -> bool {
     if id == "welcome" {
         return false;
     }
+    // 欢迎页发起、但还没来得及连上的 Docker 待打开记录。
+    super::docker::cancel_pending(id);
     // Drop any display-name override so a fresh connect starts clean.
     env.tab_titles.borrow_mut().remove(id);
     if let Some(handle) = env.handles.borrow_mut().remove(id) {

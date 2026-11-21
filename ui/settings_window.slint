@@ -124,6 +124,8 @@ export component SettingsWindow inherits Window {
     in-out property <string> scrollback-lines:"5000";
     in-out property <bool> sftp-follow-cd:true;
     in-out property <bool> docker-auto-discover:true;
+    in-out property <bool> docker-use-sudo:true;
+    in-out property <string> ifd-page: "terminal";
     in-out property <bool> show-cmd-bar:true;
     in-out property <bool> sync-upload-enabled:false;
     in property <color> term-cursor-color:Theme.term-fg;
@@ -212,6 +214,7 @@ export component SettingsWindow inherits Window {
     callback set-scrollback-lines(string) -> bool;
     callback set-sftp-follow-cd(bool);
     callback set-docker-auto-discover(bool);
+    callback set-docker-use-sudo(bool);
     callback set-show-cmd-bar(bool);
     callback set-sync-upload-enabled(bool);
     callback set-term-cursor-color(string) -> bool;
@@ -334,6 +337,8 @@ export component SettingsWindow inherits Window {
                 ui-scale: Theme.ui-scale;
                 sftp-follow-cd <=> sftp-follow-cd;
                 docker-auto-discover <=> docker-auto-discover;
+                docker-use-sudo <=> docker-use-sudo;
+                ifd-page <=> ifd-page;
                 collapse-sidebar-default <=> collapse-sidebar-default;
                 show-cmd-bar <=> show-cmd-bar;
                 collapse-overview-default <=> collapse-overview-default;
@@ -411,6 +416,7 @@ export component SettingsWindow inherits Window {
                 set-aggressive-memory-reclaim(v) => { root.set-aggressive-memory-reclaim(v); }
                 set-sftp-follow-cd(v) => { root.set-sftp-follow-cd(v); }
                 set-docker-auto-discover(v) => { root.set-docker-auto-discover(v); }
+                set-docker-use-sudo(v) => { root.set-docker-use-sudo(v); }
                 set-collapse-sidebar-default(v) => { root.set-collapse-sidebar-default(v); }
                 set-collapse-overview-default(v) => { root.set-collapse-overview-default(v); }
                 set-sync-upload-enabled(v) => { root.set-sync-upload-enabled(v); }

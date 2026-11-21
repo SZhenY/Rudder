@@ -781,6 +781,19 @@ pub struct Session {
     /// for such servers (#140).
     #[serde(default)]
     pub disable_shell_integration: bool,
+    // --- Docker 提权凭据 ----------------------------------------------------
+    /// Docker 提权方式：空 / "sudo" / "su"。空按 sudo 处理。
+    ///
+    /// 只影响 Docker 页的命令，不改 SSH 登录本身。
+    #[serde(default)]
+    pub docker_elevation: String,
+    /// sudo 的目标用户（空 = root）；su 模式必填。
+    #[serde(default)]
+    pub docker_sudo_user: String,
+    /// 提权密码，加密落盘；界面永不回填明文。
+    #[serde(default)]
+    pub docker_sudo_password: Secret,
+
     /// Free-form note for this session — somewhere to stash extra info (jump-host
     /// details, credentials hints, owner, etc.). Shown only in the edit dialog.
     /// (B站 suggestion)
@@ -871,6 +884,9 @@ impl Session {
             forwards: Vec::new(),
             triggers: Vec::new(),
             disable_shell_integration: false,
+            docker_elevation: String::new(),
+            docker_sudo_user: String::new(),
+            docker_sudo_password: Secret::default(),
             note: String::new(),
         }
     }
@@ -1412,6 +1428,15 @@ impl ConfigStore {
             if let Some(plain) = Self::try_decrypt(key, session.proxy_pass.as_str()) {
                 session.proxy_pass = Secret::new(plain);
             } else if session.proxy_pass.as_str().starts_with(Self::ENC_PREFIX) {
+                undecryptable += 1;
+            }
+            if let Some(plain) = Self::try_decrypt(key, session.docker_sudo_password.as_str()) {
+                session.docker_sudo_password = Secret::new(plain);
+            } else if session
+                .docker_sudo_password
+                .as_str()
+                .starts_with(Self::ENC_PREFIX)
+            {
                 undecryptable += 1;
             }
             // Trigger responses share the password's on-disk format;
@@ -2106,6 +2131,14 @@ impl ConfigStore {
 
     pub fn set_docker_auto_discover(&mut self, enabled: bool) {
         self.cache.layout.docker_auto_discover = enabled;
+    }
+
+    pub fn docker_use_sudo(&self) -> bool {
+        self.cache.layout.docker_use_sudo
+    }
+
+    pub fn set_docker_use_sudo(&mut self, enabled: bool) {
+        self.cache.layout.docker_use_sudo = enabled;
     }
 
     pub fn quick_panel_open(&self) -> bool {

@@ -31,6 +31,8 @@ pub enum SessionCommand {
     /// (#264); the read phase does not block the PTY.
     Exec {
         command: String,
+        /// 需要提权时带上密码：请求 PTY、关 ECHO、等提示后写入 stdin。
+        password: Option<crate::config::Secret>,
         timeout: std::time::Duration,
         max_output_bytes: usize,
         reply: tokio::sync::oneshot::Sender<ExecResult>,
@@ -409,6 +411,28 @@ impl SessionHandle {
         let (reply, rx) = tokio::sync::oneshot::channel();
         let _ = self.commands.send(SessionCommand::Exec {
             command,
+            password: None,
+            timeout,
+            max_output_bytes,
+            reply,
+        });
+        rx
+    }
+
+    /// 与 [`Self::exec`] 相同，但把密码写进通道 stdin（`sudo -S` / `su -c`）。
+    ///
+    /// 密码不进命令行、不进 shell history；由 `run_exec` 在 PTY 上等提示后写入。
+    pub fn exec_privileged(
+        &self,
+        command: String,
+        password: crate::config::Secret,
+        timeout: std::time::Duration,
+        max_output_bytes: usize,
+    ) -> tokio::sync::oneshot::Receiver<ExecResult> {
+        let (reply, rx) = tokio::sync::oneshot::channel();
+        let _ = self.commands.send(SessionCommand::Exec {
+            command,
+            password: Some(password),
             timeout,
             max_output_bytes,
             reply,

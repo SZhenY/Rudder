@@ -5,8 +5,9 @@
 //! disagree about encodings. `portable-pty` gives us ConPTY on Windows and a
 //! Unix PTY on Linux/macOS while reusing the same UI event path as SSH.
 
+use std::collections::HashSet;
 use std::io::{Read, Write};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 
 use anyhow::{Context, Result};
 use portable_pty::{CommandBuilder, PtySize};
@@ -15,6 +16,77 @@ use tokio::sync::mpsc::{self, UnboundedReceiver, UnboundedSender};
 use crate::config::Session;
 use crate::i18n::t;
 use crate::ssh::{SessionCommand, SessionEvent, SessionHandle};
+
+/// 本进程创建的本地 shell 子进程 PID。
+///
+/// ConPTY 子进程不会随 `rudder.exe` 硬终止自动消失，关窗前要按 PID 一起收掉。
+fn local_children() -> &'static Mutex<HashSet<u32>> {
+    static REGISTRY: OnceLock<Mutex<HashSet<u32>>> = OnceLock::new();
+    REGISTRY.get_or_init(|| Mutex::new(HashSet::new()))
+}
+
+/// 在会话生命周期内登记子进程；Drop 时注销。
+struct LocalChildGuard(Option<u32>);
+
+impl LocalChildGuard {
+    fn register(pid: Option<u32>) -> Self {
+        if let Some(pid) = pid {
+            local_children()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .insert(pid);
+        }
+        Self(pid)
+    }
+}
+
+impl Drop for LocalChildGuard {
+    fn drop(&mut self) {
+        if let Some(pid) = self.0 {
+            local_children()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .remove(&pid);
+        }
+    }
+}
+
+/// 关窗 / 硬退出前杀掉所有仍在运行的本地 shell；已退出的 PID 直接忽略。
+pub(crate) fn kill_all_children() {
+    let pids: Vec<u32> = {
+        let mut set = local_children().lock().unwrap_or_else(|e| e.into_inner());
+        set.drain().collect()
+    };
+    for pid in pids {
+        kill_pid(pid);
+    }
+}
+
+#[cfg(windows)]
+fn kill_pid(pid: u32) {
+    const PROCESS_TERMINATE: u32 = 0x0001;
+    unsafe extern "system" {
+        fn OpenProcess(access: u32, inherit: i32, pid: u32) -> *mut core::ffi::c_void;
+        fn TerminateProcess(handle: *mut core::ffi::c_void, code: u32) -> i32;
+        fn CloseHandle(handle: *mut core::ffi::c_void) -> i32;
+    }
+    // SAFETY: 句柄只在本函数内使用并立即关闭；PID 来自本进程 spawn 的子进程。
+    unsafe {
+        let handle = OpenProcess(PROCESS_TERMINATE, 0, pid);
+        if !handle.is_null() {
+            let _ = TerminateProcess(handle, 1);
+            let _ = CloseHandle(handle);
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn kill_pid(pid: u32) {
+    // SAFETY: 只向本进程创建的子进程发送 SIGKILL；PID 已退出时返回错误，忽略即可。
+    unsafe {
+        libc::kill(pid as i32, libc::SIGKILL);
+    }
+}
 
 pub fn spawn_local_session(
     runtime: &tokio::runtime::Handle,
@@ -89,6 +161,7 @@ async fn run_local(
         .slave
         .spawn_command(cmd)
         .with_context(|| format!("failed to start local terminal: {program}"))?;
+    let _child_guard = LocalChildGuard::register(child.process_id());
     drop(pair.slave);
 
     let mut reader = pair.master.try_clone_reader().context("local pty reader")?;
@@ -249,7 +322,9 @@ fn local_program(session: &Session) -> (String, Vec<String>) {
 // Windows-only as well (upstream 547b588 gates the whole module the same way).
 #[cfg(all(test, windows))]
 mod tests {
-    use super::{local_program, WSL_LOGIN_SHELL};
+    use super::{
+        WSL_LOGIN_SHELL, LocalChildGuard, kill_all_children, local_children, local_program,
+    };
     use crate::config::Session;
 
     #[cfg(windows)]
@@ -288,6 +363,48 @@ mod tests {
         );
         assert!(WSL_LOGIN_SHELL.contains("getent passwd"));
         assert!(WSL_LOGIN_SHELL.contains("exec \"$shell\" -l"));
+    }
+
+    #[test]
+    fn kill_all_children_terminates_registered_process() {
+        #[cfg(windows)]
+        let mut child = std::process::Command::new("ping")
+            .args(["-n", "30", "127.0.0.1"])
+            .spawn()
+            .expect("spawn local child");
+        #[cfg(not(windows))]
+        let mut child = std::process::Command::new("sleep")
+            .arg("30")
+            .spawn()
+            .expect("spawn local child");
+
+        let pid = child.id();
+        let guard = LocalChildGuard::register(Some(pid));
+        assert!(
+            local_children()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&pid)
+        );
+
+        kill_all_children();
+
+        let mut exited = false;
+        for _ in 0..100 {
+            if child.try_wait().ok().flatten().is_some() {
+                exited = true;
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        drop(guard);
+        assert!(exited, "registered local child was not terminated");
+        assert!(
+            !local_children()
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .contains(&pid)
+        );
     }
 
     #[cfg(windows)]

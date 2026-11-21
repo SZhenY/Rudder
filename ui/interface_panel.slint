@@ -30,6 +30,7 @@ export component InterfacePanel inherits Rectangle {
     in-out property <string> renderer-mode: "software";
     in-out property <bool> aggressive-memory-reclaim: false;
     in-out property <bool> docker-auto-discover: true;
+    in-out property <bool> docker-use-sudo: true;
     in property <[string]> term-fonts;
     in property <string> term-font-family;
     in-out property <int> term-font-index: 0;   // picker selection; labels carry a source prefix
@@ -112,7 +113,7 @@ export component InterfacePanel inherits Rectangle {
     private property <string> wsl-new-distribution;
     in-out property <string> wsl-new-directory: "~";
 
-    property <string> ifd-page: "terminal";
+    in-out property <string> ifd-page: "terminal";
     // 切页过渡：淡出 → 换页 → 淡入。页面是 `if` 条件实例化的，元素随条件生死，
     // 没法做两页并存的交叉淡化；这里改成让**常驻的滚动容器**淡出，切完再淡入。
     property <string> pending-page: "terminal";
@@ -197,6 +198,7 @@ export component InterfacePanel inherits Rectangle {
     callback set-renderer-mode(string);
     callback set-sftp-follow-cd(bool);
     callback set-docker-auto-discover(bool);
+    callback set-docker-use-sudo(bool);
     callback set-collapse-sidebar-default(bool);
     callback set-collapse-overview-default(bool);
     callback set-sync-upload-enabled(bool);
@@ -273,12 +275,12 @@ export component InterfacePanel inherits Rectangle {
             // 声明在 `VerticalLayout` **之前** → 绘制在下层，图标 / 文字 / 命中区
             // 都压在它上面。几何与 `NavItem` 严格重合：
             //   x = 10                        → VerticalLayout 的 padding
-            //   y = 10 + i × 32               → 行高 30 + 间距 2
+            //   y = 10 + i × 35               → 行高 30 + 间距 5
             //   宽 = 168 − 10×2 = 148，与右缘那条 1px 分隔线不重叠
             Rectangle {
                 x: 10px * Theme.ui-scale;
                 y: 10px * Theme.ui-scale
-                    + root.nav-index(root.nav-page) * (Theme.row-h-lg + 2px * Theme.ui-scale);
+                    + root.nav-index(root.nav-page) * (Theme.row-h-lg + Theme.sp-5);
                 width: Theme.settings-nav-w - 20px * Theme.ui-scale;
                 height: Theme.row-h-lg;
                 border-radius: 6px * Theme.ui-scale;
@@ -294,7 +296,7 @@ export component InterfacePanel inherits Rectangle {
             }
             VerticalLayout {
                 padding: Theme.sp-10;
-                spacing: Theme.sp-2;
+                spacing: Theme.sp-5;
                 alignment: start;
                 NavItem {
                     icon: "\u{E8B9}"; label: root.lang-en ? "Terminal" : "终端";
@@ -488,8 +490,10 @@ export component InterfacePanel inherits Rectangle {
                     if root.ifd-page == "docker" : DockerPage {
                             lang-en: root.lang-en;
                             docker-auto-discover <=> root.docker-auto-discover;
+                            docker-use-sudo <=> root.docker-use-sudo;
                             reset-page(a0) => { root.reset-page(a0); }
                             set-docker-auto-discover(a0) => { root.set-docker-auto-discover(a0); }
+                            set-docker-use-sudo(a0) => { root.set-docker-use-sudo(a0); }
                     }
 
                     if root.ifd-page == "transfer" : TransferPage {

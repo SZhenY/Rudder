@@ -1,0 +1,393 @@
+//! Docker「概览」页：健康卡 + Docker 服务卡 + 信息监控。
+//!
+//! 健康卡的容器数来自未过滤的容器缓存；镜像 / 网络 / Compose 与存储位置
+//! 在本轮尚未接数据层，统一显示破折号（Rust 侧用 -1 表示未知）。
+//!
+//! 曲线复用 `components/trend_curve.slint`：`commands` 由 Rust 侧的
+//! `smooth_path` 拼好，这里只负责排版与绘制。
+
+import { Theme } from "../theme.slint";
+import { ScrollView } from "std-widgets.slint";
+import { IconText } from "../components/text.slint";
+import { TrendCurve } from "../components/trend_curve.slint";
+import { OverviewCard } from "../components/overview_card.slint";
+import { NetBlock } from "../sidebar_blocks.slint";
+import { ToggleSwitch } from "../settings/chrome/rows.slint";
+
+component DockerCard inherits Rectangle {
+    in property <string> title;
+    in property <bool> healthy: false;
+    in property <bool> show-switch: false;
+    in-out property <bool> switch-on: false;
+    in-out property <bool> switch-enabled: true;
+    callback switch-toggled(bool);
+
+    vertical-stretch: 0;
+    border-radius: Theme.radius-md;
+    background: root.healthy ? Theme.success.with-alpha(0.10) : Theme.bg-elevated;
+    border-width: 1px;
+    border-color: root.healthy ? Theme.success.with-alpha(0.45) : Theme.border-subtle;
+
+    VerticalLayout {
+        padding: Theme.sp-16;
+        spacing: Theme.sp-8;
+        alignment: start;
+
+        HorizontalLayout {
+            spacing: Theme.sp-8;
+            Text {
+                text: root.title;
+                font-size: Theme.fs-lg;
+                font-weight: 600;
+                color: Theme.text-primary;
+                vertical-alignment: center;
+                horizontal-stretch: 1;
+            }
+            if root.show-switch : ToggleSwitch {
+                checked: root.switch-on;
+                interactive: root.switch-enabled;
+                mirror: true;
+                toggled(on) => { root.switch-toggled(on); }
+            }
+        }
+        @children
+    }
+}
+
+component DockerCardRow inherits Rectangle {
+    in property <string> icon;
+    in property <string> text;
+    in property <bool> muted: false;
+
+    height: 20px * Theme.ui-scale;
+    background: transparent;
+    HorizontalLayout {
+        spacing: Theme.sp-8;
+        IconText {
+            text: root.icon;
+            color: root.muted ? Theme.text-muted : Theme.text-secondary;
+            font-size: Theme.fs-sm;
+            vertical-alignment: center;
+        }
+        Text {
+            text: root.text;
+            font-size: Theme.fs-sm;
+            color: root.muted ? Theme.text-muted : Theme.text-secondary;
+            vertical-alignment: center;
+            horizontal-stretch: 1;
+            overflow: elide;
+        }
+    }
+}
+
+export component DockerOverviewPage inherits Rectangle {
+    in property <int> running: -1;
+    in property <int> stopped: -1;
+    in property <int> images: -1;
+    in property <int> networks: -1;
+    in property <int> compose-projects: -1;
+
+    /// running / stopped / unknown
+    in property <string> service-state: "unknown";
+    in property <bool> service-pending: false;
+    in property <string> service-location;
+    in property <string> service-autostart;
+    /// 当前主机的 Docker 权限状态，Rust 侧已翻译。
+    in property <string> permission-text;
+    in property <string> page-status: "idle";
+
+    in property <string> cpu-path;
+    in property <string> mem-path;
+    in property <string> net-up-path;
+    in property <string> net-down-path;
+    in property <bool> stats-ready: false;
+    in property <float> cpu-percent;
+    in property <float> mem-percent;
+    in property <string> net-top-up;
+    in property <string> net-top-down;
+
+    callback toggle-service(bool);
+    callback configure-credentials();
+
+    background: transparent;
+
+    function num(v: int) -> string {
+        return v >= 0 ? "" + v : "—";
+    }
+    function total() -> int {
+        return root.running >= 0 && root.stopped >= 0 ? root.running + root.stopped : -1;
+    }
+    function pct(v: float) -> string {
+        return root.stats-ready ? "" + round(v * 100) + "%" : "—";
+    }
+
+    ScrollView {
+        width: parent.width;
+        height: parent.height;
+        content-width: self.width;
+        content-height: content.preferred-height;
+
+        content := VerticalLayout {
+            padding-left: Theme.sp-20;
+            padding-right: Theme.sp-20;
+            padding-top: Theme.sp-16;
+            padding-bottom: Theme.sp-16;
+            spacing: Theme.sp-16;
+
+            HorizontalLayout {
+                spacing: Theme.sp-16;
+
+                // --- 健康 ---------------------------------------------------
+                Rectangle {
+                    horizontal-stretch: 1.6;
+                    vertical-stretch: 0;
+                    border-radius: Theme.radius-md;
+                    background: Theme.success.with-alpha(0.10);
+                    border-width: 1px;
+                    border-color: Theme.success.with-alpha(0.45);
+
+                    VerticalLayout {
+                        padding: Theme.sp-16;
+                        spacing: Theme.sp-8;
+                        alignment: start;
+
+                        HorizontalLayout {
+                            spacing: Theme.sp-8;
+                            VerticalLayout {
+                                spacing: Theme.sp-4;
+                                Text {
+                                    text: @tr("Healthy");
+                                    font-size: Theme.fs-xl;
+                                    font-weight: 600;
+                                    color: Theme.text-primary;
+                                }
+                                Text {
+                                    text: root.service-state == "running" ? @tr("All services running normally")
+                                        : root.service-state == "stopped" ? @tr("Docker service is stopped")
+                                        : @tr("Service state unknown");
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-secondary;
+                                }
+                            }
+                            Rectangle { horizontal-stretch: 1; }
+                            IconText {
+                                text: "\u{E5CA}";   // check_circle
+                                color: Theme.success.with-alpha(0.35);
+                                font-size: 46px * Theme.ui-zoom;
+                                vertical-alignment: center;
+                            }
+                        }
+                        DockerCardRow {
+                            icon: "\u{E53B}";
+                            text: @tr("Compose") + " " + root.num(root.compose-projects);
+                        }
+                        DockerCardRow {
+                            icon: "\u{E3F4}";
+                            text: @tr("Local images") + " " + root.num(root.images);
+                        }
+                        DockerCardRow {
+                            icon: "\u{E30C}";
+                            text: @tr("Containers") + " " + root.num(root.total())
+                                + " · " + @tr("Running") + " " + root.num(root.running)
+                                + " · " + @tr("Stopped") + " " + root.num(root.stopped);
+                        }
+                    }
+                }
+
+                // --- Docker 服务 --------------------------------------------
+                DockerCard {
+                    horizontal-stretch: 1;
+                    title: @tr("Docker service");
+                    show-switch: true;
+                    switch-on: root.service-state == "running";
+                    switch-enabled: root.service-state != "unknown" && !root.service-pending;
+                    switch-toggled(on) => { root.toggle-service(on); }
+
+                    VerticalLayout {
+                        spacing: Theme.sp-6;
+
+                        Text {
+                            text: root.service-state == "running" ? @tr("Running")
+                                : root.service-state == "stopped" ? @tr("Stopped")
+                                : @tr("Unknown");
+                            font-size: Theme.fs-xs;
+                            color: root.service-state == "running" ? Theme.success
+                                : root.service-state == "stopped" ? Theme.danger : Theme.text-muted;
+                        }
+                        Rectangle {
+                            height: 34px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-subtle;
+                            HorizontalLayout {
+                                padding-left: Theme.sp-10;
+                                padding-right: Theme.sp-10;
+                                spacing: Theme.sp-8;
+                                Text {
+                                    text: @tr("Storage location");
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.service-location != "" ? root.service-location : "—";
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            height: 34px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-subtle;
+                            HorizontalLayout {
+                                padding-left: Theme.sp-10;
+                                padding-right: Theme.sp-10;
+                                spacing: Theme.sp-8;
+                                Text {
+                                    text: @tr("Start on boot");
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                    horizontal-stretch: 1;
+                                }
+                                Text {
+                                    text: root.service-autostart != "" ? root.service-autostart : "—";
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-muted;
+                                    vertical-alignment: center;
+                                }
+                            }
+                        }
+                        Rectangle {
+                            height: 34px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-subtle;
+                            HorizontalLayout {
+                                padding-left: Theme.sp-10;
+                                padding-right: Theme.sp-10;
+                                spacing: Theme.sp-8;
+                                Text {
+                                    text: @tr("Docker permission");
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-secondary;
+                                    vertical-alignment: center;
+                                }
+                                Text {
+                                    text: root.permission-text != "" ? root.permission-text : "—";
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-muted;
+                                    vertical-alignment: center;
+                                    horizontal-alignment: right;
+                                    horizontal-stretch: 1;
+                                    overflow: elide;
+                                }
+                                Rectangle {
+                                    width: 54px * Theme.ui-zoom;
+                                    height: 24px * Theme.ui-zoom;
+                                    y: (parent.height - self.height) / 2;
+                                    border-radius: Theme.radius-sm;
+                                    background: cfg-hit.has-hover ? Theme.state-hover : transparent;
+                                    Text {
+                                        text: @tr("Configure");
+                                        font-size: 10px * Theme.ui-scale;
+                                        color: Theme.accent;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                    cfg-hit := TouchArea {
+                                        mouse-cursor: pointer;
+                                        clicked => { root.configure-credentials(); }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // --- 信息监控 ---------------------------------------------------
+            Text {
+                text: @tr("Info monitoring");
+                font-size: Theme.fs-md;
+                font-weight: 600;
+                color: Theme.text-primary;
+            }
+            if !root.stats-ready : Text {
+                text: @tr("No monitoring data");
+                font-size: Theme.fs-xs;
+                color: Theme.text-muted;
+            }
+
+            // 三张图直接复用运行状态页的卡片与曲线组件，样式与侧栏一致。
+            HorizontalLayout {
+                spacing: Theme.sp-16;
+
+                OverviewCard {
+                    horizontal-stretch: 1;
+                    title: @tr("CPU load");
+                    title-icon: "\u{E30C}";
+                    value: root.pct(root.cpu-percent);
+                    TrendCurve {
+                        chart-height: 110px * Theme.ui-zoom;
+                        commands: root.cpu-path;
+                        tone: Theme.accent;
+                        last: clamp(root.cpu-percent, 0.0, 1.0);
+                    }
+                }
+
+                OverviewCard {
+                    horizontal-stretch: 1;
+                    title: @tr("Memory usage");
+                    title-icon: "\u{E30C}";
+                    value: root.pct(root.mem-percent);
+                    TrendCurve {
+                        chart-height: 110px * Theme.ui-zoom;
+                        commands: root.mem-path;
+                        tone: Theme.success;
+                        last: clamp(root.mem-percent, 0.0, 1.0);
+                    }
+                }
+            }
+
+            OverviewCard {
+                title: @tr("Network");
+                title-icon: "\u{E1AF}";
+                NetBlock {
+                    chart-height: 120px * Theme.ui-zoom;
+                    net-top-up: root.net-top-up;
+                    net-top-down: root.net-top-down;
+                    net-top-path: root.net-down-path;
+                    net-up-path: root.net-up-path;
+                }
+            }
+        }
+    }
+
+    // 没有任何已连接主机时，整页换成空态（上面那些破折号没有意义）。
+    if root.page-status == "no-session" : Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.bg-root;
+        VerticalLayout {
+            alignment: center;
+            spacing: Theme.sp-8;
+            IconText {
+                text: "\u{E30C}";
+                color: Theme.text-muted;
+                font-size: 28px * Theme.ui-zoom;
+                horizontal-alignment: center;
+            }
+            Text {
+                text: @tr("Connect a host on the left first");
+                font-size: Theme.fs-sm;
+                color: Theme.text-muted;
+                horizontal-alignment: center;
+            }
+        }
+    }
+}
