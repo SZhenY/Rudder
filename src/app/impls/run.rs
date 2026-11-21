@@ -121,8 +121,8 @@ pub fn run() -> Result<()> {
     #[cfg(target_os = "linux")]
     set_window_icon(&window);
 
-    // The window defaults to frameless + custom title bar (#119). macOS keeps
-    // its native decorations, so turn the custom bar off there.
+    // 窗口默认无边框 + 自绘标题栏（#119）；macOS 保留原生装饰与红绿灯，
+    // 顶部留白条由 `titlebar-inset` 让出，双击仍走 `win-zoom-toggle` 兜底。
     #[cfg(target_os = "macos")]
     window.set_custom_titlebar(false);
 

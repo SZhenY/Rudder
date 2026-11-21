@@ -140,8 +140,8 @@ export struct SplitterInfo {
 export component AppWindow inherits Window {
     title: "Rudder";
     icon: @image-url("../assets/icon.png");
-    // Frameless when we draw our own title bar (#119); Rust sets custom-titlebar
-    // true on Windows/Linux. Slint maps no-frame → winit set_decorations(false).
+    // 自绘标题栏时无边框（Windows / Linux）；macOS 保留原生装饰与红绿灯。
+    // Slint 的 no-frame → winit set_decorations(false)。
     no-frame: root.custom-titlebar;
     min-width: 960px * Theme.ui-scale;
     min-height: 600px * Theme.ui-scale;
@@ -192,19 +192,19 @@ export component AppWindow inherits Window {
         }
     }
 
-    // Immersive custom title bar (#119). Rust sets `custom-titlebar` true on
-    // Windows/Linux (frameless); macOS keeps native decorations. The callbacks
-    // drive the winit window via Rust.
-    // Default true so the window is frameless from creation (no native-bar flash);
-    // Rust sets it false on macOS, which keeps native decorations.
+    // 自绘标题栏：Windows / Linux 无边框时自己画顶部条，双击 / 拖动 / 关闭由 Rust 回调驱动。
+    // macOS 由 Rust 在建窗后置 false，保留原生装饰与红绿灯（见 run.rs）。
     in-out property <bool> custom-titlebar: true;
     // macOS immersive title bar: Rust makes the native bar transparent and lets
     // content render under it, so we reserve this much space at the top for the
     // traffic-light buttons + a clean drag strip (0 elsewhere). See setup_macos_platform.
-    property <length> titlebar-inset: root.is-mac ? 28px * Theme.ui-scale : 0px;
+    // 自绘标题栏时不留原生交通灯的 28px 空位，原生栏下留 28px。
+    property <length> titlebar-inset:
+        root.is-mac && !root.custom-titlebar ? 28px * Theme.ui-scale : 0px;
     in-out property <bool> window-maximized: false;
     callback win-minimize();
     callback win-maximize-toggle();
+    callback win-zoom-toggle();   // macOS 留白条双击：与 AppKit 的 zoom 去重
     callback win-drag();          // start an OS window-move
     callback win-close();
     callback reset-page(string);   // settings: restore page defaults
@@ -1028,16 +1028,15 @@ export component AppWindow inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // macOS immersive bar: a strip under the native traffic-light buttons.
-        // Frosted like the other panels (bg-panel) so it matches in both themes —
-        // a plain transparent strip would show the raw wallpaper here and look dark
-        // in light mode. Left as a plain reserve (no TouchArea) so macOS's own title
-        // bar keeps handling the window drag in this region.
-    // 已抽成 `ui/titlebar_inset_strip.slint`：纯搬家，状态透传 + 动作转发。
-    // 不转发 `win-maximize-toggle`：这块留白区的双击由 AppKit 直接处理（见
-    // `ui/titlebar_inset_strip.slint` 里的说明 —— 我们再 toggle 一次就是跟系统抢）。
+        // macOS 顶部留白条：TouchArea 接管双击（win-zoom-toggle）与拖动（win-drag）。
+        // 用 bg-panel 铺底，与其他面板一致；透明底会直接露出壁纸，浅色主题下发暗。
+    // 已抽成 `ui/titlebar_inset_strip.slint`：状态透传 + 双击/拖动转发。
+    // 双击走 `win-zoom-toggle`（应用侧兜底）；Rust 侧延迟一拍检查 AppKit 是否
+    // 已经 zoom，避免一次双击切换两次（见 window_chrome.rs）。
     if root.titlebar-inset > 0px : TitlebarInsetStrip {
         titlebar-inset : root.titlebar-inset;
+        drag() => { root.win-drag(); }
+        zoom-toggle() => { root.win-zoom-toggle(); }
     }
 
         // Immersive custom title bar (#119) — only on frameless platforms
