@@ -18,7 +18,7 @@ pub(crate) async fn run_session(
         session.port
     )));
 
-    let config = ssh_client_config();
+    let config = ssh_client_config(&session);
 
     let (mut handle, mut jump_handle) = connect_ssh(
         &session,

@@ -8,24 +8,24 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use slint::{ComponentHandle, ModelRc, VecModel};
+use slint::{ComponentHandle, Model, ModelRc, VecModel};
 
 use i_slint_backend_winit::WinitWindowAccessor as _;
 
 use super::resource_ui::{
-    place_process_window, process_needs_root, request_first_frame,
-    set_process_action_error, sync_proc_theme,
+    place_child_window, process_needs_root, request_first_frame, set_process_action_error,
+    sync_log_metrics, sync_proc_theme,
 };
 use super::settings_window;
 use super::window::schedule_slint_pointer_ungrab;
 use super::AppContext;
-use crate::ui::{
-    AppWindow, ProcRow, ProcWindow, SettingsWindow,
-};
+use crate::ui::{AppWindow, DockerLogWindow, ProcRow, ProcWindow, SettingsWindow};
 
 thread_local! {
     static PROC: RefCell<Option<Rc<ProcWindow>>> = const { RefCell::new(None) };
     static SETTINGS: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
+    /// 容器日志窗：独立系统窗口，固定黑底浅字。
+    static LOG: RefCell<Option<Rc<DockerLogWindow>>> = const { RefCell::new(None) };
     /// 已 hide、等下一轮事件循环 drop 的窗口，按类型一个槽。
     static PENDING: RefCell<HashMap<&'static str, PendingSlot>> = RefCell::new(HashMap::new());
     /// 主窗口弱引用，供关闭子窗口后归还键盘焦点。
@@ -47,11 +47,13 @@ fn refocus_main_window() {
 
 const KIND_PROC: &str = "proc";
 const KIND_SETTINGS: &str = "settings";
+const KIND_LOG: &str = "docker-log";
 
 /// 延迟销毁中的窗口。三种窗口不同型，用枚举装进同一张表。
 enum PendingWindow {
     Proc(Rc<ProcWindow>),
     Settings(Rc<SettingsWindow>),
+    Log(Rc<DockerLogWindow>),
 }
 
 type PendingSlot = Rc<RefCell<Option<PendingWindow>>>;
@@ -85,6 +87,10 @@ pub(super) fn any_visible() -> bool {
             .as_ref()
             .is_some_and(|w| w.window().is_visible())
     }) || PROC.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|w| w.window().is_visible())
+    }) || LOG.with(|slot| {
         slot.borrow()
             .as_ref()
             .is_some_and(|w| w.window().is_visible())
@@ -273,7 +279,7 @@ pub(super) fn show_process(main: &AppWindow, rows: &Rc<VecModel<ProcRow>>, ctx: 
     sync_proc_theme(main, &proc);
     settings_window::resync_if_open(main);
     let _ = proc.show();
-    place_process_window(main, &proc);
+    place_child_window(main, proc.window());
     // 首帧：macOS 上新映射的第二个窗口不会自动产生首次渲染事件，布局是渲染时
     // 惰性计算的 —— 0 / 50 / 200ms 各请求一次。
     request_first_frame(proc.window());
@@ -387,6 +393,149 @@ pub(super) fn release_settings() {
         super::settings_window::forget_handle();
         drop_after_tick(KIND_SETTINGS, PendingWindow::Settings(sw));
         // wgpu 设备随窗口销毁；只回收堆页，主窗口仍可见，不裁剪进程工作集。
+        super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
+        refocus_main_window();
+    }
+}
+
+/// 日志窗弱引用；异步回填时用它，不持有强引用。
+pub(super) fn docker_log_weak() -> slint::Weak<DockerLogWindow> {
+    LOG.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|w| w.as_weak())
+            .unwrap_or_default()
+    })
+}
+
+/// 首次打开日志窗时创建并接好回调；之后（含关闭后一帧内重开）直接复用。
+fn ensure_log(
+    main: &AppWindow,
+    lines: &Rc<VecModel<slint::SharedString>>,
+) -> Option<Rc<DockerLogWindow>> {
+    if let Some(log) = LOG.with(|slot| slot.borrow().clone()) {
+        return Some(log);
+    }
+    if let Some(PendingWindow::Log(log)) = take_pending(KIND_LOG) {
+        LOG.with(|slot| *slot.borrow_mut() = Some(log.clone()));
+        return Some(log);
+    }
+    let log = match DockerLogWindow::new() {
+        Ok(log) => Rc::new(log),
+        Err(err) => {
+            tracing::error!("failed to build docker log window: {err}");
+            return None;
+        }
+    };
+    log.set_custom_titlebar(cfg!(not(target_os = "macos")));
+    super::apply_chrome_on_first_frame(log.as_ref());
+    log.set_lines(ModelRc::from(lines.clone()));
+    log.on_request_close(release_docker_log);
+    log.window().on_close_requested(|| {
+        release_docker_log();
+        slint::CloseRequestResponse::HideWindow
+    });
+    {
+        let weak = log.as_weak();
+        log.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
+        use i_slint_backend_winit::winit::window::ResizeDirection;
+        let weak = log.as_weak();
+        log.on_win_resize_se(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
+        let weak = log.as_weak();
+        let lines = lines.clone();
+        log.on_copy_logs(move || {
+            let text = {
+                let mut out = String::new();
+                for i in 0..lines.row_count() {
+                    if let Some(row) = lines.row_data(i) {
+                        if !out.is_empty() {
+                            out.push('\n');
+                        }
+                        out.push_str(row.as_str());
+                    }
+                }
+                out
+            };
+            let message = if text.is_empty() {
+                crate::i18n::t("日志为空", "No log output")
+            } else {
+                let copy = text;
+                std::thread::spawn(move || super::clipboard_set_text(copy));
+                crate::i18n::t("已复制", "Copied")
+            };
+            if let Some(w) = weak.upgrade() {
+                w.set_status(message.into());
+            }
+        });
+    }
+    sync_log_metrics(main, &log);
+    LOG.with(|slot| *slot.borrow_mut() = Some(log.clone()));
+    Some(log)
+}
+
+/// 打开（或更新）日志窗。已可见时只换内容，不重新居中、不抢焦点。
+pub(super) fn show_docker_log(
+    main: &AppWindow,
+    lines: &Rc<VecModel<slint::SharedString>>,
+    host: &str,
+    container: &str,
+    loading: bool,
+) {
+    let Some(log) = ensure_log(main, lines) else {
+        return;
+    };
+    log.set_host(host.into());
+    log.set_container(container.into());
+    log.set_loading(loading);
+    if loading {
+        log.set_status("".into());
+    }
+    sync_log_metrics(main, &log);
+    if log.window().is_visible() {
+        return;
+    }
+    let _ = log.show();
+    place_child_window(main, log.window());
+    request_first_frame(log.window());
+    let f1 = log.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+        if let Some(w) = f1.upgrade() {
+            request_first_frame(w.window());
+        }
+    });
+    let f2 = log.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
+        if let Some(w) = f2.upgrade() {
+            request_first_frame(w.window());
+        }
+    });
+    log.window().with_winit_window(|ww| ww.focus_window());
+}
+
+/// 关闭日志窗并归还 wgpu 设备；重复调用由 `take()` 幂等吸收。
+pub(super) fn release_docker_log() {
+    let log = LOG.with(|slot| slot.borrow_mut().take());
+    if let Some(log) = log {
+        let _ = log.hide();
+        drop_after_tick(KIND_LOG, PendingWindow::Log(log));
         super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
         refocus_main_window();
     }

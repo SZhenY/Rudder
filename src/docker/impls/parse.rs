@@ -70,6 +70,13 @@ pub(crate) fn parse_logs(stdout: &str, stderr: &str, max_lines: usize) -> (Vec<S
     (lines, truncated)
 }
 
+/// `docker version --format '{{.Server.Version}}'`：取首行，空 / 含空白 / 超长视为未知。
+pub(crate) fn parse_version(stdout: &str) -> Option<String> {
+    let line = stdout.lines().next()?.trim();
+    (!line.is_empty() && line.len() <= 64 && !line.contains(char::is_whitespace))
+        .then(|| line.to_string())
+}
+
 /// `Names` 可能是逗号分隔的多个别名，列表只显示第一个。
 fn first_name(names: &str) -> &str {
     names.split(',').next().unwrap_or("").trim()
@@ -146,5 +153,14 @@ mod tests {
         let (lines, truncated) = parse_logs("only\n", "", 10);
         assert_eq!(lines, vec!["only".to_string()]);
         assert!(!truncated);
+    }
+
+    #[test]
+    fn version_accepts_a_single_token_and_rejects_noise() {
+        assert_eq!(parse_version("27.1.1\n"), Some("27.1.1".to_string()));
+        assert_eq!(parse_version("24.0.7"), Some("24.0.7".to_string()));
+        assert_eq!(parse_version(""), None);
+        assert_eq!(parse_version("  \n"), None);
+        assert_eq!(parse_version("cannot connect to the daemon"), None);
     }
 }

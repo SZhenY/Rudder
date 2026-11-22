@@ -51,6 +51,8 @@ pub fn spawn_sftp(
     session: Session,
     jump: Option<Session>,
     events: UnboundedSender<SessionEvent>,
+    // 启动失败时置位，供 launcher 停止后续自动尝试；None = 无 launcher（急切启动）。
+    failed: Option<std::sync::Arc<AtomicBool>>,
 ) -> SftpHandle {
     let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
     let self_tx = cmd_tx.clone();
@@ -59,7 +61,11 @@ pub fn spawn_sftp(
     // 发的那条 `Close`。
     runtime.spawn(async move {
         if let Err(err) = run_sftp(session, jump, cmd_rx, self_tx, events).await {
-            let _ = events_err.send(SessionEvent::SftpStatus(friendly_sftp_error(&err)));
+            if let Some(failed) = failed.as_ref() {
+                failed.store(true, Ordering::SeqCst);
+            }
+            // 启动失败/超时：通知 UI 停止重试、切回概览并置灰 SFTP 页签。
+            let _ = events_err.send(SessionEvent::SftpUnavailable(friendly_sftp_error(&err)));
         }
     });
     SftpHandle { commands: cmd_tx }
@@ -74,6 +80,26 @@ pub(crate) type SftpPumpStarter =
     Arc<dyn Fn(UnboundedReceiver<SessionEvent>) + Send + Sync + 'static>;
 
 pub(crate) static LAUNCHERS: OnceLock<Mutex<HashMap<String, Arc<SftpLauncher>>>> = OnceLock::new();
+/// 急切启动（面板默认展开）的会话没有 launcher；为重试保留一份「再连一次」的闭包。
+pub(crate) type EagerRetry = std::sync::Arc<dyn Fn() + Send + Sync + 'static>;
+static EAGER_RETRY: OnceLock<Mutex<HashMap<String, EagerRetry>>> = OnceLock::new();
+
+fn eager_retry() -> &'static Mutex<HashMap<String, EagerRetry>> {
+    EAGER_RETRY.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+pub(crate) fn remember_eager_retry(tab_id: &str, retry: EagerRetry) {
+    if let Ok(mut map) = eager_retry().lock() {
+        map.insert(tab_id.to_string(), retry);
+    }
+}
+
+pub(crate) fn forget_eager_retry(tab_id: &str) {
+    if let Ok(mut map) = eager_retry().lock() {
+        map.remove(tab_id);
+    }
+}
+
 /// 面板折叠后待释放的代数：每次折叠 +1，在途定时器只对最新一代生效。
 pub(crate) static RELEASE_GEN: OnceLock<Mutex<HashMap<String, u64>>> = OnceLock::new();
 /// 折叠后闲置多久才断开第二条 SSH 连接；窗口内重新展开会取消。
@@ -106,6 +132,8 @@ pub(crate) struct SftpLauncher {
     pub(crate) connected: AtomicBool,
     pub(crate) wanted: AtomicBool,
     pub(crate) started: AtomicBool,
+    /// 启动失败/超时后置位：不再自动重连，等用户手动重试或会话重连。
+    pub(crate) failed: std::sync::Arc<AtomicBool>,
     pub(crate) pending: Mutex<Option<String>>,
 }
 
@@ -131,6 +159,9 @@ impl SftpLauncher {
     }
 
     pub(crate) fn start(&self) {
+        if self.failed.load(Ordering::SeqCst) {
+            return;
+        }
         if self.started.swap(true, Ordering::SeqCst) {
             return;
         }
@@ -145,7 +176,13 @@ impl SftpLauncher {
         let _ = self.events.send(SessionEvent::SftpStatus(
             t("正在连接文件服务…", "Connecting to the file service…").to_string(),
         ));
-        let handle = spawn_sftp(&self.runtime, session, jump, self.events.clone());
+        let handle = spawn_sftp(
+            &self.runtime,
+            session,
+            jump,
+            self.events.clone(),
+            Some(self.failed.clone()),
+        );
         // 优先用请求里带的路径，其次用面板跟随到的 cwd，最后退回 "."。
         let path = self
             .pending
@@ -185,6 +222,9 @@ impl SftpLauncher {
             connected: AtomicBool::new(self.connected.load(Ordering::SeqCst)),
             wanted: AtomicBool::new(false),
             started: AtomicBool::new(false),
+            failed: std::sync::Arc::new(AtomicBool::new(
+                self.failed.load(Ordering::SeqCst),
+            )),
             pending: Mutex::new(None),
         });
         if let Ok(mut map) = launchers().lock() {
@@ -220,6 +260,7 @@ impl SftpLaunchParams {
             connected: AtomicBool::new(false),
             wanted: AtomicBool::new(false),
             started: AtomicBool::new(false),
+            failed: std::sync::Arc::new(AtomicBool::new(false)),
             pending: Mutex::new(None),
         })
     }
@@ -236,6 +277,29 @@ pub(crate) fn register_sftp_launcher(params: SftpLaunchParams) {
 }
 
 /// 请求某个标签的 SFTP：未启动则启动（等 PTY Connected），已启动则只更新路径。
+/// 手动重试：清掉失败/已启动标记，再发起一次新连接（仍受 30 秒超时约束）。
+pub(crate) fn retry_sftp(tab_id: &str) {
+    cancel_sftp_release(tab_id);
+    let launcher = launchers()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(tab_id).cloned());
+    if let Some(launcher) = launcher {
+        launcher.failed.store(false, Ordering::SeqCst);
+        launcher.started.store(false, Ordering::SeqCst);
+        launcher.want(None);
+        return;
+    }
+    // 急切启动的会话：用登记过的闭包再连一次。
+    let retry = eager_retry()
+        .lock()
+        .ok()
+        .and_then(|map| map.get(tab_id).cloned());
+    if let Some(retry) = retry {
+        retry();
+    }
+}
+
 pub(crate) fn want_sftp(tab_id: &str, path: Option<String>) {
     // 展开面板 / 手动刷新都算"还要用"，撤销尚未触发的延迟断开。
     cancel_sftp_release(tab_id);
@@ -261,6 +325,7 @@ pub(crate) fn sftp_launcher_connected(tab_id: &str) {
 /// 关标签/断线时丢弃 launcher：它持有的 Session 与事件通道一起释放。
 pub(crate) fn forget_sftp_launcher(tab_id: &str) {
     cancel_sftp_release(tab_id);
+    forget_eager_retry(tab_id);
     if let Ok(mut map) = launchers().lock() {
         map.remove(tab_id);
     }

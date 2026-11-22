@@ -35,7 +35,10 @@ export component OverviewCard inherits Rectangle {
     in property <bool> show-proc-button: false;
     callback open-proc();
 
-    vertical-stretch: 0;
+    /// 吸收父布局富余高度（Docker 概览页用）；默认按内容高度。
+    in property <bool> fill-height: false;
+
+    vertical-stretch: root.fill-height ? 1 : 0;
     border-radius: Theme.radius-md;
     background: Theme.bg-elevated;
     border-width: 1px;
@@ -44,7 +47,7 @@ export component OverviewCard inherits Rectangle {
     VerticalLayout {
         padding: Theme.sp-8;
         spacing: Theme.sp-4;
-        alignment: start;
+        alignment: root.fill-height ? stretch : start;
 
         HorizontalLayout {
             spacing: Theme.sp-4;

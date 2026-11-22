@@ -57,4 +57,6 @@ export struct SessionDraft {
     // Id of another saved SSH session to use as a jump host / bastion, or "" for
     // a direct connection (#211).
     jump-session-id: string,
+    // 主机密钥算法；"" = 自动（russh 默认列表），否则是 ssh::HOST_KEY_ALG_IDS 的 id。
+    host-key-alg: string,
 }

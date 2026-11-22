@@ -316,6 +316,9 @@ pub enum SessionEvent {
     /// A directory listing failed (e.g. permission denied): show the message and
     /// stop the panel's loading spinner without disturbing the current view (#112).
     SftpError(String),
+    /// SFTP 启动阶段失败/超时（子系统未开放等）：面板切回概览并置灰页签，
+    /// 等用户手动重试或会话重连后再试。
+    SftpUnavailable(String),
     /// Directory tree structure changed (full rebuild pushed on every toggle).
     SftpTreeUpdate(Vec<RemoteTreeNode>),
     /// File-transfer progress / completion (download or upload).

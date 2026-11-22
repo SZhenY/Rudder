@@ -28,8 +28,9 @@ import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, M
 // `slint::include_modules!` 才会生成对应的 Rust 窗口类型（只 import 不实例化的话，
 // 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
 import { SettingsWindow } from "settings_window.slint";
+import { DockerLogWindow } from "log_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
-export { ProcWindow, SettingsWindow }
+export { ProcWindow, SettingsWindow, DockerLogWindow }
 import { LineEdit, Button, Palette } from "std-widgets.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
 // 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
@@ -91,6 +92,8 @@ export struct TerminalState {
     sftp-entries: [SftpEntry],
     sftp-status: string,
     sftp-loading: bool,
+    // SFTP 启动失败/超时后置灰页签，等手动重试或会话重连再恢复。
+    sftp-disabled: bool,
     sftp-tree-nodes: [SftpTreeNode],
     sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
     sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
@@ -313,11 +316,6 @@ export component AppWindow inherits Window {
     in property <string> docker-cred-test-text;
     in property <bool> docker-cred-test-ok;
     in property <string> docker-pending-id;
-    in property <bool> docker-log-open;
-    in property <bool> docker-log-loading;
-    in property <bool> docker-log-truncated;
-    in property <string> docker-log-title;
-    in property <[string]> docker-log-lines;
     in property <string> docker-action-text;
     in property <bool> docker-action-error;
     // Docker 概览页：统计与 Docker 服务状态（-1 / "unknown" = 尚未采集）。
@@ -330,6 +328,7 @@ export component AppWindow inherits Window {
     in property <bool> docker-service-pending;
     in property <string> docker-service-location;
     in property <string> docker-service-autostart;
+    in property <string> docker-version;
     // 概览页监控曲线（按选中 Docker 主机的 tab_id 取快照）。
     in property <string> docker-cpu-path;
     in property <string> docker-mem-path;
@@ -346,8 +345,6 @@ export component AppWindow inherits Window {
     callback docker-filter-changed(string);
     callback docker-action(string, int);
     callback docker-open-logs(string);
-    callback docker-close-logs();
-    callback docker-copy-logs();
     callback docker-open-terminal(string);
     callback docker-toggle-service(bool);
     callback docker-close-host(string);
@@ -826,6 +823,9 @@ export component AppWindow inherits Window {
     in property <[string]> jump-choices;
     in property <[string]> jump-ids;
     in-out property <int> dialog-jump-index: 0;
+    in property <[string]> host-key-choices;
+    in property <[string]> host-key-ids;
+    in-out property <int> dialog-host-key-index: 0;
     in-out property <string> dialog-kind: "ssh";
     in-out property <string> dialog-serial-port;
     in-out property <string> dialog-baud: "115200";
@@ -956,6 +956,7 @@ export component AppWindow inherits Window {
     callback sftp-upload-clicked(string /* tab-id */, string /* remote-dir */, bool /* folder */);
     // Refresh the current directory listing.
     callback sftp-refresh(string /* tab-id */, string /* path */);
+    callback sftp-retry(string /* tab-id */);
     // Toggle expand/collapse of a tree node (also navigates to that directory).
     callback sftp-tree-expand(string /* tab-id */, string /* path */);
     callback sftp-delete(string /* tab-id */, string /* path */);
@@ -1337,6 +1338,8 @@ export component AppWindow inherits Window {
                         tunnels: term.tunnels;
                         sftp-status: term.sftp-status;
                         sftp-loading: term.sftp-loading;
+                        sftp-disabled: term.sftp-disabled;
+                        sftp-retry() => { root.sftp-retry(term.id); }
                         sftp-tree-nodes: term.sftp-tree-nodes;
                         sftp-transfer-targets: root.tabs;
                         sftp-selected-count: term.sftp-selected-count;
@@ -1571,11 +1574,6 @@ export component AppWindow inherits Window {
                     cred-test-text: root.docker-cred-test-text;
                     cred-test-ok: root.docker-cred-test-ok;
                     pending-id: root.docker-pending-id;
-                    log-open: root.docker-log-open;
-                    log-loading: root.docker-log-loading;
-                    log-truncated: root.docker-log-truncated;
-                    log-title: root.docker-log-title;
-                    log-lines: root.docker-log-lines;
                     action-text: root.docker-action-text;
                     action-error: root.docker-action-error;
                     running: root.docker-running;
@@ -1587,6 +1585,7 @@ export component AppWindow inherits Window {
                     service-pending: root.docker-service-pending;
                     service-location: root.docker-service-location;
                     service-autostart: root.docker-service-autostart;
+                    version: root.docker-version;
                     cpu-path: root.docker-cpu-path;
                     mem-path: root.docker-mem-path;
                     net-up-path: root.docker-net-up-path;
@@ -1617,8 +1616,6 @@ export component AppWindow inherits Window {
                     filter-changed(text) => { root.docker-filter-changed(text); }
                     action(id, kind) => { root.docker-action(id, kind); }
                     open-logs(id) => { root.docker-open-logs(id); }
-                    close-logs() => { root.docker-close-logs(); }
-                    copy-logs() => { root.docker-copy-logs(); }
                     open-terminal(id) => { root.docker-open-terminal(id); }
                     toggle-service(on) => { root.docker-toggle-service(on); }
                     page-status: root.docker-status;
@@ -2044,6 +2041,9 @@ export component AppWindow inherits Window {
         jump-choices: root.jump-choices;
         jump-ids: root.jump-ids;
         draft-jump-index <=> root.dialog-jump-index;
+        host-key-choices: root.host-key-choices;
+        host-key-ids: root.host-key-ids;
+        draft-host-key-index <=> root.dialog-host-key-index;
         draft-kind <=> root.dialog-kind;
         draft-serial-port <=> root.dialog-serial-port;
         draft-baud <=> root.dialog-baud;

@@ -232,12 +232,45 @@ pub(crate) fn start_session_in_tab(tab_id: &str, session: Session, ctx: &Connect
             let sftp_task_runtime = sftp_runtime.clone();
             let sftp_handles = ctx.sftp_handles.clone();
             let sftp_tab_id = tab_id.to_string();
+            // 急切启动没有 launcher：登记一份重试闭包，置灰页签点一下就能再连。
+            let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            {
+                let retry_runtime = ctx.runtime.clone();
+                let retry_handles = ctx.sftp_handles.clone();
+                let retry_session = session.clone();
+                let retry_jump = jump.clone();
+                let retry_events = sftp_tx.clone();
+                let retry_tab = sftp_tab_id.clone();
+                let retry_failed = failed.clone();
+                crate::sftp::remember_eager_retry(
+                    &sftp_tab_id,
+                    std::sync::Arc::new(move || {
+                        let handle = spawn_sftp(
+                            retry_runtime.handle(),
+                            retry_session.clone(),
+                            retry_jump.clone(),
+                            retry_events.clone(),
+                            Some(retry_failed.clone()),
+                        );
+                        if let Ok(mut handles) = retry_handles.lock() {
+                            handles.insert(retry_tab.clone(), handle);
+                        }
+                    }),
+                );
+            }
+            let spawn_failed = failed.clone();
             sftp_runtime.spawn(async move {
                 if ready_rx.await.is_err() {
                     return;
                 }
                 tokio::task::yield_now().await;
-                let sftp_handle = spawn_sftp(sftp_task_runtime.handle(), session, jump, sftp_tx);
+                let sftp_handle = spawn_sftp(
+                    sftp_task_runtime.handle(),
+                    session,
+                    jump,
+                    sftp_tx,
+                    Some(spawn_failed),
+                );
                 if let Ok(mut handles) = sftp_handles.lock() {
                     handles.insert(sftp_tab_id, sftp_handle);
                 }

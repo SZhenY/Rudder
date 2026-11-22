@@ -255,20 +255,6 @@ pub fn run() -> Result<()> {
             }
         });
 
-        let close_logs_weak = window.as_weak();
-        window.on_docker_close_logs(move || {
-            if let Some(w) = close_logs_weak.upgrade() {
-                w.set_docker_log_open(false);
-            }
-        });
-
-        let copy_logs_weak = window.as_weak();
-        window.on_docker_copy_logs(move || {
-            if let Some(w) = copy_logs_weak.upgrade() {
-                super::docker::copy_logs(&w);
-            }
-        });
-
         let filter_weak = window.as_weak();
         window.on_docker_filter_changed(move |text| {
             if let Some(w) = filter_weak.upgrade() {
@@ -602,11 +588,13 @@ pub fn run() -> Result<()> {
         });
     }
 
-    // 侧栏 500ms 定时拉取：刷屏时 UI 线程被终端渲染占满，事件驱动的全量刷新会排
-    // 在渲染任务后面（看起来卡顿）。采集只写 `TabStatus` 快照，这里按固定节奏应用。
+    // 侧栏 + Docker 概览 500ms 定时拉取：刷屏时 UI 线程被终端渲染占满，
+    // 事件驱动的全量刷新会排在渲染任务后面（看起来卡顿）。采集只写
+    // `TabStatus` 快照，这里按固定节奏应用；Docker 容器列表按 10s 节流。
     {
         let weak = window.as_weak();
         let statuses = tab_statuses.clone();
+        let docker_last = Rc::new(Cell::new(std::time::Instant::now()));
         let timer = slint::Timer::default();
         timer.start(
             slint::TimerMode::Repeated,
@@ -614,6 +602,14 @@ pub fn run() -> Result<()> {
             move || {
                 if let Some(w) = weak.upgrade() {
                     refresh_sidebar(&w, &statuses);
+                    // Docker 页可见时：曲线跟快照每拍对齐侧栏，容器列表 10s 一次。
+                    if w.get_nav_page() == 3 {
+                        super::docker::tick_monitor(&w);
+                        if docker_last.get().elapsed() >= std::time::Duration::from_secs(10) {
+                            docker_last.set(std::time::Instant::now());
+                            w.invoke_refresh_docker();
+                        }
+                    }
                 }
             },
         );

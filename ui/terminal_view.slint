@@ -91,6 +91,8 @@ export component TerminalView inherits Rectangle {
     in property <[SftpEntry]> sftp-entries;
     in property <string>  sftp-status: "";
     in property <bool>    sftp-loading: false;
+    // SFTP 启动失败后置灰页签；点击它触发 sftp-retry。
+    in property <bool>    sftp-disabled: false;
     in property <[SftpTreeNode]> sftp-tree-nodes: [];
     in property <[TabInfo]> sftp-transfer-targets: [];
     in property <string> sftp-sort-key: "";
@@ -228,6 +230,7 @@ export component TerminalView inherits Rectangle {
     callback sftp-download(string);
     callback sftp-upload-clicked(string, bool);
     callback sftp-refresh(string);
+    callback sftp-retry();
     callback sftp-tree-expand(string);
     callback sftp-delete(string);
     in property <int> sftp-selected-count;          // checked-entry count (#100)
@@ -1338,6 +1341,8 @@ export component TerminalView inherits Rectangle {
             entries:       root.sftp-entries;
             status:        root.sftp-status;
             loading:       root.sftp-loading;
+            sftp-disabled: root.sftp-disabled;
+            sftp-retry() => { root.sftp-retry(); }
             tree-nodes:    root.sftp-tree-nodes;
             transfer-targets: root.sftp-transfer-targets;
             selected-count: root.sftp-selected-count;

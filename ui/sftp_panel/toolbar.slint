@@ -10,6 +10,8 @@ component PanelTab inherits Rectangle {
     in property <length> tab-width;
     in property <string> glyph;
     in property <string> label;
+    /// 置灰：颜色变淡，但点击仍会上报（父级据此触发重试）。
+    in property <bool> disabled: false;
     callback activate();
 
     width: root.tab-width;
@@ -29,7 +31,8 @@ component PanelTab inherits Rectangle {
     Text {
         text: root.narrow ? root.glyph : root.label;
         font-family: root.narrow ? "Material Icons" : Theme.ui-font-family;
-        color: root.panel-mode == root.mode ? Theme.text-primary : Theme.text-secondary;
+        color: root.disabled ? Theme.text-muted
+            : root.panel-mode == root.mode ? Theme.text-primary : Theme.text-secondary;
         font-size: Theme.fs-xs;
         horizontal-alignment: center;
         vertical-alignment: center;
@@ -42,12 +45,15 @@ export component SftpToolbar inherits Rectangle {
     in-out property <string> panel-mode: "overview";
     in property <bool> collapsed: false;
     in property <int> selected-count: 0;
+    /// SFTP 启动失败后置灰页签，点击改为重试。
+    in property <bool> sftp-disabled: false;
     callback navigate(string);
     callback refresh(string);
     callback upload-clicked(string, bool);
     callback download-selected();
     callback delete-selected();
     callback toggle-collapsed();
+    callback retry-sftp();
 
     // --- 页签几何（唯一来源）---------------------------------------------
     // 宽态 64/48/58、窄态三格等宽 28，间距统一 sp-4。页签宽度、滑块位置、
@@ -174,7 +180,11 @@ export component SftpToolbar inherits Rectangle {
             tab-width: root.tab-w(1, root.narrow-toolbar);
             glyph: "\u{E2C7}";
             label: "SFTP";
-            activate() => { root.panel-mode = "sftp"; }
+            disabled: root.sftp-disabled;
+            activate() => {
+                if (root.sftp-disabled) { root.retry-sftp(); }
+                else { root.panel-mode = "sftp"; }
+            }
         }
         PanelTab {
             mode: "tunnels";

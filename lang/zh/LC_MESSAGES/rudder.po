@@ -435,6 +435,12 @@ msgstr "留空则保持不变"
 msgid "Jump host (optional)"
 msgstr "跳板机（可选）"
 
+msgid "Host key algorithm"
+msgstr "主机密钥算法"
+
+msgid "Auto negotiates the safest algorithm. Restrict this only for legacy servers."
+msgstr "自动会协商最安全的算法；仅老旧服务器才需要手动限定。"
+
 msgid "Tunnel this connection through another saved SSH session."
 msgstr "通过另一个已保存的 SSH 会话作为跳板来连接。"
 
@@ -820,6 +826,9 @@ msgstr "日志"
 msgid "Only the last 200 lines are shown"
 msgstr "仅显示最后 200 行"
 
+msgid "No log output"
+msgstr "暂无日志输出"
+
 msgid "Open terminal"
 msgstr "打开终端"
 
@@ -897,6 +906,9 @@ msgstr "服务状态未知"
 
 msgid "Docker service"
 msgstr "Docker 服务"
+
+msgid "Docker version"
+msgstr "Docker 版本"
 
 msgid "Running"
 msgstr "运行中"

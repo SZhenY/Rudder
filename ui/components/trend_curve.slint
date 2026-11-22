@@ -16,9 +16,13 @@ export component TrendCurve inherits Rectangle {
     /// 末端当前值（0..1）；-1 表示不画圆点（网络图不需要）。
     in property <float> last: -1.0;
     in property <length> chart-height: 44px * Theme.ui-scale;
+    /// 填充父布局富余高度（Docker 概览页用）；默认按 `chart-height` 固定。
+    in property <bool> fill-height: false;
 
-    height: root.chart-height;
-    vertical-stretch: 0;
+    // 非填充：min/max 都锁到 `chart-height`；填充：下限 80px、上限放开并吸收富余。
+    min-height: root.fill-height ? 80px * Theme.ui-scale : root.chart-height;
+    max-height: root.fill-height ? 100000px : root.chart-height;
+    vertical-stretch: root.fill-height ? 1 : 0;
     background: transparent;
     clip: true;
 

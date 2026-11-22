@@ -32,6 +32,9 @@ export component SessionForm inherits VerticalLayout {
     in property <[string]> jump-choices;
     in property <[string]> jump-ids;
     in-out property <int> draft-jump-index: 0;
+    in property <[string]> host-key-choices;
+    in property <[string]> host-key-ids;
+    in-out property <int> draft-host-key-index: 0;
     in-out property <string> draft-serial-port;
     in-out property <string> draft-baud: "115200";
     in-out property <string> draft-data-bits: "8";
@@ -88,6 +91,8 @@ export component SessionForm inherits VerticalLayout {
                 note: root.draft-note,
                 jump-session-id: (root.draft-jump-index > 0 && root.draft-jump-index < root.jump-ids.length)
                 ? root.jump-ids[root.draft-jump-index] : "",
+                host-key-alg: (root.draft-host-key-index > 0 && root.draft-host-key-index < root.host-key-ids.length)
+                ? root.host-key-ids[root.draft-host-key-index] : "",
         };
     }
 
@@ -518,6 +523,22 @@ if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
         text: @tr("Tunnel this connection through another saved SSH session.");
         color: Theme.text-muted;
         font-size: Theme.fs-xs;
+    }
+}
+
+// ── 主机密钥算法（仅 SSH）─────────────────────────────────────
+if root.show-advanced && root.draft-kind == "ssh" : VerticalLayout {
+    spacing: Theme.sp-4;
+    JumpCombo {
+        label: @tr("Host key algorithm");
+        choices: root.host-key-choices;
+        selected-index <=> root.draft-host-key-index;
+    }
+    Text {
+        text: @tr("Auto negotiates the safest algorithm. Restrict this only for legacy servers.");
+        color: Theme.text-muted;
+        font-size: Theme.fs-xs;
+        wrap: word-wrap;
     }
 }
 

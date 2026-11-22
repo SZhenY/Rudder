@@ -34,6 +34,12 @@ thread_local! {
     static REFRESH_CTX: RefCell<Option<RefreshCtx>> = const { RefCell::new(None) };
     /// 最近一次刷新用的资源快照表：概览页的曲线按选中主机的 tab_id 从这里取。
     static LAST_STATUSES: RefCell<Option<TabStatuses>> = const { RefCell::new(None) };
+    /// 概览曲线已应用的 `stats_seq`（按 tab_id）：只有快照变了才重建路径。
+    static APPLIED_MONITOR: RefCell<HashMap<String, u64>> = RefCell::new(HashMap::new());
+    /// 日志行模型：窗口可先开、结果后回填；窗口销毁后模型仍在。
+    static LOG_LINES: RefCell<Option<Rc<VecModel<slint::SharedString>>>> = const { RefCell::new(None) };
+    /// 每次请求 +1，丢弃「切到别的容器之后才回来」的旧结果。
+    static LOG_SEQ: Cell<u64> = const { Cell::new(0) };
     /// 新开标签在 Connected 之前要注入的命令：tab_id -> 命令。
     static PENDING_TERMINAL: RefCell<HashMap<String, String>> = RefCell::new(HashMap::new());
     /// 欢迎页发起的连接：tab_id -> 待打开的主机。连上后由 sync_hosts 消费。
@@ -89,6 +95,8 @@ struct HostRuntime {
     service_up: Option<bool>,
     /// `systemctl is-enabled docker`：None = 未知。
     service_enabled: Option<bool>,
+    /// `docker version` 的 Server.Version；空 = 未采集 / 取不到。
+    docker_version: String,
     service_pending: bool,
     /// 已经弹过的不可用原因；同类原因不重复弹。
     blocker_kind: Option<DockerFailure>,
@@ -157,7 +165,7 @@ pub(crate) fn refresh(
         Some(key)
     });
     if let Some(key) = key {
-        probe_service(window, runtime, handles, &key);
+        probe_service(window, runtime, handles, &key, false);
     }
 }
 
@@ -191,7 +199,7 @@ pub(crate) fn refresh_forced(
         Some(key)
     });
     if let Some(key) = key {
-        probe_service(window, runtime, handles, &key);
+        probe_service(window, runtime, handles, &key, true);
     }
 }
 
@@ -228,7 +236,7 @@ pub(crate) fn select_host(
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
     });
-    probe_service(window, runtime, handles, key);
+    probe_service(window, runtime, handles, key, false);
 }
 
 /// 打开（或聚焦）某台主机的 Docker 标签。欢迎页手动打开走这里。
@@ -274,7 +282,7 @@ pub(crate) fn open_host(
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
     });
-    probe_service(window, runtime, handles, key);
+    probe_service(window, runtime, handles, key, true);
 }
 
 /// 关闭某台主机的 Docker 标签（不影响 SSH 会话）；关掉后阻止自动重开。
@@ -299,7 +307,7 @@ pub(crate) fn close_host(window: &AppWindow, store: &ConfigStore, key: &str) {
                 .cloned()
                 .or_else(|| hub.open.last().cloned());
         }
-        window.set_docker_log_open(false);
+        super::sub_windows::release_docker_log();
         if window.get_docker_blocker_host().as_str() == key {
             clear_blocker(window);
         }
@@ -321,7 +329,7 @@ pub(crate) fn goto_welcome(window: &AppWindow, store: &ConfigStore) {
         hub.welcome_selected = true;
         hub.active = None;
         window.set_docker_active_host("".into());
-        window.set_docker_log_open(false);
+        super::sub_windows::release_docker_log();
         clear_blocker(window);
         clear_view(window, &mut hub);
         refresh_welcome(window, &mut hub, store);
@@ -748,39 +756,73 @@ pub(crate) fn focus_host_terminal(window: &AppWindow, key: &str) {
     window.set_active_tab_id(tab_id.into());
 }
 
-/// 查询 `systemctl is-active / is-enabled docker`；失败只把状态留在「未知」。
+/// 查询 `systemctl is-active / is-enabled docker` 与 `docker version`；失败只把状态留在「未知」。
 ///
 /// 与容器列表刷新分开走：daemon 没起来时 `docker ps` 会失败，但服务状态仍然要能显示。
+/// 版本命令单独发一条并跟随用户设置的提权方式（`probe()` 本身不提权）；
+/// 版本失败只清空版本号，绝不影响在线判定。
 fn probe_service(
     window: &AppWindow,
     runtime: &Arc<Runtime>,
     handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
     key: &str,
+    force_version: bool,
 ) {
-    let (tab_id, generation) = HUB.with(|hub| {
+    let (tab_id, generation, need_version, elev, password) = HUB.with(|hub| {
         let hub = hub.borrow();
-        hub.hosts
-            .get(key)
-            .map_or((None, 0), |h| (Some(h.tab_id.clone()), h.generation))
+        let Some(rt) = hub.hosts.get(key) else {
+            return (None, 0, false, None, None);
+        };
+        let need_version = force_version || rt.docker_version.is_empty();
+        let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+        let password = password_for(rt, &elev);
+        (
+            Some(rt.tab_id.clone()),
+            rt.generation,
+            need_version,
+            Some(elev),
+            password,
+        )
     });
     let Some(tab_id) = tab_id else { return };
     let rx = {
         let hs = handles.borrow();
-        hs.get(&tab_id).map(|handle| {
-            handle.exec(command::probe(), Duration::from_secs(8), 16 * 1024)
-        })
+        hs.get(&tab_id)
+            .map(|handle| handle.exec(command::probe(), Duration::from_secs(8), 16 * 1024))
     };
     let Some(rx) = rx else { return };
+
+    let version_rx = match (need_version, elev) {
+        (true, Some(elev)) => {
+            let cmd = command::version(&elev);
+            let hs = handles.borrow();
+            hs.get(&tab_id).map(|handle| match password {
+                Some(password) => {
+                    handle.exec_privileged(cmd, password, Duration::from_secs(8), 8 * 1024)
+                }
+                None => handle.exec(cmd, Duration::from_secs(8), 8 * 1024),
+            })
+        }
+        _ => None,
+    };
 
     let weak = window.as_weak();
     let key_owned = key.to_string();
     runtime.spawn(async move {
         let Ok(res) = rx.await else { return };
-        if res.timed_out {
-            return;
-        }
-        let probe = command::parse_probe(&res.stdout);
-        if probe.is_empty() {
+        let version_res = match version_rx {
+            Some(rx) => rx.await.ok(),
+            None => None,
+        };
+        let probe = (!res.timed_out)
+            .then(|| command::parse_probe(&res.stdout))
+            .filter(|probe| !probe.is_empty());
+        let version = version_res
+            .as_ref()
+            .filter(|res| !res.timed_out && res.error.is_none() && res.exit_code.unwrap_or(1) == 0)
+            .and_then(|res| parse::parse_version(&res.stdout));
+        // 探测超时且不需要版本时无事可做；需要版本时即使版本取不到也要清掉旧值。
+        if probe.is_none() && !need_version {
             return;
         }
         let _ = slint::invoke_from_event_loop(move || {
@@ -792,10 +834,15 @@ fn probe_service(
                     if rt.generation != generation {
                         return;
                     }
-                    rt.service_up = probe.service_up;
-                    rt.service_enabled = probe.service_enabled;
-                    rt.direct = probe.direct;
-                    rt.sudo_nopass = probe.sudo_nopass;
+                    if let Some(probe) = probe {
+                        rt.service_up = probe.service_up;
+                        rt.service_enabled = probe.service_enabled;
+                        rt.direct = probe.direct;
+                        rt.sudo_nopass = probe.sudo_nopass;
+                    }
+                    if need_version {
+                        rt.docker_version = version.unwrap_or_default();
+                    }
                 }
                 apply_active(&window, &mut hub);
             });
@@ -967,7 +1014,7 @@ pub(crate) fn act(
     run_mutation(window, runtime, handles, key, container_id, mutation);
 }
 
-/// 拉取日志尾部；结果写入日志抽屉模型。失败时把原因写进抽屉，不留「加载中」。
+/// 拉取日志尾部；结果写入独立日志窗的共享模型。失败也写进窗口，不留「加载中」。
 pub(crate) fn fetch_logs(
     window: &AppWindow,
     runtime: &Arc<Runtime>,
@@ -991,7 +1038,24 @@ pub(crate) fn fetch_logs(
         show_action(window, t("容器 ID 非法", "Invalid container id"), true);
         return;
     };
-    let Some(tab_id) = HUB.with(|hub| hub.borrow().hosts.get(key).map(|h| h.tab_id.clone())) else {
+    let Some((tab_id, host_label, container_label)) = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.hosts.get(key).map(|rt| {
+            let host = if rt.title.is_empty() {
+                key.to_string()
+            } else {
+                rt.title.clone()
+            };
+            let container = rt
+                .containers
+                .iter()
+                .find(|c| c.id == container_id)
+                .map(|c| c.name.clone())
+                .filter(|name| !name.is_empty())
+                .unwrap_or_else(|| container_id.to_string());
+            (rt.tab_id.clone(), host, container)
+        })
+    }) else {
         show_action(
             window,
             t("当前主机没有可用的 SSH 会话", "No live SSH session for this host"),
@@ -999,11 +1063,15 @@ pub(crate) fn fetch_logs(
         );
         return;
     };
-    window.set_docker_log_open(true);
-    window.set_docker_log_loading(true);
-    window.set_docker_log_truncated(false);
-    window.set_docker_log_title(container_id.into());
-    window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::<slint::SharedString>::default())));
+
+    let seq = LOG_SEQ.with(|s| {
+        let next = s.get() + 1;
+        s.set(next);
+        next
+    });
+    let model = log_lines_model();
+    model.set_vec(Vec::new());
+    super::sub_windows::show_docker_log(window, &model, &host_label, &container_label, true);
 
     let rx = {
         let hs = handles.borrow();
@@ -1015,22 +1083,32 @@ pub(crate) fn fetch_logs(
         })
     };
     let Some(rx) = rx else {
-        window.set_docker_log_loading(false);
-        show_action(
-            window,
+        if let Some(log) = super::sub_windows::docker_log_weak().upgrade() {
+            log.set_loading(false);
+        }
+        set_log_error(
+            &model,
             t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
-            true,
         );
         return;
     };
-    let weak = window.as_weak();
     runtime.spawn(async move {
         let result = rx.await;
         let _ = slint::invoke_from_event_loop(move || {
-            let Some(window) = weak.upgrade() else { return };
-            window.set_docker_log_loading(false);
+            // 已切到别的容器：丢弃这次结果，避免旧日志覆盖新容器。
+            if LOG_SEQ.with(|s| s.get()) != seq {
+                return;
+            }
+            let model = log_lines_model();
+            let log = super::sub_windows::docker_log_weak().upgrade();
+            if let Some(log) = log.as_ref() {
+                log.set_loading(false);
+            }
             let Ok(res) = result else {
-                set_log_lines(&window, &[t("会话已关闭，无法读取日志", "The session closed; cannot read logs")]);
+                set_log_error(
+                    &model,
+                    t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
+                );
                 return;
             };
             if res.timed_out || res.error.is_some() || res.exit_code.unwrap_or(1) != 0 {
@@ -1038,44 +1116,33 @@ pub(crate) fn fetch_logs(
                     Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
                     mode,
                 );
-                set_log_lines(&window, &[why]);
+                set_log_error(&model, why);
                 return;
             }
             let (lines, truncated) = parse::parse_logs(&res.stdout, &res.stderr, 200);
-            window.set_docker_log_truncated(truncated);
-            window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::from(
-                lines.into_iter().map(slint::SharedString::from).collect::<Vec<_>>(),
-            ))));
+            model.set_vec(
+                lines
+                    .into_iter()
+                    .map(slint::SharedString::from)
+                    .collect::<Vec<_>>(),
+            );
+            if let Some(log) = log.as_ref() {
+                log.set_truncated(truncated);
+            }
         });
     });
 }
 
-fn set_log_lines(window: &AppWindow, lines: &[&str]) {
-    window.set_docker_log_truncated(false);
-    window.set_docker_log_lines(ModelRc::from(Rc::new(VecModel::from(
-        lines
-            .iter()
-            .map(|line| slint::SharedString::from(*line))
-            .collect::<Vec<_>>(),
-    ))));
+fn log_lines_model() -> Rc<VecModel<slint::SharedString>> {
+    LOG_LINES.with(|slot| {
+        slot.borrow_mut()
+            .get_or_insert_with(|| Rc::new(VecModel::default()))
+            .clone()
+    })
 }
 
-/// 复制当前日志抽屉的全部内容。
-pub(crate) fn copy_logs(window: &AppWindow) {
-    let lines = window.get_docker_log_lines();
-    let mut text = String::new();
-    for line in lines.iter() {
-        if !text.is_empty() {
-            text.push('\n');
-        }
-        text.push_str(line.as_str());
-    }
-    if text.is_empty() {
-        show_action(window, t("日志为空", "There is nothing to copy"), true);
-        return;
-    }
-    std::thread::spawn(move || crate::app::clipboard_set_text(text));
-    show_action(window, t("已复制日志", "Logs copied"), false);
+fn set_log_error(model: &Rc<VecModel<slint::SharedString>>, message: &str) {
+    model.set_vec(vec![slint::SharedString::from(message)]);
 }
 
 /// 操作结果条：4 秒后自动清空，序号防止旧定时器清掉新消息。
@@ -1229,10 +1296,10 @@ pub(crate) fn open_terminal(window: &AppWindow, key: &str, container_id: &str) {
             PENDING_TERMINAL.with(|p| p.borrow_mut().insert(id, cmd));
         }
         None => {
-            // 兜底：把命令放进日志抽屉，用户可复制后自己粘贴。
-            window.set_docker_log_open(true);
-            window.set_docker_log_title("docker exec".into());
-            set_log_lines(window, &[cmd.as_str()]);
+            // 兜底：把命令放进日志窗，用户可复制后自己粘贴。
+            let model = log_lines_model();
+            model.set_vec(vec![slint::SharedString::from(cmd.as_str())]);
+            super::sub_windows::show_docker_log(window, &model, "", "docker exec", false);
             show_action(
                 window,
                 t(
@@ -1294,6 +1361,7 @@ fn new_host_runtime(tab_id: &str) -> HostRuntime {
         docker_sudo_password: Secret::default(),
         service_up: None,
         service_enabled: None,
+        docker_version: String::new(),
         service_pending: false,
         blocker_kind: None,
         blocker_dismissed: None,
@@ -1448,7 +1516,7 @@ fn sync_hosts(
     window.set_docker_active_host(hub.active.clone().unwrap_or_default().into());
     rebuild_hosts_model(hub, window);
     if hub.active.is_none() {
-        window.set_docker_log_open(false);
+        super::sub_windows::release_docker_log();
         refresh_welcome(window, hub, store);
     }
 }
@@ -1845,6 +1913,7 @@ fn clear_view(window: &AppWindow, hub: &mut DockerHub) {
     window.set_docker_running(-1);
     window.set_docker_stopped(-1);
     window.set_docker_service_state("unknown".into());
+    window.set_docker_version("".into());
     window.set_docker_service_pending(false);
     window.set_docker_service_autostart("".into());
     clear_monitor(window);
@@ -1892,6 +1961,7 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
         }
         .into(),
     );
+    window.set_docker_version(rt.docker_version.as_str().into());
     window.set_docker_service_pending(rt.service_pending);
     window.set_docker_service_autostart(
         match rt.service_enabled {
@@ -1926,6 +1996,51 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
             .collect::<Vec<_>>(),
     );
     window.set_docker_containers(ModelRc::from(hub.containers_model.clone()));
+}
+
+/// Rust 侧 500ms 驱动：按当前选中 Docker 主机的 tab_id 刷新概览曲线。
+///
+/// 只在 `stats_seq` 变化时重建路径，避免每拍重复 `smooth_path` 与重绘。
+pub(crate) fn tick_monitor(window: &AppWindow) {
+    let tab_id = HUB.with(|hub| {
+        let hub = hub.borrow();
+        hub.active
+            .as_ref()
+            .and_then(|key| hub.hosts.get(key))
+            .map(|rt| rt.tab_id.clone())
+    });
+    let Some(tab_id) = tab_id else {
+        clear_monitor_once(window);
+        return;
+    };
+    let seq = LAST_STATUSES.with(|slot| {
+        slot.borrow().as_ref().and_then(|statuses| {
+            statuses
+                .lock()
+                .ok()
+                .and_then(|map| map.get(&tab_id).map(|st| st.stats_seq))
+        })
+    });
+    let Some(seq) = seq else {
+        clear_monitor_once(window);
+        return;
+    };
+    if APPLIED_MONITOR.with(|m| m.borrow().get(&tab_id).copied() == Some(seq)) {
+        return;
+    }
+    APPLIED_MONITOR.with(|m| {
+        m.borrow_mut().insert(tab_id.clone(), seq);
+    });
+    apply_monitor(window, &tab_id);
+}
+
+/// 只在确实应用过数据时清空一次，避免每拍重复写属性触发重绘。
+fn clear_monitor_once(window: &AppWindow) {
+    let had = APPLIED_MONITOR.with(|m| !m.borrow().is_empty());
+    if had {
+        APPLIED_MONITOR.with(|m| m.borrow_mut().clear());
+        clear_monitor(window);
+    }
 }
 
 /// 概览页的监控曲线：按**选中 Docker 主机自己的 tab_id** 取快照，不能用

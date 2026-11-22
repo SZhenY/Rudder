@@ -435,6 +435,12 @@ msgstr "Leave blank to keep"
 msgid "Jump host (optional)"
 msgstr "Jump host (optional)"
 
+msgid "Host key algorithm"
+msgstr "Host key algorithm"
+
+msgid "Auto negotiates the safest algorithm. Restrict this only for legacy servers."
+msgstr "Auto negotiates the safest algorithm. Restrict this only for legacy servers."
+
 msgid "Tunnel this connection through another saved SSH session."
 msgstr "Tunnel this connection through another saved SSH session."
 
@@ -798,6 +804,9 @@ msgstr "Logs"
 msgid "Only the last 200 lines are shown"
 msgstr "Only the last 200 lines are shown"
 
+msgid "No log output"
+msgstr "No log output"
+
 msgid "Open terminal"
 msgstr "Open terminal"
 
@@ -875,6 +884,9 @@ msgstr "Service state unknown"
 
 msgid "Docker service"
 msgstr "Docker service"
+
+msgid "Docker version"
+msgstr "Docker version"
 
 msgid "Running"
 msgstr "Running"

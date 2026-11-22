@@ -121,6 +121,28 @@ pub(crate) fn jump_candidates(
     )
 }
 
+/// 主机密钥算法下拉：labels / ids 平行数组，index 0 = 自动。
+pub(crate) fn host_key_alg_candidates() -> (ModelRc<SharedString>, ModelRc<SharedString>) {
+    let mut labels: Vec<SharedString> = vec![t("自动（默认）", "Auto (default)").into()];
+    let mut ids: Vec<SharedString> = vec!["".into()];
+    for id in crate::ssh::HOST_KEY_ALG_IDS {
+        labels.push(id.into());
+        ids.push(id.into());
+    }
+    (
+        ModelRc::from(Rc::new(VecModel::from(labels))),
+        ModelRc::from(Rc::new(VecModel::from(ids))),
+    )
+}
+
+/// 已存值 → 下拉索引；空 / 未知 → 0（自动）。
+pub(crate) fn host_key_alg_index(saved: &str) -> i32 {
+    crate::ssh::HOST_KEY_ALG_IDS
+        .iter()
+        .position(|id| *id == saved.trim())
+        .map_or(0, |i| i as i32 + 1)
+}
+
 fn normalized_query(query: &str) -> String {
     query.trim().to_lowercase()
 }
@@ -519,6 +541,7 @@ pub(crate) fn session_from_draft(
         disable_shell_integration: draft.disable_shell_integration,
         note: draft.note.to_string(),
         jump_session_id: draft.jump_session_id.to_string(),
+        host_key_alg: draft.host_key_alg.trim().to_string(),
     }
 }
 

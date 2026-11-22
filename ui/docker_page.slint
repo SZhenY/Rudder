@@ -10,7 +10,6 @@ import { Theme, AnimationSettings } from "theme.slint";
 import { IconText } from "components/text.slint";
 import { StateSurface } from "components/interactive.slint";
 import { DockerHostTab, DockerContainer } from "docker_parts/types.slint";
-import { ActionIcon } from "docker_parts/common.slint";
 import { DockerHostTabs } from "docker_parts/host_tabs.slint";
 import { DockerSideNav } from "docker_parts/side_nav.slint";
 import { DockerOverviewPage } from "docker_parts/overview.slint";
@@ -33,11 +32,6 @@ export component DockerPage inherits Rectangle {
     in property <string> summary;
     in property <bool> page-visible: false;
     in property <string> pending-id;
-    in property <bool> log-open: false;
-    in property <bool> log-loading: false;
-    in property <bool> log-truncated: false;
-    in property <string> log-title;
-    in property <[string]> log-lines;
     in property <string> action-text;
     in property <bool> action-error: false;
     in-out property <string> filter-text;
@@ -57,6 +51,7 @@ export component DockerPage inherits Rectangle {
     in property <bool> service-pending: false;
     in property <string> service-location;
     in property <string> service-autostart;
+    in property <string> version;
 
     in property <string> cpu-path;
     in property <string> mem-path;
@@ -105,8 +100,6 @@ export component DockerPage inherits Rectangle {
     callback filter-changed(string);
     callback action(string /* container id */, int /* 0=start 1=stop 2=restart 3=remove */);
     callback open-logs(string);
-    callback close-logs();
-    callback copy-logs();
     callback open-terminal(string);
     callback toggle-service(bool);
     callback blocker-terminal();
@@ -142,12 +135,8 @@ export component DockerPage inherits Rectangle {
         blur-sink.focus();
     }
 
-    // 有打开的 Docker 标签就轮询；与「自动探索」开关无关（手动打开的标签也要刷新）。
-    Timer {
-        interval: 10s;
-        running: root.page-visible && root.hosts.length > 0;
-        triggered => { root.refresh(); }
-    }
+    // 刷新由 Rust 侧 500ms 定时器统一驱动（曲线跟快照、容器列表 10s 节流），
+    // Slint 侧不再持有轮询定时器，避免两套节奏。
 
     VerticalLayout {
         spacing: 0;
@@ -200,6 +189,7 @@ export component DockerPage inherits Rectangle {
                     service-pending: root.service-pending;
                     service-location: root.service-location;
                     service-autostart: root.service-autostart;
+                    docker-version: root.version;
                     permission-text: root.permission-text;
                     configure-credentials => { root.configure-credentials(root.active-session); }
                     page-status: root.page-status;
@@ -277,61 +267,6 @@ export component DockerPage inherits Rectangle {
                     subtitle: @tr("Docker networks will be listed here in a later release");
                 }
 
-                // --- 日志抽屉（相对内容区，不覆盖左侧导航）----------------
-                if root.log-open : Rectangle {
-                    x: parent.width - self.width;
-                    y: 0px;
-                    width: min(560px * Theme.ui-zoom, parent.width - Theme.sp-16);
-                    height: parent.height;
-                    background: Theme.bg-panel;
-                    border-radius: Theme.radius-md;
-                    // 抽屉空白处也要吃掉点击，否则会穿透到下面的行按钮。
-                    TouchArea { }
-                    VerticalLayout {
-                        padding: Theme.sp-12;
-                        spacing: Theme.sp-8;
-                        HorizontalLayout {
-                            height: 28px * Theme.ui-zoom;
-                            spacing: Theme.sp-4;
-                            Text {
-                                text: root.log-title;
-                                font-size: Theme.fs-sm;
-                                color: Theme.text-primary;
-                                vertical-alignment: center;
-                                horizontal-stretch: 1;
-                                overflow: elide;
-                            }
-                            if root.log-loading : Text {
-                                text: @tr("Loading…");
-                                font-size: Theme.fs-xs;
-                                color: Theme.text-muted;
-                                vertical-alignment: center;
-                            }
-                            ActionIcon { glyph: "\u{E14D}"; clicked => { root.copy-logs(); } }
-                            ActionIcon { glyph: "\u{E5CD}"; clicked => { root.close-logs(); } }
-                        }
-                        Rectangle { height: 1px; background: Theme.border-subtle; }
-                        Flickable {
-                            vertical-stretch: 1;
-                            min-height: 0px;
-                            content-height: log-col.preferred-height;
-                            log-col := VerticalLayout {
-                                for line in root.log-lines : Text {
-                                    text: line;
-                                    font-family: Theme.term-font-family;
-                                    font-size: Theme.fs-xs;
-                                    color: Theme.text-secondary;
-                                    wrap: no-wrap;
-                                }
-                            }
-                        }
-                        if root.log-truncated : Text {
-                            text: @tr("Only the last 200 lines are shown");
-                            font-size: Theme.fs-xs;
-                            color: Theme.text-muted;
-                        }
-                    }
-                }
 
                 // --- 操作结果提示（浮层，相对内容区，不挤压列表）------------
                 if root.action-text != "" : Rectangle {

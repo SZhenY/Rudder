@@ -151,6 +151,7 @@ pub(super) fn wire_session_dialog(window: &AppWindow, ctx: &AppContext, scope: &
                 disable_shell_integration: draft.disable_shell_integration,
                 note: draft.note.to_string(),
                 jump_session_id: draft.jump_session_id.to_string(),
+                host_key_alg: draft.host_key_alg.trim().to_string(),
             };
             {
                 let mut s = store.borrow_mut();

@@ -319,6 +319,14 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 t.sftp_loading = false;
             });
         }
+        SessionEvent::SftpUnavailable(msg) => {
+            // 30 秒仍连不上 / 子系统未开放：停止重试，切回概览并置灰页签。
+            update_terminal(&|t| {
+                t.sftp_status = msg.clone().into();
+                t.sftp_loading = false;
+                t.sftp_disabled = true;
+            });
+        }
         SessionEvent::SftpFileText {
             path,
             name,

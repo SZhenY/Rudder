@@ -766,6 +766,11 @@ pub struct Session {
     #[serde(default = "default_encoding")]
     pub encoding: String,
 
+    /// 主机密钥算法（host key algorithm）；空 = 自动（russh 默认列表）。
+    /// 取值见 `ssh::HOST_KEY_ALG_IDS`，未知值按自动处理；旧配置缺省即自动。
+    #[serde(default)]
+    pub host_key_alg: String,
+
     // --- SSH port forwarding / tunnels (#56) --------------------------------
     /// Tunnels established automatically when this SSH session connects.
     #[serde(default)]
@@ -881,6 +886,7 @@ impl Session {
             parity: default_parity(),
             flow_control: default_flow(),
             encoding: default_encoding(),
+            host_key_alg: String::new(),
             forwards: Vec::new(),
             triggers: Vec::new(),
             disable_shell_integration: false,

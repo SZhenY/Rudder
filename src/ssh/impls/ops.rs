@@ -576,10 +576,12 @@ where
 {
     // Single hop: the jump session itself never goes through another jump.
     // `Box::pin` breaks the async recursion (connect_ssh → jump → connect_ssh).
+    // 每一跳用自己的会话策略：跳板机按跳板会话的算法，目标机按调用方传进来的 config。
+    let jump_config = ssh_client_config(jump);
     let (mut jhandle, mut no_nested) = Box::pin(connect_ssh(
         jump,
         None,
-        config.clone(),
+        jump_config.clone(),
         events,
         trust_unknown_host_key,
     ))
@@ -590,7 +592,7 @@ where
         &mut no_nested,
         jump,
         None,
-        config.clone(),
+        jump_config,
         events,
         trust_unknown_host_key,
     )
@@ -673,9 +675,51 @@ pub(crate) const COMPAT_MAC: &[russh::mac::Name] = &[
     russh::mac::HMAC_SHA1,     // legacy fallback
 ];
 
+/// 会话可选的主机密钥算法；顺序即下拉顺序（UI 在前面再加一项「自动」）。
+pub(crate) const HOST_KEY_ALG_IDS: [&str; 7] = [
+    "ssh-ed25519",
+    "ecdsa-sha2-nistp256",
+    "ecdsa-sha2-nistp384",
+    "ecdsa-sha2-nistp521",
+    "rsa-sha2-512",
+    "rsa-sha2-256",
+    "ssh-rsa",
+];
+
+/// id → russh 算法；空 / 未知 → None（= 自动，走默认列表）。
+pub(crate) fn host_key_alg(id: &str) -> Option<russh::keys::Algorithm> {
+    use russh::keys::{Algorithm, EcdsaCurve};
+    match id.trim() {
+        "ssh-ed25519" => Some(Algorithm::Ed25519),
+        "ecdsa-sha2-nistp256" => Some(Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP256,
+        }),
+        "ecdsa-sha2-nistp384" => Some(Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP384,
+        }),
+        "ecdsa-sha2-nistp521" => Some(Algorithm::Ecdsa {
+            curve: EcdsaCurve::NistP521,
+        }),
+        "rsa-sha2-512" => Some(Algorithm::Rsa {
+            hash: Some(HashAlg::Sha512),
+        }),
+        "rsa-sha2-256" => Some(Algorithm::Rsa {
+            hash: Some(HashAlg::Sha256),
+        }),
+        // 老服务器只认 SHA-1 签名的 ssh-rsa；仅在用户显式选择时启用。
+        "ssh-rsa" => Some(Algorithm::Rsa { hash: None }),
+        _ => None,
+    }
+}
+
 /// SSH 握手参数：保活间隔与算法优先级。终端、跳板机、SFTP 共用同一份，
 /// 避免某条连接漏掉兼容回退（#160 保活、#172 老服务器算法）。
-pub(crate) fn ssh_client_config() -> Arc<client::Config> {
+pub(crate) fn ssh_client_config(session: &Session) -> Arc<client::Config> {
+    // 选了具体主机密钥算法就只放这一个；自动则保持 russh 默认列表。
+    let key = match host_key_alg(&session.host_key_alg) {
+        Some(alg) => std::borrow::Cow::Owned(vec![alg]),
+        None => russh::Preferred::DEFAULT.key,
+    };
     Arc::new(client::Config {
         // Keep idle connections alive (#160). The terminal usually has the
         // resource-monitor channel streaming every 2 s, but with shell
@@ -688,6 +732,7 @@ pub(crate) fn ssh_client_config() -> Arc<client::Config> {
             kex: std::borrow::Cow::Borrowed(COMPAT_KEX),
             cipher: std::borrow::Cow::Borrowed(COMPAT_CIPHER),
             mac: std::borrow::Cow::Borrowed(COMPAT_MAC),
+            key,
             ..russh::Preferred::DEFAULT
         },
         ..<_>::default()
@@ -703,7 +748,7 @@ pub async fn test_session_auth(
     jump: Option<Session>,
     events: UnboundedSender<SessionEvent>,
 ) -> Result<()> {
-    let config = ssh_client_config();
+    let config = ssh_client_config(&session);
     let (mut handle, mut jump_handle) =
         connect_ssh(&session, jump.as_ref(), config.clone(), &events, false).await?;
 

@@ -13,7 +13,7 @@ pub(crate) async fn run_sftp(
 
     // Open a dedicated SSH connection for SFTP. Share the terminal's config so
     // keepalive (#160) and legacy algorithm fallbacks (#172) can't drift apart.
-    let config = crate::ssh::ssh_client_config();
+    let config = crate::ssh::ssh_client_config(&session);
 
     let addr = format!("{}:{}", session.host, session.port);
     // Isolate external-editor files by connection and keep the server in the
@@ -33,45 +33,57 @@ pub(crate) async fn run_sftp(
     // end of the function; `_`-prefixed so it isn't flagged unused.
     let mut _jump_keepalive;
     // Tunnel through an SSH jump host (#211), the same proxy as the shell (#7),
-    // or connect directly.
-    let mut handle = match &jump {
-        Some(j) => {
-            let (h, jh) = crate::ssh::connect_target_via_jump(
-                j,
-                &session.host,
-                session.port,
-                config.clone(),
-                sftp_handler(&session, &events),
-                &events,
-                // SFTP 在 shell 连上之后才连，主机密钥那时已被记住。
-                false,
-            )
-            .await
-            .with_context(|| format!("sftp connect {} via jump failed", addr))?;
-            _jump_keepalive = Some(jh);
-            h
-        }
-        None => {
-            _jump_keepalive = None;
-            match crate::ssh::proxy::resolve_session(&session)? {
-                Some(p) => {
-                    let stream = crate::ssh::proxy::connect(&p, &session.host, session.port)
-                        .await
-                        .with_context(|| format!("sftp proxy connect {} failed", addr))?;
-                    client::connect_stream(config.clone(), stream, sftp_handler(&session, &events))
-                        .await
-                        .with_context(|| format!("sftp connect {} failed", addr))?
+    // or connect directly. 30 秒内建不上就放弃（老旧设备 / 网关卡住时不再无限等待）。
+    let (mut handle, keepalive) = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        async {
+            match &jump {
+                Some(j) => {
+                    let (h, jh) = crate::ssh::connect_target_via_jump(
+                        j,
+                        &session.host,
+                        session.port,
+                        config.clone(),
+                        sftp_handler(&session, &events),
+                        &events,
+                        // SFTP 在 shell 连上之后才连，主机密钥那时已被记住。
+                        false,
+                    )
+                    .await
+                    .with_context(|| format!("sftp connect {} via jump failed", addr))?;
+                    Ok::<_, anyhow::Error>((h, Some(jh)))
                 }
-                None => client::connect(
-                    config.clone(),
-                    addr.as_str(),
-                    sftp_handler(&session, &events),
-                )
-                .await
-                .with_context(|| format!("sftp connect {} failed", addr))?,
+                None => match crate::ssh::proxy::resolve_session(&session)? {
+                    Some(p) => {
+                        let stream = crate::ssh::proxy::connect(&p, &session.host, session.port)
+                            .await
+                            .with_context(|| format!("sftp proxy connect {} failed", addr))?;
+                        let h = client::connect_stream(
+                            config.clone(),
+                            stream,
+                            sftp_handler(&session, &events),
+                        )
+                        .await
+                        .with_context(|| format!("sftp connect {} failed", addr))?;
+                        Ok((h, None))
+                    }
+                    None => {
+                        let h = client::connect(
+                            config.clone(),
+                            addr.as_str(),
+                            sftp_handler(&session, &events),
+                        )
+                        .await
+                        .with_context(|| format!("sftp connect {} failed", addr))?;
+                        Ok((h, None))
+                    }
+                },
             }
-        }
-    };
+        },
+    )
+    .await
+    .map_err(|_| anyhow!(t("SFTP 连接超时（30 秒）", "SFTP connect timed out (30s)")))??;
+    _jump_keepalive = keepalive;
 
     // Resolve missing username/password (shares the shell's prompt; the UI
     // de-dupes by session id so SFTP doesn't prompt a second time) (#110).
@@ -183,17 +195,27 @@ pub(crate) async fn run_sftp(
     }
 
     // --- Open the sftp subsystem channel -----------------------------------
-    let channel = handle
-        .channel_open_session()
-        .await
-        .context("open sftp channel")?;
-    channel
-        .request_subsystem(true, "sftp")
-        .await
-        .context("request sftp subsystem")?;
-    let sftp = SftpSession::new(channel.into_stream())
-        .await
-        .context("sftp handshake")?;
+    // subsystem 被禁用或对端不响应时这里会一直挂着；30 秒后明确失败并回退。
+    let sftp = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let channel = handle
+            .channel_open_session()
+            .await
+            .context("open sftp channel")?;
+        channel
+            .request_subsystem(true, "sftp")
+            .await
+            .context("request sftp subsystem")?;
+        SftpSession::new(channel.into_stream())
+            .await
+            .context("sftp handshake")
+    })
+    .await
+    .map_err(|_| {
+        anyhow!(t(
+            "SFTP 子系统 30 秒无响应：服务器可能未开放 SFTP",
+            "SFTP subsystem did not respond within 30s — the server may not allow SFTP"
+        ))
+    })??;
     // Share the session + connection so transfers can run on their own task,
     // leaving the command loop free to list/switch directories meanwhile (#116-2).
     let sftp = std::sync::Arc::new(sftp);

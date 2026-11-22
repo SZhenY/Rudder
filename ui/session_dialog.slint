@@ -37,6 +37,10 @@ export component SessionDialog inherits Rectangle {
     in property <[string]> jump-choices;
     in property <[string]> jump-ids;
     in-out property <int> draft-jump-index: 0;
+    // 主机密钥算法：labels / ids 平行数组，index 0 = 自动。
+    in property <[string]> host-key-choices;
+    in property <[string]> host-key-ids;
+    in-out property <int> draft-host-key-index: 0;
     in-out property <string> draft-serial-port;
     in-out property <string> draft-baud: "115200";
     in-out property <string> draft-data-bits: "8";
@@ -167,6 +171,9 @@ export component SessionDialog inherits Rectangle {
                 draft-proxy-password <=> root.draft-proxy-password;
                 draft-group <=> root.draft-group;
                 draft-jump-index <=> root.draft-jump-index;
+                draft-host-key-index <=> root.draft-host-key-index;
+                host-key-choices: root.host-key-choices;
+                host-key-ids: root.host-key-ids;
                 draft-serial-port <=> root.draft-serial-port;
                 draft-baud <=> root.draft-baud;
                 draft-data-bits <=> root.draft-data-bits;

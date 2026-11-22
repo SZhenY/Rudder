@@ -173,6 +173,12 @@ pub(crate) fn exec_shell(id: &str, elev: &Elevation) -> Result<String, ()> {
     Ok(wrap(elev, &format!("docker exec -it -- {id} sh")))
 }
 
+/// Docker 服务端版本；daemon 未启动 / 无权限时输出为空，调用方按「未知」处理。
+/// 单独一条命令是因为 `probe()` 不带提权，仅 sudo 可用的主机会永远取不到版本。
+pub(crate) fn version(elev: &Elevation) -> String {
+    wrap(elev, "docker version --format '{{.Server.Version}}'")
+}
+
 /// 一次探测：服务状态 / 开机自启 / 能否直连 docker / 是否有免密 sudo。
 ///
 /// 全部用标记行走，解析不依赖行序；`docker ps` 只用于判断直连能力，daemon

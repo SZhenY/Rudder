@@ -204,10 +204,12 @@ export component NetGraph inherits VerticalLayout {
     in property <string> path;
     /// 上行（tx）曲线；`path` 是下行（rx）。
     in property <string> up-path;
+    /// 填充父布局富余高度（Docker 概览页用）；默认按 `chart-height` 固定。
+    in property <bool> fill-height: false;
 
     // Stay at preferred height; without this the inherited VerticalLayout grabs
     // a stretch share of the status page and balloons the sparkline into blank space.
-    vertical-stretch: 0;
+    vertical-stretch: root.fill-height ? 1 : 0;
     spacing: Theme.sp-3;
 
     HorizontalLayout {
@@ -244,6 +246,7 @@ export component NetGraph inherits VerticalLayout {
     // 两条都是半透明填充，视觉上就是同一坐标系里的两条函数曲线。
     TrendCurve {
         chart-height: root.chart-height;
+        fill-height: root.fill-height;
         commands: root.path;
         tone: Theme.accent;
         second-commands: root.up-path;
@@ -258,10 +261,13 @@ export component NetBlock inherits VerticalLayout {
     in property <string> net-top-down;
     in property <string> net-top-path;
     in property <string> net-up-path;
-    vertical-stretch: 0;
+    /// 填充父布局富余高度（Docker 概览页用）；默认按 `chart-height` 固定。
+    in property <bool> fill-height: false;
+    vertical-stretch: root.fill-height ? 1 : 0;
     spacing: Theme.sp-6;
     NetGraph {
         chart-height: root.chart-height;
+        fill-height: root.fill-height;
         up-text: root.net-top-up; down-text: root.net-top-down; path: root.net-top-path;
         up-path: root.net-up-path;
     }

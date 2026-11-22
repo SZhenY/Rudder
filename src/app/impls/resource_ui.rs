@@ -293,7 +293,7 @@ pub(super) fn request_first_frame(w: &slint::Window) {
     w.request_redraw();
 }
 
-pub(super) fn place_process_window(main: &AppWindow, process: &ProcWindow) {
+pub(super) fn place_child_window(main: &AppWindow, target: &slint::Window) {
     use i_slint_backend_winit::winit::dpi::PhysicalPosition;
 
     let monitor = main
@@ -304,12 +304,19 @@ pub(super) fn place_process_window(main: &AppWindow, process: &ProcWindow) {
     let origin = monitor.position();
     let monitor_size = monitor.size();
 
-    process.window().with_winit_window(|ww| {
+    target.with_winit_window(|ww| {
         let window_size = ww.outer_size();
         let x = origin.x + monitor_size.width.saturating_sub(window_size.width) as i32 / 2;
         let y = origin.y + monitor_size.height.saturating_sub(window_size.height) as i32 / 2;
         ww.set_outer_position(PhysicalPosition::new(x, y));
     });
+}
+
+/// 日志窗只同步尺寸与等宽字体，配色固定（黑底浅字）。
+pub(super) fn sync_log_metrics(main: &AppWindow, log: &crate::ui::DockerLogWindow) {
+    let t = main.global::<Theme>();
+    log.set_ui_scale(t.get_ui_scale());
+    log.set_term_font(t.get_term_font_family());
 }
 
 /// 设置窗口居中：优先与主窗口同心，主窗口贴边放不下时退回屏幕正中。

@@ -660,6 +660,7 @@ mod connect_failure_tests {
 #[cfg(test)]
 mod client_config_tests {
     use super::super::{COMPAT_CIPHER, COMPAT_KEX, COMPAT_MAC, ssh_client_config};
+    use crate::config::Session;
 
     /// russh 0.65 的默认 MAC 去掉了 SHA-1（0.49 有）。兼容表必须自带 SHA-1，
     /// 且排在最后；同时确认这份表真的被送到 Config，而不只是定义着。
@@ -675,7 +676,7 @@ mod client_config_tests {
                 .any(|k| k.as_ref() == "diffie-hellman-group1-sha1")
         );
 
-        let config = ssh_client_config();
+        let config = ssh_client_config(&Session::new_empty());
         assert_eq!(config.preferred.mac.as_ref(), COMPAT_MAC);
         assert_eq!(config.preferred.kex.as_ref(), COMPAT_KEX);
         assert_eq!(config.preferred.cipher.as_ref(), COMPAT_CIPHER);
@@ -683,5 +684,38 @@ mod client_config_tests {
             config.keepalive_interval,
             Some(std::time::Duration::from_secs(30))
         );
+    }
+
+    /// 选了具体主机密钥算法时只能剩一项；自动 / 未知值回落到默认列表。
+    #[test]
+    fn host_key_alg_restricts_preferred_key() {
+        use crate::config::Session;
+        use russh::keys::{Algorithm, HashAlg};
+
+        let mut session = Session::new_empty();
+
+        session.host_key_alg = "rsa-sha2-512".into();
+        let config = ssh_client_config(&session);
+        assert_eq!(config.preferred.key.len(), 1);
+        assert_eq!(
+            config.preferred.key[0],
+            Algorithm::Rsa {
+                hash: Some(HashAlg::Sha512)
+            }
+        );
+
+        session.host_key_alg = "ssh-rsa".into();
+        let config = ssh_client_config(&session);
+        assert_eq!(config.preferred.key.len(), 1);
+        assert_eq!(config.preferred.key[0], Algorithm::Rsa { hash: None });
+
+        for auto in ["", "not-an-algorithm"] {
+            session.host_key_alg = auto.into();
+            let config = ssh_client_config(&session);
+            assert_eq!(
+                config.preferred.key.as_ref(),
+                russh::Preferred::DEFAULT.key.as_ref()
+            );
+        }
     }
 }

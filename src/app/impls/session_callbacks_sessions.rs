@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::app::{host_key_alg_candidates, host_key_alg_index};
+
 pub(super) fn wire_session_list(window: &AppWindow, ctx: &AppContext, scope: &SessionEditScope) {
     let AppContext {
         store,
@@ -58,6 +60,10 @@ pub(super) fn wire_session_list(window: &AppWindow, ctx: &AppContext, scope: &Se
                 w.set_jump_choices(jump_labels);
                 w.set_jump_ids(jump_ids);
                 w.set_dialog_jump_index(jump_idx);
+                let (hk_labels, hk_ids) = host_key_alg_candidates();
+                w.set_host_key_choices(hk_labels);
+                w.set_host_key_ids(hk_ids);
+                w.set_dialog_host_key_index(host_key_alg_index(&session.host_key_alg));
                 w.set_dialog_group(session.group.clone().into());
                 w.set_dialog_kind(session.kind.as_str().into());
                 w.set_dialog_serial_port(session.serial_port.clone().into());

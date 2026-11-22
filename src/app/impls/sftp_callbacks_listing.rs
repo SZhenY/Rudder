@@ -260,4 +260,26 @@ pub(super) fn wire_sftp_listing(window: &AppWindow, ctx: &AppContext) {
             clear_sftp_selection(tm, tab_id.as_str());
         });
     }
+
+    // 置灰的 SFTP 页签被点击：清掉失败状态，重新发起一次尝试（仍受 30 秒超时约束）。
+    {
+        let weak = window.as_weak();
+        window.on_sftp_retry(move |tab_id: SharedString| {
+            let tab_id = tab_id.to_string();
+            if let Some(w) = weak.upgrade()
+                && let Some(tm) = w
+                    .get_terminals()
+                    .as_any()
+                    .downcast_ref::<VecModel<TerminalState>>()
+            {
+                update_terminal_row(tm, &tab_id, |row| {
+                    row.sftp_disabled = false;
+                    row.sftp_loading = true;
+                    row.sftp_status =
+                        crate::i18n::t("SFTP 连接中...", "SFTP connecting...").into();
+                });
+            }
+            crate::sftp::retry_sftp(&tab_id);
+        });
+    }
 }
