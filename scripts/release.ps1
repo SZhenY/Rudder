@@ -188,11 +188,14 @@ if ($DryRun) {
         Write-Host "CHANGELOG: 已存在 [$version] 小节，跳过"
     } else {
         # 正式版 / 预发布版：把 [Unreleased] 提升为这一版，再留一个新的空 [Unreleased]。
+        # Windows 工作区是 CRLF，行尾的 `\r` 会让 `$` 锚点失配（它只认 `\n`），
+        # 所以显式吃掉行尾空白与 `\r`，并沿用原文件的换行符。
         $date = Get-Date -Format 'yyyy-MM-dd'
+        $nl = if ($changelog.Contains("`r`n")) { "`r`n" } else { "`n" }
         $newChangelog = [regex]::Replace(
             $changelog,
-            '(?m)^## \[Unreleased\]$',
-            "## [Unreleased]`n`n## [$version] - $date",
+            '(?m)^## \[Unreleased\][ \t]*\r?$',
+            "## [Unreleased]$nl$nl## [$version] - $date",
             1
         )
         if ($newChangelog -eq $changelog) {
