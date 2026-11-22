@@ -5,6 +5,8 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ## [Unreleased]
 
+## [0.8.3-beta1] - 2026-11-22
+
 ### 新增 / Added
 
 - Docker 页按 user@host 分主机标签：容器列表支持搜索、启动 / 停止 / 重启、日志、进入容器终端与删除；设置 › Docker 可关闭「连接后自动探索」，Docker 页可见时每 10 秒刷新。
