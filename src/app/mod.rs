@@ -164,7 +164,7 @@ pub(crate) use pane_layout::{
 };
 pub(crate) use window_geometry::{
     center_window, handle_file_drop, handle_macos_terminal_wheel,
-    place_main_window_before_show,
+    place_main_window_before_show, place_window_centered,
 };
 
 #[path = "impls/render_tickets.rs"]

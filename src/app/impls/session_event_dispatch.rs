@@ -306,6 +306,9 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 t.sftp_path = path.clone().into();
                 t.sftp_entries = model.clone();
                 t.sftp_loading = false;
+                // 拿到目录说明 SFTP 已就绪：之前无论标记为可重试还是不支持，都清掉。
+                t.sftp_failed = false;
+                t.sftp_disabled = false;
             });
         }
         SessionEvent::SftpStatus(msg) => {
@@ -319,12 +322,25 @@ pub(crate) fn apply_session_event_to_window<'a>(
                 t.sftp_loading = false;
             });
         }
-        SessionEvent::SftpUnavailable(msg) => {
-            // 30 秒仍连不上 / 子系统未开放：停止重试，切回概览并置灰页签。
+        SessionEvent::SftpUnavailable { kind, message } => {
+            // 按失败类型决定入口：主机没有 SFTP 才置灰页签，网络/认证失败保留
+            // 可重试入口；用户取消不算失败。
             update_terminal(&|t| {
-                t.sftp_status = msg.clone().into();
+                t.sftp_status = message.clone().into();
                 t.sftp_loading = false;
-                t.sftp_disabled = true;
+                match kind {
+                    crate::ssh::SftpFailureKind::Cancelled => {
+                        t.sftp_failed = false;
+                    }
+                    crate::ssh::SftpFailureKind::Unsupported => {
+                        t.sftp_failed = true;
+                        t.sftp_disabled = true;
+                    }
+                    crate::ssh::SftpFailureKind::Temporary => {
+                        t.sftp_failed = true;
+                        t.sftp_disabled = false;
+                    }
+                }
             });
         }
         SessionEvent::SftpFileText {

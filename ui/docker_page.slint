@@ -101,6 +101,12 @@ export component DockerPage inherits Rectangle {
     callback action(string /* container id */, int /* 0=start 1=stop 2=restart 3=remove */);
     callback open-logs(string);
     callback open-terminal(string);
+    /// 复制容器短 ID（12 位）。
+    callback copy-id(string);
+    /// 复制容器名。
+    callback copy-name(string);
+    /// 打开端口映射窗口。
+    callback open-ports(string);
     callback toggle-service(bool);
     callback blocker-terminal();
     callback blocker-settings();
@@ -223,6 +229,9 @@ export component DockerPage inherits Rectangle {
                     action(id, kind) => { root.action(id, kind); }
                     open-logs(id) => { root.open-logs(id); }
                     open-terminal(id) => { root.open-terminal(id); }
+                    copy-id(id) => { root.copy-id(id); }
+                    copy-name(name) => { root.copy-name(name); }
+                    open-ports(id) => { root.open-ports(id); }
                     request-remove(id) => { root.confirm-remove-id = id; }
                 }
 

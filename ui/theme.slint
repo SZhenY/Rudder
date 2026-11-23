@@ -91,6 +91,12 @@ export global Theme {
     // Settings dialog: 20% less transparent than the other panels so its dense
     // grey labels stay legible even at a low wallpaper overlay (user request).
     out property <brush> bg-panel-strong: frost(base-bg-panel, min(1.0, root.panel-alpha + 0.20));
+    // 弹层：小面积、可读性优先，透明度设下限，避免透出背后表单。
+    out property <brush> bg-popup:   frost(base-bg-elevated, max(0.95, root.panel-alpha));
+    // 表单控件承载面（输入框 / 分段按钮）：同样保底，避免低 alpha 时彻底透明。
+    out property <brush> bg-control: frost(base-bg-panel,    max(0.88, root.panel-alpha));
+    // 阅读型子窗（日志 / 端口映射）的正文底：不透明度下限 0.90，壁纸再透也不压字。
+    out property <brush> bg-reading: frost(base-bg-panel,    max(0.90, root.panel-alpha));
 
     // 主题色淡底：hover 与「这个面板正开着」这类常亮态共用这一档；选中比它更深
     //（见下面的 state-* 层）。

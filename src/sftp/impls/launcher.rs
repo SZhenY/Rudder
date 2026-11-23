@@ -1,5 +1,7 @@
 use super::*;
 
+use crate::ssh::SftpFailureKind;
+
 // ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
@@ -10,22 +12,26 @@ use super::*;
 /// and requests the `sftp` subsystem. Events (directory listings, progress,
 /// errors) are sent back via `events`, which is the same sender used by the
 /// terminal's shell session.
-/// Turn an SFTP-worker failure into a status-bar message.
+/// 把 SFTP 启动错误分成三类，并给出用户文案。
 ///
-/// SFTP runs on its own SSH connection, fully separate from the shell PTY, so
-/// when it can't connect the terminal keeps working — we just surface why in the
-/// SFTP panel. The common bastion/jump-host case is "shell is allowed but the
-/// `sftp` subsystem is not", which shows up as a failed subsystem request /
-/// channel / handshake (or an explicit "permission denied"). For that family we
-/// give a plain-language hint instead of the raw russh error (#190).
-pub(crate) fn friendly_sftp_error(err: &anyhow::Error) -> String {
+/// SFTP 走独立 SSH 连接，失败不影响终端。这里需要区分「主机确实没有 sftp
+/// 子系统」（置灰页签、说明能力缺失）与「网络/认证等可重试失败」（保留入口、
+/// 显示重试）；用户关掉凭据弹窗属于取消，不是失败。
+pub(crate) fn classify_sftp_error(err: &anyhow::Error) -> (SftpFailureKind, String) {
     let chain = err
         .chain()
         .map(|e| e.to_string().to_lowercase())
         .collect::<Vec<_>>()
         .join(" | ");
-    let permission_like = [
+    if chain.contains("login cancelled") || chain.contains("已取消登录") {
+        return (
+            SftpFailureKind::Cancelled,
+            t("已取消登录", "Login cancelled").to_string(),
+        );
+    }
+    let unsupported = [
         "subsystem",      // server refused the `sftp` subsystem request
+        "子系统",          // 中文超时文案
         "sftp channel",   // channel_open_session refused
         "sftp handshake", // subsystem opened but no SFTP server behind it
         "permission",
@@ -35,15 +41,23 @@ pub(crate) fn friendly_sftp_error(err: &anyhow::Error) -> String {
     ]
     .iter()
     .any(|k| chain.contains(k));
-    if permission_like {
-        t(
-            "SFTP 不可用,请检查是否有访问权限(服务器可能未开放 SFTP)",
-            "SFTP unavailable — check whether you have permission (server may not allow SFTP)",
-        )
-        .to_string()
-    } else {
-        format!("{}: {err:#}", t("SFTP 错误", "SFTP error"))
+    if unsupported {
+        return (
+            SftpFailureKind::Unsupported,
+            t(
+                "该主机未开放 SFTP 子系统，文件管理不可用；终端不受影响。",
+                "This host does not allow the SFTP subsystem — file management is unavailable; the terminal is unaffected.",
+            )
+            .to_string(),
+        );
     }
+    (
+        SftpFailureKind::Temporary,
+        format!(
+            "{}: {err:#}",
+            t("SFTP 连接失败", "SFTP connection failed")
+        ),
+    )
 }
 
 pub fn spawn_sftp(
@@ -64,8 +78,9 @@ pub fn spawn_sftp(
             if let Some(failed) = failed.as_ref() {
                 failed.store(true, Ordering::SeqCst);
             }
-            // 启动失败/超时：通知 UI 停止重试、切回概览并置灰 SFTP 页签。
-            let _ = events_err.send(SessionEvent::SftpUnavailable(friendly_sftp_error(&err)));
+            // 启动失败/超时：带上分类，UI 据此决定置灰页签还是显示可重试错误。
+            let (kind, message) = classify_sftp_error(&err);
+            let _ = events_err.send(SessionEvent::SftpUnavailable { kind, message });
         }
     });
     SftpHandle { commands: cmd_tx }

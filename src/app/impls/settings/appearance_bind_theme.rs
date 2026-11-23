@@ -54,11 +54,8 @@ pub(super) fn wire_theme(window: &AppWindow, store: &Store, bufs: &TermBuffers) 
             let cursor = store.borrow().terminal_cursor_color().to_string();
             crate::app::settings::terminal::apply_cursor_color(&w, &cursor);
             w.set_accent_mode(normalized.into());
-            if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
-                sync_proc_theme(&w, &p);
-            }
-            // 设置窗也要同步；不能放进上面的 if let。
-            crate::app::settings_window::resync_if_open(&w);
+            // 设置窗 + 进程 / 日志 / 端口窗统一跟随。
+            super::refresh_sub_windows(&w);
         });
     }
 
@@ -90,6 +87,7 @@ pub(super) fn wire_theme(window: &AppWindow, store: &Store, bufs: &TermBuffers) 
             // 主题色变了 → 光标若在「跟随」应同步到新主题色（显式选过的保持不变）。
             let cursor = store.borrow().terminal_cursor_color().to_string();
             crate::app::settings::terminal::apply_cursor_color(&w, &cursor);
+            super::refresh_sub_windows(&w);
             true
         });
     }

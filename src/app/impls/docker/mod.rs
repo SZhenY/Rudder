@@ -36,8 +36,8 @@ thread_local! {
     static LAST_STATUSES: RefCell<Option<TabStatuses>> = const { RefCell::new(None) };
     /// 概览曲线已应用的 `stats_seq`（按 tab_id）：只有快照变了才重建路径。
     static APPLIED_MONITOR: RefCell<HashMap<String, u64>> = RefCell::new(HashMap::new());
-    /// 日志行模型：窗口可先开、结果后回填；窗口销毁后模型仍在。
-    static LOG_LINES: RefCell<Option<Rc<VecModel<slint::SharedString>>>> = const { RefCell::new(None) };
+    /// 日志正文：窗口可先开、结果后回填；窗口销毁后文本仍在。
+    static LOG_TEXT: RefCell<Option<Rc<RefCell<String>>>> = const { RefCell::new(None) };
     /// 每次请求 +1，丢弃「切到别的容器之后才回来」的旧结果。
     static LOG_SEQ: Cell<u64> = const { Cell::new(0) };
     /// 新开标签在 Connected 之前要注入的命令：tab_id -> 命令。
@@ -1069,9 +1069,15 @@ pub(crate) fn fetch_logs(
         s.set(next);
         next
     });
-    let model = log_lines_model();
-    model.set_vec(Vec::new());
-    super::sub_windows::show_docker_log(window, &model, &host_label, &container_label, true);
+    let text_cell = log_text_cell();
+    *text_cell.borrow_mut() = String::new();
+    super::sub_windows::show_docker_log(
+        window,
+        &text_cell,
+        &host_label,
+        &container_label,
+        true,
+    );
 
     let rx = {
         let hs = handles.borrow();
@@ -1087,7 +1093,7 @@ pub(crate) fn fetch_logs(
             log.set_loading(false);
         }
         set_log_error(
-            &model,
+            &text_cell,
             t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
         );
         return;
@@ -1099,14 +1105,14 @@ pub(crate) fn fetch_logs(
             if LOG_SEQ.with(|s| s.get()) != seq {
                 return;
             }
-            let model = log_lines_model();
+            let text_cell = log_text_cell();
             let log = super::sub_windows::docker_log_weak().upgrade();
             if let Some(log) = log.as_ref() {
                 log.set_loading(false);
             }
             let Ok(res) = result else {
                 set_log_error(
-                    &model,
+                    &text_cell,
                     t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
                 );
                 return;
@@ -1116,33 +1122,68 @@ pub(crate) fn fetch_logs(
                     Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
                     mode,
                 );
-                set_log_error(&model, why);
+                set_log_error(&text_cell, why);
                 return;
             }
             let (lines, truncated) = parse::parse_logs(&res.stdout, &res.stderr, 200);
-            model.set_vec(
-                lines
-                    .into_iter()
-                    .map(slint::SharedString::from)
-                    .collect::<Vec<_>>(),
-            );
+            let joined = lines.join("\n");
+            *text_cell.borrow_mut() = joined.clone();
             if let Some(log) = log.as_ref() {
+                log.set_log_text(joined.into());
                 log.set_truncated(truncated);
             }
         });
     });
 }
 
-fn log_lines_model() -> Rc<VecModel<slint::SharedString>> {
-    LOG_LINES.with(|slot| {
+/// 复制容器的 12 位短 ID，并在 Docker 页右下角给出提示。
+pub(crate) fn copy_container_id(window: &AppWindow, id: &str) {
+    copy_container_text(window, id, t("已复制容器 ID", "Container ID copied"));
+}
+
+/// 复制容器名，并在 Docker 页右下角给出提示。
+pub(crate) fn copy_container_name(window: &AppWindow, name: &str) {
+    copy_container_text(window, name, t("已复制容器名", "Container name copied"));
+}
+
+fn copy_container_text(window: &AppWindow, text: &str, message: &'static str) {
+    let text = text.to_string();
+    // arboard 在 Windows 会泵消息循环，必须离开 UI 线程。
+    std::thread::spawn(move || super::clipboard_set_text(text));
+    show_action(window, message, false);
+}
+
+/// 双击端口列：按容器 id 取出映射，交给独立窗口显示。
+pub(crate) fn open_port_map(window: &AppWindow, key: &str, container_id: &str) {
+    let found = HUB.with(|hub| -> Option<(String, String, Vec<String>)> {
+        let hub = hub.borrow();
+        let rt = hub.hosts.get(key)?;
+        let container = rt.containers.iter().find(|c| c.id == container_id)?;
+        Some((
+            container.name.clone(),
+            rt.title.clone(),
+            parse::split_ports(&container.ports),
+        ))
+    });
+    let Some((name, host, lines)) = found else {
+        return;
+    };
+    super::sub_windows::show_port_map(window, &name, &host, &lines);
+}
+
+fn log_text_cell() -> Rc<RefCell<String>> {
+    LOG_TEXT.with(|slot| {
         slot.borrow_mut()
-            .get_or_insert_with(|| Rc::new(VecModel::default()))
+            .get_or_insert_with(|| Rc::new(RefCell::new(String::new())))
             .clone()
     })
 }
 
-fn set_log_error(model: &Rc<VecModel<slint::SharedString>>, message: &str) {
-    model.set_vec(vec![slint::SharedString::from(message)]);
+fn set_log_error(text_cell: &Rc<RefCell<String>>, message: &str) {
+    *text_cell.borrow_mut() = message.to_string();
+    if let Some(log) = super::sub_windows::docker_log_weak().upgrade() {
+        log.set_log_text(message.into());
+    }
 }
 
 /// 操作结果条：4 秒后自动清空，序号防止旧定时器清掉新消息。
@@ -1297,9 +1338,9 @@ pub(crate) fn open_terminal(window: &AppWindow, key: &str, container_id: &str) {
         }
         None => {
             // 兜底：把命令放进日志窗，用户可复制后自己粘贴。
-            let model = log_lines_model();
-            model.set_vec(vec![slint::SharedString::from(cmd.as_str())]);
-            super::sub_windows::show_docker_log(window, &model, "", "docker exec", false);
+            let text_cell = log_text_cell();
+            *text_cell.borrow_mut() = cmd.clone();
+            super::sub_windows::show_docker_log(window, &text_cell, "", "docker exec", false);
             show_action(
                 window,
                 t(

@@ -139,6 +139,7 @@ pub(crate) fn open_session_tab(
         },
         sftp_loading: has_sftp,
         sftp_disabled: false,
+        sftp_failed: false,
         sftp_tree_nodes: ModelRc::from(Rc::new(VecModel::<SftpTreeNode>::default())),
         sftp_selected_count: 0,
         sftp_sort_key: "".into(),

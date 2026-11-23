@@ -11,7 +11,7 @@ use super::{FontCatalog, Store, persist};
 use crate::app::apply_wallpaper;
 use crate::app::FontEntry;
 use crate::app::fonts_ui::{auto_font_label, family_from_label, font_choices, resolve_ui_font_family};
-use crate::app::resource_ui::sync_proc_theme;
+use crate::app::resource_ui::{sync_log_metrics, sync_port_theme, sync_proc_theme};
 use crate::app::terminal_ui::{
     apply_dark_mode, hex_from_rgb, parse_hex_color, theme_pref_is_dark,
 };
@@ -275,6 +275,12 @@ impl PostFadeSync {
         if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
             sync_proc_theme(&w, &p);
         }
+        if let Some(l) = crate::app::sub_windows::docker_log_weak().upgrade() {
+            sync_log_metrics(&w, &l);
+        }
+        if let Some(p) = crate::app::sub_windows::port_map_weak().upgrade() {
+            sync_port_theme(&w, &p);
+        }
         // 约 512ms（32 帧）淡化结束，再补一次完整同步（hex / 名称 / 光标）。
         if ticks < 32 {
             PostFadeSync { weak, store, proc_weak, ticks: ticks + 1 }.spawn();
@@ -506,8 +512,22 @@ fn clamp_ui_font_px(px: i32) -> u32 {
 /// 缩放或字号变化后刷新三个独立窗口：它们各有一份 `Theme` 副本。
 fn refresh_sub_windows(main: &AppWindow) {
     crate::app::settings_window::resync_if_open(main);
+    refresh_other_sub_windows(main);
+}
+
+/// 只同步进程 / 日志 / 端口窗。
+///
+/// 拖动透明度滑杆时每帧都会走到这里：设置窗自己通过 `wallpaper-overlay <=> Theme.panel-alpha`
+/// 实时预览，不需要每帧再 `resync_if_open` 一遍整棵设置树。
+fn refresh_other_sub_windows(main: &AppWindow) {
     if let Some(p) = super::super::sub_windows::proc_weak().upgrade() {
         sync_proc_theme(main, &p);
+    }
+    if let Some(l) = super::super::sub_windows::docker_log_weak().upgrade() {
+        sync_log_metrics(main, &l);
+    }
+    if let Some(p) = super::super::sub_windows::port_map_weak().upgrade() {
+        sync_port_theme(main, &p);
     }
 }
 

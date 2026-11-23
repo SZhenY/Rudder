@@ -84,11 +84,8 @@ pub(super) fn wire_wallpaper(window: &AppWindow, store: &Store, bufs: &TermBuffe
             reset_cursor_to_follow(&w, &store);
             w.set_accent_mode(store.borrow().theme_pref().into());
             publish_wallpaper_choices(&w, &store);
-            if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
-                sync_proc_theme(&w, &p);
-            }
-            // 设置窗也要同步；不能放进上面的 if let。
-            crate::app::settings_window::resync_if_open(&w);
+            // 设置窗 + 进程 / 日志 / 端口窗统一跟随新壁纸。
+            super::refresh_sub_windows(&w);
             schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
         });
     }
@@ -122,11 +119,7 @@ pub(super) fn wire_wallpaper(window: &AppWindow, store: &Store, bufs: &TermBuffe
                 });
                 // 刚落盘的文件要立刻出现在下拉里并被选中。
                 publish_wallpaper_choices(&w, &store);
-                if let Some(p) = crate::app::sub_windows::proc_weak().upgrade() {
-                    sync_proc_theme(&w, &p);
-                }
-                // 设置窗也要同步；不能放进上面的 if let。
-                crate::app::settings_window::resync_if_open(&w);
+                super::refresh_sub_windows(&w);
                 schedule_post_fade_sync(&w, &store, &crate::app::sub_windows::proc_weak());
             } else {
                 persist(&store, |s| {

@@ -16,7 +16,7 @@ export component SegOption inherits Rectangle {
     horizontal-stretch: 1;
     border-radius: Theme.radius-sm;
     border-width: 1px;
-    background: active ? Theme.accent : Theme.bg-root;
+    background: active ? Theme.accent : Theme.bg-control;
     border-color: active ? Theme.accent : Theme.border-subtle;
     Text {
         text: root.label;
@@ -41,7 +41,7 @@ export component MiniInput inherits Rectangle {
     border-radius: Theme.radius-sm;
     border-width: 1px;
     border-color: mi.has-focus ? Theme.accent : Theme.border-subtle;
-    background: Theme.bg-root;
+    background: Theme.bg-control;
     mi := TextInput {
         input-method-hints: Theme.plain-input-hints;
         x: 8px * Theme.ui-scale;
@@ -278,10 +278,11 @@ export component GroupCombo inherits VerticalLayout {
             y: parent.height + 3px * Theme.ui-scale;
             width: parent.width;
             Rectangle {
-                background: Theme.bg-elevated;
+                // 弹层不透出背后表单：透明度设了下限（bg-popup），边框也加一档。
+                background: Theme.bg-popup;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
-                border-color: Theme.border-subtle;
+                border-color: Theme.border-strong;
                 VerticalLayout {
                     padding: Theme.sp-4;
                     spacing: 1px * Theme.ui-scale;
@@ -379,10 +380,10 @@ export component JumpCombo inherits VerticalLayout {
             y: parent.height + 3px * Theme.ui-scale;
             width: parent.width;
             Rectangle {
-                background: Theme.bg-elevated;
+                background: Theme.bg-popup;
                 border-radius: Theme.radius-sm;
                 border-width: 1px;
-                border-color: Theme.border-subtle;
+                border-color: Theme.border-strong;
                 VerticalLayout {
                     padding: Theme.sp-4;
                     spacing: 1px * Theme.ui-scale;

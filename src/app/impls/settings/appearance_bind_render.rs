@@ -53,6 +53,7 @@ pub(super) fn wire_render(window: &AppWindow, store: &Store) {
             });
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_panel_alpha(v);
+                super::refresh_sub_windows(&w);
             }
         });
     }
@@ -65,6 +66,7 @@ pub(super) fn wire_render(window: &AppWindow, store: &Store) {
         window.on_preview_wallpaper_overlay(move |v| {
             if let Some(w) = weak.upgrade() {
                 w.global::<Theme>().set_panel_alpha(v);
+                super::refresh_other_sub_windows(&w);
             }
         });
     }

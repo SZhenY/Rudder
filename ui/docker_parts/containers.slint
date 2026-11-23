@@ -13,6 +13,7 @@ import { IconText } from "../components/text.slint";
 import { StateSurface } from "../components/interactive.slint";
 import { DockerContainer } from "types.slint";
 import { ActionIcon, DockerTip } from "common.slint";
+import { DockerColumns } from "columns.slint";
 
 export component DockerContainersPage inherits Rectangle {
     in property <[DockerContainer]> containers;
@@ -22,31 +23,40 @@ export component DockerContainersPage inherits Rectangle {
     in property <string> summary;
     in property <string> pending-id;
     in-out property <string> filter-text;
+    /// 当前选中的容器（按 id，10s 刷新重建列表后仍保持）。
+    in-out property <string> selected-id: "";
 
     callback refresh-now();
     callback filter-changed(string);
     callback action(string, int);
     callback open-logs(string);
     callback open-terminal(string);
+    /// 双击短 ID：复制完整 12 位（外壳写剪贴板并提示）。
+    callback copy-id(string);
+    /// 双击容器名：复制名称。
+    callback copy-name(string);
+    /// 双击端口列：打开端口映射窗口。
+    callback open-ports(string);
     /// 删除先上抛给外壳（确认框是整页模态，挂在外壳层）。
     callback request-remove(string);
 
     background: transparent;
 
-    // ---- 列宽（表头与行共用）------------------------------------------
-    private property <bool> tight: root.width < 720px * Theme.ui-zoom;
-    private property <length> cell-pad: Theme.sp-16;
-    private property <length> col-gap: root.tight ? Theme.sp-8 : Theme.sp-12;
-    private property <length> col-status: (root.tight ? 96px : 104px) * Theme.ui-zoom;
-    private property <length> col-ports: root.tight ? 0px : 150px * Theme.ui-zoom;
-    private property <length> col-actions: 156px * Theme.ui-zoom;
-    private property <length> col-id: 88px * Theme.ui-zoom;
-    private property <int> n-gaps: root.tight ? 3 : 4;
+    // ---- 列宽（表头与行共用；数值在 columns.slint 里调）-----------------
+    private property <bool> tight: root.width < DockerColumns.tight-threshold * Theme.ui-zoom;
+    private property <length> cell-pad: DockerColumns.cell-pad * Theme.ui-zoom;
+    private property <length> col-gap: (root.tight ? DockerColumns.gap-tight : DockerColumns.gap) * Theme.ui-zoom;
+    private property <length> col-status: (root.tight ? DockerColumns.status-tight : DockerColumns.status) * Theme.ui-zoom;
+    private property <length> col-ports: (root.tight ? DockerColumns.ports-tight : DockerColumns.ports) * Theme.ui-zoom;
+    private property <length> col-actions: DockerColumns.actions * Theme.ui-zoom;
+    // 5 列固定 4 个间隙：端口列在窄窗也保留，不再整列消失。
+    private property <int> n-gaps: 4;
     // 容器 + 镜像分剩余宽度；显式算出来才能保证表头与行逐像素一致。
-    private property <length> col-flex: max((root.tight ? 180px : 220px) * Theme.ui-zoom, (
-        root.width - 2 * Theme.sp-20 - root.cell-pad - (root.cell-pad + Theme.sp-6)
+    private property <length> col-flex: max(
+        (root.tight ? DockerColumns.flex-min-tight : DockerColumns.flex-min) * Theme.ui-zoom,
+        (root.width - 2 * Theme.sp-20 - root.cell-pad - (root.cell-pad + Theme.sp-6)
         - root.n-gaps * root.col-gap - root.col-status - root.col-ports - root.col-actions));
-    private property <length> col-name:  root.col-flex * 0.42;
+    private property <length> col-name:  root.col-flex * DockerColumns.name-ratio;
     private property <length> col-image: root.col-flex - root.col-name;
 
     // 搜索框的失焦落点：点行 / 按钮 / 空白时把焦点挪到这里，光标立即停止闪烁。
@@ -61,9 +71,12 @@ export component DockerContainersPage inherits Rectangle {
         blur-sink.focus();
     }
 
-    /// 点击页面空白处让搜索框失焦（同时挡住下面的分屏手柄）。
+    /// 点击页面空白处清除选中并让搜索框失焦（同时挡住下面的分屏手柄）。
     TouchArea {
-        clicked => { root.blur-search(); }
+        clicked => {
+            root.selected-id = "";
+            root.blur-search();
+        }
     }
 
     VerticalLayout {
@@ -160,7 +173,7 @@ export component DockerContainersPage inherits Rectangle {
 
         // --- 表头 -------------------------------------------------------
         if root.containers.length > 0 : Rectangle {
-            height: 26px * Theme.ui-zoom;
+            height: DockerColumns.header-height * Theme.ui-zoom;
             HorizontalLayout {
                 width: parent.width;
                 height: parent.height;
@@ -191,7 +204,7 @@ export component DockerContainersPage inherits Rectangle {
                     horizontal-alignment: left;
                     width: root.col-image;
                 }
-                if !root.tight : Text {
+                Text {
                     text: @tr("Ports");
                     font-size: Theme.fs-xs;
                     color: Theme.text-muted;
@@ -223,13 +236,19 @@ export component DockerContainersPage inherits Rectangle {
             for c in root.containers : Rectangle {
                 // ListView 的隐式布局会把未指定宽度的行居中；显式 100% 让它铺满整行。
                 width: 100%;
-                height: 36px * Theme.ui-zoom;
-                background: row-ta.has-hover ? Theme.state-hover : transparent;
+                // 两行（名称 / 短 ID），比原单行高一档。
+                height: DockerColumns.row-height * Theme.ui-zoom;
+                background: c.id == root.selected-id
+                    ? Theme.state-selected
+                    : (row-ta.has-hover ? Theme.state-hover : transparent);
                 animate background { duration: AnimationSettings.enter-state(); }
                 opacity: root.pending-id == c.id ? 0.55 : 1;
                 row-ta := TouchArea {
                     mouse-cursor: pointer;
-                    clicked => { root.blur-search(); }
+                    clicked => {
+                        root.selected-id = c.id;
+                        root.blur-search();
+                    }
                 }
 
                 HorizontalLayout {
@@ -239,27 +258,62 @@ export component DockerContainersPage inherits Rectangle {
                     padding-right: root.cell-pad + Theme.sp-6;   // 给右侧滚动条留白
                     spacing: root.col-gap;
 
-                    // 容器：名称 + 短 ID 同一行
-                    HorizontalLayout {
+                    // 容器：名称在上、短 ID 在下。hover 背景贴合文字宽度；
+                    // 单击选中整行，双击才复制。
+                    VerticalLayout {
                         width: root.col-name;
-                        spacing: Theme.sp-8;
-                        Text {
-                            text: c.name;
-                            width: max(60px * Theme.ui-zoom, root.col-name - root.col-id - Theme.sp-8);
-                            font-size: Theme.fs-sm;
-                            color: Theme.text-primary;
-                            horizontal-alignment: left;
-                            vertical-alignment: center;
-                            overflow: elide;
+                        alignment: center;
+                        spacing: 0px;
+
+                        Rectangle {
+                            width: min(name-text.preferred-width + 8px * Theme.ui-scale, parent.width);
+                            height: 18px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            background: name-ta.has-hover ? Theme.state-hover : transparent;
+                            name-text := Text {
+                                x: 4px * Theme.ui-scale;
+                                width: parent.width - 8px * Theme.ui-scale;
+                                text: c.name;
+                                font-size: Theme.fs-sm;
+                                color: Theme.text-primary;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            name-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.selected-id = c.id;
+                                    root.blur-search();
+                                }
+                                double-clicked => { root.copy-name(c.name); }
+                            }
                         }
-                        Text {
-                            text: c.id;
-                            width: root.col-id;
-                            font-size: Theme.fs-xs;
-                            color: Theme.text-muted;
-                            horizontal-alignment: left;
-                            vertical-alignment: center;
-                            overflow: elide;
+
+                        Rectangle {
+                            width: min(id-text.preferred-width + 8px * Theme.ui-scale, parent.width);
+                            height: 15px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            background: id-ta.has-hover ? Theme.state-hover : transparent;
+                            id-text := Text {
+                                x: 4px * Theme.ui-scale;
+                                width: parent.width - 8px * Theme.ui-scale;
+                                text: c.id;
+                                font-size: 10px * Theme.ui-scale;
+                                color: id-ta.has-hover ? Theme.accent : Theme.text-muted;
+                                horizontal-alignment: left;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            // 行级 row-ta 在前、这里在后：后声明的可点区域拿得到点击。
+                            id-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => {
+                                    root.selected-id = c.id;
+                                    root.blur-search();
+                                }
+                                double-clicked => { root.copy-id(c.id); }
+                            }
                         }
                     }
 
@@ -302,14 +356,33 @@ export component DockerContainersPage inherits Rectangle {
                         overflow: elide;
                     }
 
-                    if !root.tight : Text {
-                        text: c.ports;
-                        font-size: Theme.fs-xs;
-                        color: Theme.text-muted;
+                    // 端口：最多两行、超出省略；hover 整格高亮；
+                    // 单击选中整行，双击打开端口映射窗口。
+                    Rectangle {
                         width: root.col-ports;
-                        vertical-alignment: center;
-                        horizontal-alignment: left;
-                        overflow: elide;
+                        border-radius: Theme.radius-sm;
+                        background: ports-ta.has-hover ? Theme.state-hover : transparent;
+                        Text {
+                            x: 2px * Theme.ui-scale;
+                            width: parent.width - 4px * Theme.ui-scale;
+                            height: parent.height;
+                            text: c.ports != "" ? c.ports : "—";
+                            font-size: Theme.fs-xs;
+                            color: ports-ta.has-hover ? Theme.text-primary : Theme.text-muted;
+                            vertical-alignment: center;
+                            horizontal-alignment: left;
+                            wrap: word-wrap;
+                            max-lines: 2;
+                            overflow: elide;
+                        }
+                        ports-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.selected-id = c.id;
+                                root.blur-search();
+                            }
+                            double-clicked => { root.open-ports(c.id); }
+                        }
                     }
 
                     VerticalLayout {

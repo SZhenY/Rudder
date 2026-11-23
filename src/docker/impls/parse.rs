@@ -87,12 +87,20 @@ fn first_name(names: &str) -> &str {
 /// `docker ps` 的 `Ports` 里还会混着只声明未发布的项（如 `80/tcp`），以及 host
 /// 网络容器的空串；这些对用户没有信息量，列表里一律不展示。
 fn mapped_ports(ports: &str) -> String {
+    split_ports(ports).join(", ")
+}
+
+/// 把 docker 的 `Ports` 字段拆成「每条映射一行」。
+///
+/// docker 用 `,` 分隔多个映射；只保留已发布项（含 `->`），
+/// 只声明未发布的 `80/tcp` 与空串都不返回。
+pub(crate) fn split_ports(ports: &str) -> Vec<String> {
     ports
         .split(',')
         .map(str::trim)
         .filter(|item| item.contains("->"))
-        .collect::<Vec<_>>()
-        .join(", ")
+        .map(str::to_string)
+        .collect()
 }
 
 #[cfg(test)]
@@ -104,6 +112,20 @@ mod tests {
         assert_eq!(first_name("web,web-1"), "web");
         assert_eq!(first_name(" solo "), "solo");
         assert_eq!(first_name(""), "");
+    }
+
+    #[test]
+    fn split_ports_returns_each_published_mapping() {
+        assert_eq!(
+            split_ports("0.0.0.0:3300->3300/tcp, :::3300->3300/tcp"),
+            vec!["0.0.0.0:3300->3300/tcp", ":::3300->3300/tcp"]
+        );
+        assert_eq!(
+            split_ports("0.0.0.0:8080->80/tcp, 80/tcp"),
+            vec!["0.0.0.0:8080->80/tcp"]
+        );
+        assert!(split_ports("80/tcp").is_empty());
+        assert!(split_ports("").is_empty());
     }
 
     #[test]

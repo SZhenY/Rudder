@@ -26,6 +26,9 @@ export component SftpFileList inherits VerticalLayout {
     in property <string> current-path: "/";
     in property <[SftpEntry]> entries: [];
     in property <bool> loading: false;
+    /// SFTP 启动失败：文件区显示原因与「重试」按钮。
+    in property <bool> failed: false;
+    in property <string> status: "";
     in property <string> sort-key: "";
     in property <int> sort-dir: 0;
     in property <int> selected-count: 0;
@@ -45,6 +48,7 @@ export component SftpFileList inherits VerticalLayout {
     // --- 事件 -------------------------------------------------------------
     callback navigate(string);
     callback refresh(string);
+    callback retry();
     callback download(string);
     callback view(string);
     callback edit(string);
@@ -167,7 +171,41 @@ export component SftpFileList inherits VerticalLayout {
                                horizontal-alignment: center; vertical-alignment: center; }
                     }
 
-                    if !root.loading && root.entries.length == 0 : Rectangle {
+                    if !root.loading && root.entries.length == 0 && root.failed : VerticalLayout {
+                        padding-top: 24px * Theme.ui-scale;
+                        padding-bottom: 24px * Theme.ui-scale;
+                        padding-left: 16px * Theme.ui-scale;
+                        padding-right: 16px * Theme.ui-scale;
+                        spacing: Theme.sp-8;
+                        Text {
+                            text: root.status;
+                            color: Theme.text-secondary;
+                            font-size: Theme.fs-sm;
+                            horizontal-alignment: center;
+                            wrap: word-wrap;
+                        }
+                        Rectangle {
+                            width: 88px * Theme.ui-scale;
+                            height: 28px * Theme.ui-scale;
+                            border-radius: Theme.radius-sm;
+                            border-width: 1px;
+                            border-color: Theme.border-strong;
+                            background: retry-ta.has-hover ? Theme.state-hover : Theme.bg-control;
+                            Text {
+                                text: @tr("Retry");
+                                color: Theme.text-primary;
+                                font-size: Theme.fs-sm;
+                                horizontal-alignment: center;
+                                vertical-alignment: center;
+                            }
+                            retry-ta := TouchArea {
+                                mouse-cursor: pointer;
+                                clicked => { root.retry(); }
+                            }
+                        }
+                    }
+
+                    if !root.loading && root.entries.length == 0 && !root.failed : Rectangle {
                         height: 40px * Theme.ui-scale;
                         Text { text: @tr("Empty directory"); color: Theme.text-muted; font-size: Theme.fs-sm;
                                horizontal-alignment: center; vertical-alignment: center; }
