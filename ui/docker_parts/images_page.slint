@@ -2,6 +2,9 @@
 //!
 //! 排版：`16 | 图标 36 | 12 | 名称 + meta | 12 | 操作 92 | 12`。meta 行按固定槽位
 //! 排布（状态 / 创建时间 / 标签 / 大小），同一页各行的值起点严格对齐。
+//!
+//! 骨架在任何状态下尺寸恒定：页头 / 分隔线 / 卡片 / 分隔线 / 统计条，加载与空态
+//! 的提示画在卡片内部（见 list_card.slint），切页不会整页重排。
 
 import { Theme } from "../theme.slint";
 import { IconText } from "../components/text.slint";
@@ -9,6 +12,7 @@ import { StateSurface } from "../components/interactive.slint";
 import { ListView } from "std-widgets.slint";
 import { ActionIcon, DockerTip } from "common.slint";
 import { DockerPageHead } from "page_head.slint";
+import { DockerListCard, DockerListFooter } from "list_card.slint";
 import { DockerIconTile, DockerMeta, DockerStatus } from "list_parts.slint";
 import { DockerImage } from "types.slint";
 
@@ -47,54 +51,56 @@ export component DockerImagesPage inherits Rectangle {
 
         Rectangle { height: 1px; background: Theme.border-subtle; }
 
-        if root.status == "loading" : Text {
-            text: @tr("Loading images…");
-            font-size: Theme.fs-sm;
-            color: Theme.text-muted;
-            horizontal-stretch: 1;
-            vertical-stretch: 1;
-            horizontal-alignment: center;
-            vertical-alignment: center;
-        }
+        DockerListCard {
+            framed: root.rows.length > 0 && root.status != "error";
 
-        if root.status == "error" : VerticalLayout {
-            alignment: center;
-            vertical-stretch: 1;
-            spacing: Theme.sp-10;
-            IconText { text: "\u{E002}"; font-size: 28px * Theme.ui-zoom; color: Theme.danger; centered: true; horizontal-stretch: 1; }
-            Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
-            HorizontalLayout {
-                alignment: center;
-                StateSurface {
-                    width: 88px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; outlined: true;
-                    clicked => { root.refresh(); }
-                    Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+            // 加载 / 空 / 错误态：包一层显式尺寸的 Rectangle，居中显示提示。
+            if root.rows.length == 0 || root.status == "error" : Rectangle {
+                width: parent.width;
+                height: parent.height;
+
+                if root.status == "loading" || root.status == "idle" : Text {
+                    text: @tr("Loading images…");
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-muted;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.status == "error" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-10;
+                    IconText { text: "\u{E002}"; font-size: 28px * Theme.ui-zoom; color: Theme.danger; centered: true; horizontal-stretch: 1; }
+                    Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
+                    HorizontalLayout {
+                        alignment: center;
+                        StateSurface {
+                            width: 88px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; outlined: true;
+                            clicked => { root.refresh(); }
+                            Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                if root.status == "empty" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-8;
+                    IconText { text: "\u{E3F4}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
+                    Text { text: @tr("No local images"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
+                    Text { text: @tr("Images on the remote host will appear here"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; wrap: word-wrap; max-width: 360px * Theme.ui-zoom; }
                 }
             }
-        }
 
-        if root.status == "empty" : VerticalLayout {
-            alignment: center;
-            vertical-stretch: 1;
-            spacing: Theme.sp-8;
-            IconText { text: "\u{E3F4}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
-            Text { text: @tr("No local images"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
-            Text { text: @tr("Images on the remote host will appear here"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; wrap: word-wrap; max-width: 360px * Theme.ui-zoom; }
-        }
-
-        if root.rows.length > 0 && root.status != "error" : Rectangle {
-            vertical-stretch: 1;
-            min-height: 0px;
-            background: Theme.bg-elevated;
-            border-radius: Theme.radius-md;
-            border-width: 1px;
-            border-color: Theme.border-subtle;
-            clip: true;
-
-            ListView {
+            if root.rows.length > 0 && root.status != "error" : ListView {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
                 for row in root.rows : Rectangle {
                     width: 100%;
-                    height: 62px * Theme.ui-zoom;
+                    height: Theme.row-h-card;
                     background: row-ta.has-hover ? Theme.state-hover : transparent;
                     row-ta := TouchArea { mouse-cursor: pointer; }
 
@@ -165,16 +171,8 @@ export component DockerImagesPage inherits Rectangle {
 
         Rectangle { height: 1px; background: Theme.border-subtle; }
 
-        Rectangle {
-            height: 28px * Theme.ui-zoom;
-            HorizontalLayout {
-                Text {
-                    text: @tr("Total") + " " + root.rows.length + " " + @tr("images");
-                    font-size: Theme.fs-xs;
-                    color: Theme.text-muted;
-                    vertical-alignment: center;
-                }
-            }
+        DockerListFooter {
+            label: @tr("Total") + " " + root.rows.length + " " + @tr("images");
         }
     }
 

@@ -236,6 +236,12 @@ export global Theme {
     out property <length> toolbar-h-narrow: 62px * root.ui-scale;
     out property <length> row-h:        max(28px * root.ui-scale, root.fs-md + 10px * root.ui-scale);
     out property <length> row-h-lg:     max(30px * root.ui-scale, root.fs-md + 12px * root.ui-scale);
+    /// Docker 五个列表页共用的卡片行高：主标题 + 次级信息 + 36px 图标块。
+    /// 直接吃 ui-zoom（字号倍率 × 总缩放），行高与 fs-md 的比例恒为 62/13；
+    /// 与 row-h 不同，它不需要 max() 兜底 —— 内容只占行高约四成。
+    out property <length> row-h-card:   62px * root.ui-zoom;
+    /// 列表表头行高：容器页表头与网络页 NetHeader 共用。
+    out property <length> table-head-h: 26px * root.ui-zoom;
     out property <length> tab-h:        max(30px * root.ui-scale, root.fs-sm + 16px * root.ui-scale);
     out property <length> tabbar-h:     max(36px * root.ui-scale, root.tab-h + 6px * root.ui-scale);
     out property <length> icon-btn:     max(20px * root.ui-scale, root.fs-md + 6px * root.ui-scale);

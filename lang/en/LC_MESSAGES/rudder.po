@@ -985,6 +985,9 @@ msgstr "Search projects"
 msgid "New project"
 msgstr "New project"
 
+msgid "New container"
+msgstr "New container"
+
 msgid "Loading projects…"
 msgstr "Loading projects…"
 
