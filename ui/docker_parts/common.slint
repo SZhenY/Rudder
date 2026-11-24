@@ -17,6 +17,8 @@ export component ActionIcon inherits Rectangle {
     in property <string> tip;
     in property <bool> enabled: true;
     in property <bool> danger: false;
+    /// 字形字号；行的操作区放大到 28px 盒子时同步调大。
+    in property <length> glyph-size: Theme.fs-sm;
     callback clicked();
 
     width: 24px * Theme.ui-zoom;
@@ -42,7 +44,7 @@ export component ActionIcon inherits Rectangle {
     IconText {
         text: root.glyph;
         color: root.danger ? Theme.danger : Theme.text-secondary;
-        font-size: Theme.fs-sm;
+        font-size: root.glyph-size;
         centered: true;
     }
 }

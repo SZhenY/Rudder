@@ -15,6 +15,20 @@ pub(crate) fn classify(stderr: &str, exit_code: Option<i32>, timed_out: bool) ->
     {
         return DockerFailure::SudoAuthFailed;
     }
+    // 镜像仓库认证：`pull access denied` 也含 "access denied"，必须排在 NoPermission 前。
+    if msg.contains("unauthorized: authentication required")
+        || msg.contains("pull access denied")
+        || msg.contains("requested access to the resource is denied")
+        || msg.contains("no basic auth credentials")
+    {
+        return DockerFailure::RegistryAuth;
+    }
+    // compose v2 插件缺失时 docker 的固定报错。
+    if msg.contains("'compose' is not a docker command")
+        || msg.contains("compose is not a docker command")
+    {
+        return DockerFailure::NoCompose;
+    }
     if msg.contains("permission denied") || msg.contains("got permission denied") {
         return DockerFailure::NoPermission;
     }
@@ -41,8 +55,16 @@ pub(crate) fn classify(stderr: &str, exit_code: Option<i32>, timed_out: bool) ->
     {
         return DockerFailure::DaemonDown;
     }
-    if msg.contains("no such container") || msg.contains("no such object") {
+    if msg.contains("no such container") || msg.contains("no such object") || msg.contains("manifest unknown")
+    {
         return DockerFailure::NotFound;
+    }
+    if msg.contains("toomanyrequests")
+        || msg.contains("tls handshake timeout")
+        || msg.contains("i/o timeout")
+        || msg.contains("dial tcp")
+    {
+        return DockerFailure::Timeout;
     }
     if msg.contains("is already in use")
         || msg.contains("container is not running")
@@ -97,6 +119,43 @@ mod tests {
         assert_eq!(
             classify("Failed to start docker.service: Access denied", Some(1), false),
             DockerFailure::NoPermission
+        );
+        assert_eq!(
+            classify(
+                "Error response from daemon: unauthorized: authentication required",
+                Some(1),
+                false
+            ),
+            DockerFailure::RegistryAuth
+        );
+        assert_eq!(
+            classify(
+                "pull access denied for private/app, repository does not exist or may require 'docker login'",
+                Some(1),
+                false
+            ),
+            DockerFailure::RegistryAuth
+        );
+        assert_eq!(
+            classify("docker: 'compose' is not a docker command", Some(1), false),
+            DockerFailure::NoCompose
+        );
+        assert_eq!(
+            classify("Error response from daemon: manifest unknown", Some(1), false),
+            DockerFailure::NotFound
+        );
+        assert_eq!(
+            classify("net/http: TLS handshake timeout", Some(1), false),
+            DockerFailure::Timeout
+        );
+        // 文件类报错不能落进「容器不存在」。
+        assert_eq!(
+            classify(
+                "stat /opt/app/docker-compose.yml: no such file or directory",
+                Some(1),
+                false
+            ),
+            DockerFailure::Other
         );
         assert_eq!(classify("", None, true), DockerFailure::Timeout);
         assert_eq!(classify("something else", Some(1), false), DockerFailure::Other);

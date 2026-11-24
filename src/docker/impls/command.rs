@@ -130,6 +130,46 @@ pub(crate) fn ps(all: bool, elev: &Elevation) -> String {
     wrap(elev, &format!("docker ps{all} --format '{{{{json .}}}}'"))
 }
 
+/// Docker Compose 项目列表（compose v2 插件）。
+///
+/// `ls` 的 `--format` 只接受 `table | json`，不认 Go 模板：传 `{{json .}}` 会落进
+/// legacy 分支，把多个项目拼成一行且不带换行，逐行解析永远拿到 0 条。
+pub(crate) fn compose_ls(all: bool, elev: &Elevation) -> String {
+    let all = if all { " --all" } else { "" };
+    wrap(elev, &format!("docker compose ls{all} --format json"))
+}
+
+/// 本地镜像列表。
+pub(crate) fn images(elev: &Elevation) -> String {
+    wrap(elev, "docker images --format '{{json .}}'")
+}
+
+/// 网络列表。
+pub(crate) fn network_ls(elev: &Elevation) -> String {
+    wrap(elev, "docker network ls --format '{{json .}}'")
+}
+
+/// 镜像使用情况：所有容器（含已停止）引用的镜像 ID，每行一个。
+///
+/// `network inspect` 的 `.Containers` 只含运行中容器，镜像也同理不能靠 `ps` 的
+/// 引用字符串比对；这里统一用容器引用的 image ID 精确匹配。
+pub(crate) fn image_usage(elev: &Elevation) -> String {
+    wrap(
+        elev,
+        "ids=$(docker ps -aq); if [ -n \"$ids\" ]; then docker inspect --format '{{.Image}}' $ids; fi",
+    )
+}
+
+/// 容器所属网络：`name|network-mode|net1,net2,`，每行一个容器。
+///
+/// 从容器侧汇总，停止的容器也算在内（停止后 network inspect 里不再有 endpoint）。
+pub(crate) fn container_networks(elev: &Elevation) -> String {
+    wrap(
+        elev,
+        "ids=$(docker ps -aq); if [ -n \"$ids\" ]; then docker inspect --format '{{.Name}}|{{.HostConfig.NetworkMode}}|{{range $k,$v := .NetworkSettings.Networks}}{{$k}},{{end}}' $ids; fi",
+    )
+}
+
 pub(crate) fn start(id: &str, elev: &Elevation) -> Result<String, ()> {
     with_id("start", id, "", elev)
 }
@@ -171,6 +211,30 @@ pub(crate) fn logs(id: &str, tail: u32, timestamps: bool, elev: &Elevation) -> R
 pub(crate) fn exec_shell(id: &str, elev: &Elevation) -> Result<String, ()> {
     let id = checked_id(id)?;
     Ok(wrap(elev, &format!("docker exec -it -- {id} sh")))
+}
+
+/// 远端 Docker Hub 搜索：走 daemon 的 registry 配置 / 加速源。
+pub(crate) fn search_images(term: &str, limit: u32, elev: &Elevation) -> Result<String, ()> {
+    let term = checked_search(term)?;
+    let limit = limit.clamp(1, 100);
+    Ok(wrap(
+        elev,
+        &format!("docker search --limit {limit} --format '{{{{json .}}}}' {term}"),
+    ))
+}
+
+fn checked_search(term: &str) -> Result<&str, ()> {
+    let term = term.trim();
+    if term.is_empty() || term.len() > 100 {
+        return Err(());
+    }
+    if !term
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-' | b'/' | b':'))
+    {
+        return Err(());
+    }
+    Ok(term)
 }
 
 /// Docker 服务端版本；daemon 未启动 / 无权限时输出为空，调用方按「未知」处理。
@@ -291,6 +355,24 @@ mod tests {
         assert!(cmd.starts_with(PATH_PREFIX));
         assert!(cmd.contains("docker ps --all --format '{{json .}}'"));
         assert!(ps(false, &direct()).contains("docker ps --format"));
+    }
+
+    #[test]
+    fn list_commands_keep_json_format_and_elevation() {
+        let elev = direct();
+        assert!(compose_ls(true, &elev).contains("docker compose ls --all --format json"));
+        assert!(compose_ls(false, &elev).contains("docker compose ls --format json"));
+        assert!(!compose_ls(true, &elev).contains("{{json"));
+        assert!(images(&elev).contains("docker images --format '{{json .}}'"));
+        assert!(network_ls(&elev).contains("docker network ls --format '{{json .}}'"));
+        assert!(image_usage(&elev).contains("docker ps -aq"));
+        assert!(image_usage(&elev).contains("docker inspect --format '{{.Image}}'"));
+        assert!(container_networks(&elev).contains("{{.HostConfig.NetworkMode}}"));
+        assert!(container_networks(&elev).contains(".NetworkSettings.Networks}}"));
+
+        let sudo = Elevation::sudo_nopass("");
+        assert!(images(&sudo).starts_with("PATH="));
+        assert!(images(&sudo).contains("sudo -n env PATH=\"$PATH\" docker images"));
     }
 
     #[test]

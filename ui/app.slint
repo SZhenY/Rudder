@@ -21,7 +21,10 @@ import { ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
-import { DockerPage, DockerContainer, DockerHostTab } from "docker_page.slint";
+import {
+    DockerPage, DockerContainer, DockerHostTab,
+    DockerImage, DockerComposeRow, DockerNetworkRow, RegistryRepoRow,
+} from "docker_page.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
@@ -308,6 +311,23 @@ export component AppWindow inherits Window {
     in property <string> docker-blocker-detail;
     in property <string> docker-blocker-session;
     in property <string> docker-active-session;
+    // 四个功能页的只读列表（Rust 侧填充）。
+    in property <[DockerImage]> docker-image-list;
+    in property <string> docker-image-status: "idle";
+    in property <string> docker-image-error;
+    in property <[DockerComposeRow]> docker-compose-list;
+    in property <string> docker-compose-status: "idle";
+    in property <string> docker-compose-error;
+    in property <[DockerNetworkRow]> docker-network-list;
+    in property <string> docker-network-status: "idle";
+    in property <string> docker-network-error;
+    in property <[RegistryRepoRow]> docker-registry-list;
+    in property <string> docker-registry-status: "idle";
+    in property <string> docker-registry-error;
+    in property <string> docker-registry-page-label;
+    in property <bool> docker-registry-prev-enabled: false;
+    in property <bool> docker-registry-next-enabled: false;
+    in property <bool> docker-registry-searched: false;
     in property <string> docker-permission;
     in property <bool> docker-cred-open;
     in property <string> docker-cred-session;
@@ -346,6 +366,16 @@ export component AppWindow inherits Window {
     callback refresh-docker-now();
     callback docker-switch-host(string /* host key */);
     callback docker-filter-changed(string);
+    callback docker-section-changed(string);
+    callback docker-compose-filter-changed(string);
+    callback docker-image-filter-changed(string);
+    callback docker-refresh-images();
+    callback docker-refresh-compose();
+    callback docker-refresh-networks();
+    callback docker-refresh-registry();
+    callback docker-registry-search(string);
+    callback docker-registry-prev();
+    callback docker-registry-next();
     callback docker-action(string, int);
     callback docker-open-logs(string);
     callback docker-copy-id(string);
@@ -1564,6 +1594,22 @@ export component AppWindow inherits Window {
                     filter-text: root.docker-filter;
                     sessions: root.docker-sessions;
                     search-query: "";
+                    image-list: root.docker-image-list;
+                    image-status: root.docker-image-status;
+                    image-error: root.docker-image-error;
+                    compose-list: root.docker-compose-list;
+                    compose-status: root.docker-compose-status;
+                    compose-error: root.docker-compose-error;
+                    network-list: root.docker-network-list;
+                    network-status: root.docker-network-status;
+                    network-error: root.docker-network-error;
+                    registry-list: root.docker-registry-list;
+                    registry-status: root.docker-registry-status;
+                    registry-error: root.docker-registry-error;
+                    registry-page-label: root.docker-registry-page-label;
+                    registry-prev-enabled: root.docker-registry-prev-enabled;
+                    registry-next-enabled: root.docker-registry-next-enabled;
+                    registry-searched: root.docker-registry-searched;
                     blocker-kind: root.docker-blocker-kind;
                     blocker-host: root.docker-blocker-host;
                     blocker-title: root.docker-blocker-title;
@@ -1621,6 +1667,16 @@ export component AppWindow inherits Window {
                     clear-credentials(session) => { root.docker-clear-credentials(session); }
                     dismiss-credentials() => { root.docker-dismiss-credentials(); }
                     filter-changed(text) => { root.docker-filter-changed(text); }
+                    section-changed(section) => { root.docker-section-changed(section); }
+                    compose-filter-changed(text) => { root.docker-compose-filter-changed(text); }
+                    image-filter-changed(text) => { root.docker-image-filter-changed(text); }
+                    refresh-images() => { root.docker-refresh-images(); }
+                    refresh-compose() => { root.docker-refresh-compose(); }
+                    refresh-networks() => { root.docker-refresh-networks(); }
+                    refresh-registry() => { root.docker-refresh-registry(); }
+                    registry-search(query) => { root.docker-registry-search(query); }
+                    registry-page-prev() => { root.docker-registry-prev(); }
+                    registry-page-next() => { root.docker-registry-next(); }
                     action(id, kind) => { root.docker-action(id, kind); }
                     open-logs(id) => { root.docker-open-logs(id); }
                     copy-id(id) => { root.docker-copy-id(id); }

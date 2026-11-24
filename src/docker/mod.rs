@@ -17,5 +17,6 @@ pub(crate) mod classify;
 
 pub(crate) use failure::DockerFailure;
 pub(crate) use model::{
-    ContainerState, DockerContainerInfo, DockerHostKey, HostStatus,
+    ComposeProjectInfo, ContainerState, DockerContainerInfo, DockerHostKey, DockerImageInfo,
+    DockerNetworkInfo, HostStatus, RegistryRepo,
 };

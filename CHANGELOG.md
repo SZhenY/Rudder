@@ -15,6 +15,7 @@ All notable changes are documented here. 本文件记录所有重要变更。
 
 ### 变更 / Changed
 
+- Docker 的 Compose / 本地镜像 / 网络 / 镜像仓库四页从空态改为可浏览列表：Compose 显示项目与容器数、镜像显示标签与大小、网络可展开查看关联容器、镜像仓库按主机搜索 Docker Hub（走远端 registry 配置）；写操作按钮暂置灰。
 - 首页 / Docker / 设置三处侧边导航行间距由 2px 调到 5px，选中滑轨同步对齐。
 - Docker 页顶部主机标签改用共享滑动高亮：切换主机 / 欢迎标签时高亮块平滑移动，与主机页标签一致。
 

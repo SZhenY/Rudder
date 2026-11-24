@@ -46,6 +46,70 @@ impl ContainerState {
 
 }
 
+/// `docker images --format '{{json .}}'` 的一行。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DockerImageInfo {
+    pub(crate) id: String,
+    pub(crate) repository: String,
+    pub(crate) tag: String,
+    /// `repo:tag`，dangling 镜像为 `<none>:<none>`。
+    pub(crate) display_name: String,
+    pub(crate) size: String,
+    pub(crate) created: String,
+    pub(crate) dangling: bool,
+    /// 引用该镜像的容器数（含已停止）；由容器侧 inspect 汇总。
+    pub(crate) used_by: u32,
+}
+
+/// `docker compose ls --format '{{json .}}'` 的一行。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct ComposeProjectInfo {
+    pub(crate) name: String,
+    /// Docker 原文，如 `running(1)` / `exited(0)`。
+    pub(crate) status: String,
+    pub(crate) running: bool,
+    pub(crate) containers: i32,
+    pub(crate) config_files: String,
+}
+
+impl ComposeProjectInfo {
+    /// 解析 `running(2)` / `exited(1)`；未知格式按停止处理、容器数为 0。
+    pub(crate) fn parse_status(raw: &str) -> (bool, i32) {
+        let raw = raw.trim();
+        let (state, count) = match raw.split_once('(') {
+            Some((state, rest)) => (state.trim(), rest.trim_end_matches(')').trim()),
+            None => (raw, ""),
+        };
+        let running = state.eq_ignore_ascii_case("running");
+        let containers = count.parse::<i32>().unwrap_or(0).max(0);
+        (running, containers)
+    }
+}
+
+/// `docker network ls` 的一行 + `network inspect` 关联的容器名。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct DockerNetworkInfo {
+    pub(crate) id: String,
+    pub(crate) name: String,
+    pub(crate) driver: String,
+    pub(crate) scope: String,
+    pub(crate) containers: Vec<String>,
+}
+
+/// Docker Hub 搜索结果。
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct RegistryRepo {
+    pub(crate) name: String,
+    pub(crate) description: String,
+    pub(crate) pulls: i64,
+    pub(crate) stars: i64,
+    /// `1B+` / `120M` / `8.5K`，Rust 侧格式化；`docker search` 不提供时为空。
+    pub(crate) display_pulls: String,
+    /// Docker 官方镜像标记。
+    pub(crate) official: bool,
+}
+
+
 /// `docker ps` 的一行；字段名与 `--format '{{json .}}'` 的输出一致。
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct DockerContainerInfo {
@@ -57,6 +121,8 @@ pub(crate) struct DockerContainerInfo {
     pub(crate) status: String,
     pub(crate) ports: String,
     pub(crate) created: String,
+    /// `com.docker.compose.project` 标签；非 compose 容器为 `None`。
+    pub(crate) compose_project: Option<String>,
 }
 
 /// 主机键：`user@host`。同一键的多个 SSH 会话共用一份 Docker 缓存。

@@ -975,3 +975,119 @@ msgstr "Docker permission"
 
 msgid "Configure"
 msgstr "Configure"
+
+msgid "Compose projects"
+msgstr "Compose projects"
+
+msgid "Search projects"
+msgstr "Search projects"
+
+msgid "New project"
+msgstr "New project"
+
+msgid "Loading projects…"
+msgstr "Loading projects…"
+
+msgid "No Compose projects"
+msgstr "No Compose projects"
+
+msgid "Projects from docker compose ls will appear here"
+msgstr "Projects from docker compose ls will appear here"
+
+msgid "containers"
+msgstr "containers"
+
+msgid "items"
+msgstr "items"
+
+msgid "Start / stop (later release)"
+msgstr "Start / stop (later release)"
+
+msgid "More actions (later release)"
+msgstr "More actions (later release)"
+
+msgid "Search images"
+msgstr "Search images"
+
+msgid "Add image"
+msgstr "Add image"
+
+msgid "Loading images…"
+msgstr "Loading images…"
+
+msgid "No local images"
+msgstr "No local images"
+
+msgid "Images on the remote host will appear here"
+msgstr "Images on the remote host will appear here"
+
+msgid "In use"
+msgstr "In use"
+
+msgid "Not in use"
+msgstr "Not in use"
+
+msgid "Push (later release)"
+msgstr "Push (later release)"
+
+msgid "Run (later release)"
+msgstr "Run (later release)"
+
+msgid "images"
+msgstr "images"
+
+msgid "New network"
+msgstr "New network"
+
+msgid "Loading networks…"
+msgstr "Loading networks…"
+
+msgid "No networks"
+msgstr "No networks"
+
+msgid "No containers attached"
+msgstr "No containers attached"
+
+msgid "Search Docker Hub"
+msgstr "Search Docker Hub"
+
+msgid "Searching Docker Hub…"
+msgstr "Searching Docker Hub…"
+
+msgid "No matching images"
+msgstr "No matching images"
+
+msgid "pulls"
+msgstr "pulls"
+
+msgid "Page"
+msgstr "Page"
+
+msgid "Pull (later release)"
+msgstr "Pull (later release)"
+
+msgid "Open on Docker Hub (later release)"
+msgstr "Open on Docker Hub (later release)"
+
+msgid "Select a Docker host first"
+msgstr "Select a Docker host first"
+
+msgid "No SSH session for this host"
+msgstr "No SSH session for this host"
+
+msgid "Invalid search term"
+msgstr "Invalid search term"
+
+msgid "Session closed before the search finished"
+msgstr "Session closed before the search finished"
+
+msgid "Official"
+msgstr "Official"
+
+
+msgid "Created"
+msgstr "Created"
+
+msgid "Tag"
+msgstr "Tag"
+

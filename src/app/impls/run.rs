@@ -288,6 +288,76 @@ pub fn run() -> Result<()> {
             }
         });
 
+        let section_weak = window.as_weak();
+        window.on_docker_section_changed(move |section| {
+            if let Some(w) = section_weak.upgrade() {
+                super::docker::set_section(&w, section.as_str());
+            }
+        });
+
+        let section_filter_weak = window.as_weak();
+        window.on_docker_compose_filter_changed(move |text| {
+            if let Some(w) = section_filter_weak.upgrade() {
+                super::docker::set_section_filter(&w, "compose", text.as_str());
+            }
+        });
+
+        let image_filter_weak = window.as_weak();
+        window.on_docker_image_filter_changed(move |text| {
+            if let Some(w) = image_filter_weak.upgrade() {
+                super::docker::set_section_filter(&w, "images", text.as_str());
+            }
+        });
+
+        let refresh_images_weak = window.as_weak();
+        window.on_docker_refresh_images(move || {
+            if let Some(w) = refresh_images_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "images");
+            }
+        });
+
+        let refresh_compose_weak = window.as_weak();
+        window.on_docker_refresh_compose(move || {
+            if let Some(w) = refresh_compose_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "compose");
+            }
+        });
+
+        let refresh_networks_weak = window.as_weak();
+        window.on_docker_refresh_networks(move || {
+            if let Some(w) = refresh_networks_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "networks");
+            }
+        });
+
+        let refresh_registry_weak = window.as_weak();
+        window.on_docker_refresh_registry(move || {
+            if let Some(w) = refresh_registry_weak.upgrade() {
+                super::docker::refresh_registry(&w);
+            }
+        });
+
+        let registry_search_weak = window.as_weak();
+        window.on_docker_registry_search(move |query| {
+            if let Some(w) = registry_search_weak.upgrade() {
+                super::docker::search_registry(&w, query.as_str());
+            }
+        });
+
+        let registry_prev_weak = window.as_weak();
+        window.on_docker_registry_prev(move || {
+            if let Some(w) = registry_prev_weak.upgrade() {
+                super::docker::registry_page(&w, -1);
+            }
+        });
+
+        let registry_next_weak = window.as_weak();
+        window.on_docker_registry_next(move || {
+            if let Some(w) = registry_next_weak.upgrade() {
+                super::docker::registry_page(&w, 1);
+            }
+        });
+
         let switch_weak = window.as_weak();
         let switch_runtime = ctx.runtime.clone();
         let switch_handles = handles.clone();
@@ -633,6 +703,8 @@ pub fn run() -> Result<()> {
                         if docker_last.get().elapsed() >= std::time::Duration::from_secs(10) {
                             docker_last.set(std::time::Instant::now());
                             w.invoke_refresh_docker();
+                            // 二级页的数据各自 10s 节流，只拉当前可见页。
+                            super::docker::refresh_active_section(&w, false);
                         }
                     }
                 }

@@ -1,0 +1,262 @@
+//! 镜像仓库：Docker Hub 搜索（只读），拉取 / 设置按钮置灰。
+//!
+//! 搜索走远端 `docker search`（远端 registry / 加速源生效），分页在 Rust 侧完成。
+//! 排版：`16 | 图标 32 | 名称 + 描述 | 星标 76 | 操作 60 | 12`，分页并入底部。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
+import { ListView } from "std-widgets.slint";
+import { ActionIcon, DockerTip } from "common.slint";
+import { DockerPageHead } from "page_head.slint";
+import { RegistryRepoRow } from "types.slint";
+
+export component DockerRegistryPage inherits Rectangle {
+    in property <[RegistryRepoRow]> rows;
+    in property <string> status: "idle";
+    in property <string> error-text;
+    in property <string> page-label;
+    in property <bool> prev-enabled: false;
+    in property <bool> next-enabled: false;
+    in property <bool> searched: false;
+    in-out property <string> query;
+
+    callback search(string);
+    callback refresh();
+    callback settings();
+    callback page-prev();
+    callback page-next();
+
+    background: transparent;
+
+    VerticalLayout {
+        padding-left: Theme.sp-20;
+        padding-right: Theme.sp-20;
+        padding-top: Theme.sp-16;
+        padding-bottom: Theme.sp-12;
+        spacing: Theme.sp-10;
+
+        DockerPageHead {
+            title: @tr("Registry");
+            search-text: root.query;
+            search-placeholder: @tr("Search Docker Hub");
+            action-label: @tr("Settings");
+            action-enabled: false;
+            primary-action: false;
+            search-edited(text) => { root.query = text; root.search(text); }
+            refresh() => { root.refresh(); }
+            action() => { root.settings(); }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        if root.status == "loading" : Text {
+            text: @tr("Searching Docker Hub…");
+            font-size: Theme.fs-sm;
+            color: Theme.text-muted;
+            horizontal-stretch: 1;
+            vertical-stretch: 1;
+            horizontal-alignment: center;
+            vertical-alignment: center;
+        }
+
+        if root.status == "error" : VerticalLayout {
+            alignment: center;
+            vertical-stretch: 1;
+            spacing: Theme.sp-10;
+            IconText { text: "\u{E002}"; font-size: 28px * Theme.ui-zoom; color: Theme.danger; centered: true; horizontal-stretch: 1; }
+            Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
+            HorizontalLayout {
+                alignment: center;
+                StateSurface {
+                    width: 88px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; outlined: true;
+                    clicked => { root.refresh(); }
+                    Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+                }
+            }
+        }
+
+        if !root.searched && root.status != "loading" && root.status != "error" : VerticalLayout {
+            alignment: center;
+            vertical-stretch: 1;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E1DB}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
+            Text { text: @tr("Search Docker Hub"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
+            Text { text: @tr("Type an image name to browse public repositories"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
+        }
+
+        if root.searched && root.rows.length == 0 && root.status != "loading" && root.status != "error" : VerticalLayout {
+            alignment: center;
+            vertical-stretch: 1;
+            spacing: Theme.sp-8;
+            IconText { text: "\u{E8B6}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
+            Text { text: @tr("No matching images"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
+        }
+
+        if root.rows.length > 0 && root.status != "error" : Rectangle {
+            vertical-stretch: 1;
+            min-height: 0px;
+            background: Theme.bg-elevated;
+            border-radius: Theme.radius-md;
+            border-width: 1px;
+            border-color: Theme.border-subtle;
+            clip: true;
+
+            ListView {
+                for row in root.rows : Rectangle {
+                    width: 100%;
+                    height: 66px * Theme.ui-zoom;
+                    background: row-ta.has-hover ? Theme.state-hover : transparent;
+                    row-ta := TouchArea { mouse-cursor: pointer; }
+
+                    HorizontalLayout {
+                        padding-left: Theme.sp-16;
+                        padding-right: Theme.sp-12;
+                        spacing: Theme.sp-12;
+
+                        Rectangle {
+                            width: 32px * Theme.ui-zoom;
+                            height: 32px * Theme.ui-zoom;
+                            border-radius: Theme.radius-sm;
+                            background: Theme.bg-panel;
+                            IconText { text: "\u{E1DB}"; font-size: 16px * Theme.ui-zoom; color: Theme.text-secondary; centered: true; }
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px * Theme.ui-zoom;
+                            alignment: center;
+
+                            HorizontalLayout {
+                                spacing: Theme.sp-6;
+                                Text {
+                                    text: row.name;
+                                    font-size: Theme.fs-md;
+                                    color: Theme.text-primary;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                                if row.official : Rectangle {
+                                    width: 52px * Theme.ui-zoom;
+                                    height: 18px * Theme.ui-zoom;
+                                    border-radius: Theme.radius-xs;
+                                    background: Theme.bg-panel;
+                                    Text {
+                                        text: @tr("Official");
+                                        font-size: Theme.fs-xs;
+                                        color: Theme.text-secondary;
+                                        horizontal-alignment: center;
+                                        vertical-alignment: center;
+                                    }
+                                }
+                            }
+
+                            Text {
+                                text: row.description;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-muted;
+                                overflow: elide;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            width: 76px * Theme.ui-zoom;
+                            alignment: end;
+                            spacing: 3px * Theme.ui-zoom;
+                            IconText {
+                                text: "\u{E838}";
+                                font-size: 13px * Theme.ui-zoom;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: row.stars_text;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                            }
+                        }
+
+                        HorizontalLayout {
+                            width: 60px * Theme.ui-zoom;
+                            spacing: 4px * Theme.ui-zoom;
+                            ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E2C4}"; tip: @tr("Pull (later release)"); enabled: false; }
+                            ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E8A7}"; tip: @tr("Open on Docker Hub (later release)"); enabled: false; }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        Rectangle {
+            height: 28px * Theme.ui-zoom;
+            HorizontalLayout {
+                spacing: Theme.sp-8;
+
+                Text {
+                    text: @tr("Total") + " " + root.rows.length + " " + @tr("items");
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-muted;
+                    vertical-alignment: center;
+                    horizontal-stretch: 1;
+                }
+
+                if root.searched : StateSurface {
+                    width: 28px * Theme.ui-zoom;
+                    height: 24px * Theme.ui-zoom;
+                    radius: Theme.radius-sm;
+                    outlined: true;
+                    interactive: root.prev-enabled;
+                    opacity: root.prev-enabled ? 1 : 0.4;
+                    clicked => { root.page-prev(); }
+                    IconText { text: "\u{E5CB}"; font-size: 14px * Theme.ui-zoom; color: Theme.text-secondary; centered: true; }
+                }
+
+                if root.searched : Text {
+                    text: root.page-label;
+                    font-size: Theme.fs-xs;
+                    color: Theme.text-secondary;
+                    vertical-alignment: center;
+                }
+
+                if root.searched : StateSurface {
+                    width: 28px * Theme.ui-zoom;
+                    height: 24px * Theme.ui-zoom;
+                    radius: Theme.radius-sm;
+                    outlined: true;
+                    interactive: root.next-enabled;
+                    opacity: root.next-enabled ? 1 : 0.4;
+                    clicked => { root.page-next(); }
+                    IconText { text: "\u{E5CC}"; font-size: 14px * Theme.ui-zoom; color: Theme.text-secondary; centered: true; }
+                }
+            }
+        }
+    }
+
+    if DockerTip.text != "" : Rectangle {
+        x: max(Theme.sp-4, min(DockerTip.x - root.absolute-position.x - self.width / 2, root.width - self.width - Theme.sp-4));
+        y: DockerTip.y - root.absolute-position.y - self.height - 8px * Theme.ui-scale;
+        width: tip-label.preferred-width + 16px * Theme.ui-scale;
+        height: 22px * Theme.ui-scale;
+        border-radius: Theme.radius-sm;
+        background: Theme.bg-elevated;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        tip-label := Text {
+            x: 8px * Theme.ui-scale;
+            text: DockerTip.text;
+            font-size: Theme.fs-xs;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+    }
+}
