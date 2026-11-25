@@ -9,18 +9,27 @@
 import { Theme, AnimationSettings } from "theme.slint";
 import { IconText } from "components/text.slint";
 import { StateSurface } from "components/interactive.slint";
-import { DockerHostTab, DockerContainer } from "docker_parts/types.slint";
+import {
+    DockerHostTab, DockerContainer,
+    DockerImage, DockerComposeRow, DockerNetworkRow, RegistryRepoRow,
+} from "docker_parts/types.slint";
 import { DockerHostTabs } from "docker_parts/host_tabs.slint";
 import { DockerSideNav } from "docker_parts/side_nav.slint";
 import { DockerOverviewPage } from "docker_parts/overview.slint";
 import { DockerContainersPage } from "docker_parts/containers.slint";
-import { DockerPlaceholderPage } from "docker_parts/placeholder.slint";
+import { DockerComposePage } from "docker_parts/compose_page.slint";
+import { DockerImagesPage } from "docker_parts/images_page.slint";
+import { DockerNetworksPage } from "docker_parts/networks_page.slint";
+import { DockerRegistryPage } from "docker_parts/registry_page.slint";
 import { DockerHostWelcome } from "docker_parts/host_welcome.slint";
 import { DockerCredentialsDialog } from "docker_parts/credentials.slint";
 import { SessionInfo } from "welcome_rows.slint";
 
 // `app.slint` 仍从本文件取类型，保持原有 import 不变。
-export { DockerHostTab, DockerContainer, DockerOverviewStats } from "docker_parts/types.slint";
+export {
+    DockerHostTab, DockerContainer, DockerOverviewStats,
+    DockerImage, DockerComposeRow, DockerNetworkRow, RegistryRepoRow,
+} from "docker_parts/types.slint";
 
 export component DockerPage inherits Rectangle {
     in property <[DockerContainer]> containers;
@@ -38,6 +47,30 @@ export component DockerPage inherits Rectangle {
 
     /// 当前二级页：overview / containers / compose / images / registries / networks。
     in-out property <string> section: "overview";
+    changed section => { root.section-changed(root.section); }
+
+    // ---- 四个功能页的数据（Rust 侧填充，Slint 只读渲染）----------------
+    in property <[DockerImage]> image-list;
+    /// idle / loading / ok / empty / error
+    in property <string> image-status: "idle";
+    in property <string> image-error;
+
+    in property <[DockerComposeRow]> compose-list;
+    in property <string> compose-status: "idle";
+    in property <string> compose-error;
+
+    in property <[DockerNetworkRow]> network-list;
+    in property <string> network-status: "idle";
+    in property <string> network-error;
+
+    in property <[RegistryRepoRow]> registry-list;
+    in property <string> registry-status: "idle";
+    in property <string> registry-error;
+    in property <string> registry-page-label;
+    in property <bool> registry-prev-enabled: false;
+    in property <bool> registry-next-enabled: false;
+    /// 用户是否已经发起过搜索（未搜索时显示引导文案）。
+    in property <bool> registry-searched: false;
 
     // 概览页统计；-1 = 尚未采集（界面显示破折号）。
     in property <int> running: -1;
@@ -98,9 +131,25 @@ export component DockerPage inherits Rectangle {
     callback open-saved-session(string);
     callback toggle-group(string);
     callback filter-changed(string);
+    callback section-changed(string);
+    callback compose-filter-changed(string);
+    callback image-filter-changed(string);
+    callback refresh-images();
+    callback refresh-compose();
+    callback refresh-networks();
+    callback refresh-registry();
+    callback registry-search(string);
+    callback registry-page-prev();
+    callback registry-page-next();
     callback action(string /* container id */, int /* 0=start 1=stop 2=restart 3=remove */);
     callback open-logs(string);
     callback open-terminal(string);
+    /// 复制容器短 ID（12 位）。
+    callback copy-id(string);
+    /// 复制容器名。
+    callback copy-name(string);
+    /// 打开端口映射窗口。
+    callback open-ports(string);
     callback toggle-service(bool);
     callback blocker-terminal();
     callback blocker-settings();
@@ -223,50 +272,73 @@ export component DockerPage inherits Rectangle {
                     action(id, kind) => { root.action(id, kind); }
                     open-logs(id) => { root.open-logs(id); }
                     open-terminal(id) => { root.open-terminal(id); }
+                    copy-id(id) => { root.copy-id(id); }
+                    copy-name(name) => { root.copy-name(name); }
+                    open-ports(id) => { root.open-ports(id); }
                     request-remove(id) => { root.confirm-remove-id = id; }
                 }
 
-                DockerPlaceholderPage {
+                DockerComposePage {
                     x: 0px;
                     y: 0px;
                     width: parent.width;
                     height: parent.height;
                     visible: root.section == "compose";
-                    icon: "\u{E53B}";
-                    title: @tr("Compose");
-                    subtitle: @tr("Compose projects will be listed here in a later release");
+                    rows: root.compose-list;
+                    status: root.compose-status;
+                    error-text: root.compose-error;
+                    filter-changed(text) => { root.compose-filter-changed(text); }
+                    refresh() => { root.refresh-compose(); }
+                    add() => {}
+                    action(id) => {}
                 }
-                DockerPlaceholderPage {
+                DockerImagesPage {
                     x: 0px;
                     y: 0px;
                     width: parent.width;
                     height: parent.height;
                     visible: root.section == "images";
-                    icon: "\u{E3F4}";
-                    title: @tr("Local images");
-                    subtitle: @tr("Local images will be listed here in a later release");
+                    rows: root.image-list;
+                    status: root.image-status;
+                    error-text: root.image-error;
+                    filter-changed(text) => { root.image-filter-changed(text); }
+                    refresh() => { root.refresh-images(); }
+                    add() => {}
+                    action(id) => {}
                 }
-                DockerPlaceholderPage {
-                    x: 0px;
-                    y: 0px;
-                    width: parent.width;
-                    height: parent.height;
-                    visible: root.section == "registries";
-                    icon: "\u{E1DB}";
-                    title: @tr("Registry");
-                    subtitle: @tr("Registry settings will be available in a later release");
-                }
-                DockerPlaceholderPage {
+                DockerNetworksPage {
                     x: 0px;
                     y: 0px;
                     width: parent.width;
                     height: parent.height;
                     visible: root.section == "networks";
-                    icon: "\u{E80B}";
-                    title: @tr("Networks");
-                    subtitle: @tr("Docker networks will be listed here in a later release");
+                    rows: root.network-list;
+                    status: root.network-status;
+                    error-text: root.network-error;
+                    refresh() => { root.refresh-networks(); }
+                    add() => {}
+                    action(name) => {}
+                    toggle(name) => {}
                 }
-
+                DockerRegistryPage {
+                    x: 0px;
+                    y: 0px;
+                    width: parent.width;
+                    height: parent.height;
+                    visible: root.section == "registries";
+                    rows: root.registry-list;
+                    status: root.registry-status;
+                    error-text: root.registry-error;
+                    page-label: root.registry-page-label;
+                    prev-enabled: root.registry-prev-enabled;
+                    next-enabled: root.registry-next-enabled;
+                    searched: root.registry-searched;
+                    search(query) => { root.registry-search(query); }
+                    refresh() => { root.refresh-registry(); }
+                    settings() => {}
+                    page-prev() => { root.registry-page-prev(); }
+                    page-next() => { root.registry-page-next(); }
+                }
 
                 // --- 操作结果提示（浮层，相对内容区，不挤压列表）------------
                 if root.action-text != "" : Rectangle {

@@ -1,0 +1,194 @@
+//! Compose 项目管理：只读列表（第一批），启停 / 新增 / 删除按钮置灰。
+//!
+//! 排版：`16 | 图标 36 | 12 | 名称 + meta | 12 | 操作 60 | 12`。容器数由 Rust
+//! 按 compose 项目标签统计（含已停止），不再依赖 `docker compose ls` 的 `Status`。
+//!
+//! 骨架在任何状态下尺寸恒定：页头 / 分隔线 / 卡片 / 分隔线 / 统计条，加载与空态
+//! 的提示画在卡片内部（见 list_card.slint），切页不会整页重排。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
+import { ListView } from "std-widgets.slint";
+import { ActionIcon, DockerTip } from "common.slint";
+import { DockerPageHead } from "page_head.slint";
+import { DockerListCard, DockerListFooter } from "list_card.slint";
+import { DockerIconTile, DockerMeta, DockerStatus } from "list_parts.slint";
+import { DockerComposeRow } from "types.slint";
+
+export component DockerComposePage inherits Rectangle {
+    in property <[DockerComposeRow]> rows;
+    in property <string> status: "idle";
+    in property <string> error-text;
+    in-out property <string> filter-text;
+
+    callback filter-changed(string);
+    callback refresh();
+    callback add();
+    callback action(string);
+
+    background: transparent;
+
+    VerticalLayout {
+        padding-left: Theme.sp-20;
+        padding-right: Theme.sp-20;
+        padding-top: Theme.sp-16;
+        padding-bottom: Theme.sp-12;
+        spacing: Theme.sp-10;
+
+        DockerPageHead {
+            title: @tr("Compose projects");
+            search-text: root.filter-text;
+            search-placeholder: @tr("Search projects");
+            action-label: @tr("New project");
+            action-enabled: false;
+            search-edited(text) => { root.filter-text = text; root.filter-changed(text); }
+            refresh() => { root.refresh(); }
+            action() => { root.add(); }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        DockerListCard {
+            framed: root.rows.length > 0 && root.status != "error";
+
+            // 加载 / 空 / 错误态：包一层显式尺寸的 Rectangle，居中显示提示。
+            if root.rows.length == 0 || root.status == "error" : Rectangle {
+                width: parent.width;
+                height: parent.height;
+
+                if root.status == "loading" || root.status == "idle" : Text {
+                    text: @tr("Loading projects…");
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-muted;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.status == "error" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-10;
+                    IconText { text: "\u{E002}"; font-size: 28px * Theme.ui-zoom; color: Theme.danger; centered: true; horizontal-stretch: 1; }
+                    Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
+                    HorizontalLayout {
+                        alignment: center;
+                        StateSurface {
+                            width: 88px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; outlined: true;
+                            clicked => { root.refresh(); }
+                            Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                if root.status == "empty" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-8;
+                    IconText { text: "\u{E53B}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
+                    Text { text: @tr("No Compose projects"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
+                    Text { text: @tr("Projects from docker compose ls will appear here"); font-size: Theme.fs-sm; color: Theme.text-muted; horizontal-alignment: center; wrap: word-wrap; max-width: 360px * Theme.ui-zoom; }
+                }
+            }
+
+            if root.rows.length > 0 && root.status != "error" : ListView {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+                height: parent.height;
+                for row in root.rows : Rectangle {
+                    width: 100%;
+                    height: Theme.row-h-card;
+                    background: row-ta.has-hover ? Theme.state-hover : transparent;
+                    row-ta := TouchArea { mouse-cursor: pointer; }
+
+                    HorizontalLayout {
+                        padding-left: Theme.sp-16;
+                        padding-right: Theme.sp-12;
+                        spacing: Theme.sp-12;
+                        // 图标 36、操作区 28 都是固定高；交叉轴默认 start，会贴在行顶。
+                        cross-axis-alignment: center;
+
+                        DockerIconTile {
+                            glyph: "\u{E53B}";
+                            show-badge: true;
+                            badge: row.running ? Theme.success : Theme.text-muted;
+                        }
+
+                        VerticalLayout {
+                            horizontal-stretch: 1;
+                            spacing: 2px * Theme.ui-zoom;
+                            alignment: center;
+                            Text {
+                                text: row.name;
+                                font-size: Theme.fs-md;
+                                color: Theme.text-primary;
+                                overflow: elide;
+                            }
+                            HorizontalLayout {
+                                spacing: Theme.sp-10;
+                                DockerStatus {
+                                    active: row.running;
+                                    text: row.running ? @tr("Running") : @tr("Stopped");
+                                    slot: 72px * Theme.ui-zoom;
+                                }
+                                DockerMeta {
+                                    label: @tr("containers") + ":";
+                                    value: row.containers_text;
+                                    slot: 84px * Theme.ui-zoom;
+                                }
+                                Text {
+                                    text: row.config;
+                                    font-size: Theme.fs-xs;
+                                    color: Theme.text-muted;
+                                    vertical-alignment: center;
+                                    overflow: elide;
+                                    horizontal-stretch: 1;
+                                }
+                            }
+                        }
+
+                        HorizontalLayout {
+                            width: 60px * Theme.ui-zoom;
+                            height: 28px * Theme.ui-zoom;
+                            spacing: 4px * Theme.ui-zoom;
+                            ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E8AC}"; tip: @tr("Start / stop (later release)"); enabled: false; }
+                            ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E5D4}"; tip: @tr("More actions (later release)"); enabled: false; }
+                        }
+                    }
+
+                    Rectangle {
+                        y: parent.height - 1px;
+                        width: parent.width;
+                        height: 1px;
+                        background: Theme.border-subtle;
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        DockerListFooter {
+            label: @tr("Total") + " " + root.rows.length + " " + @tr("items");
+        }
+    }
+
+    if DockerTip.text != "" : Rectangle {
+        x: max(Theme.sp-4, min(DockerTip.x - root.absolute-position.x - self.width / 2, root.width - self.width - Theme.sp-4));
+        y: DockerTip.y - root.absolute-position.y - self.height - 8px * Theme.ui-scale;
+        width: tip-label.preferred-width + 16px * Theme.ui-scale;
+        height: 22px * Theme.ui-scale;
+        border-radius: Theme.radius-sm;
+        background: Theme.bg-elevated;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        tip-label := Text {
+            x: 8px * Theme.ui-scale;
+            text: DockerTip.text;
+            font-size: Theme.fs-xs;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+    }
+}

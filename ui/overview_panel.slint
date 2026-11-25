@@ -22,8 +22,10 @@ export component OverviewPanel inherits Rectangle {
     in property <[SftpEntry]>    entries;
     in property <string>  status: @tr("SFTP not connected");
     in property <bool>    loading: false;
-    // SFTP 启动失败/超时：切回概览并置灰页签，点击页签可重试。
+    // SFTP 启动失败/超时：置灰页签（主机不支持时），点击页签可重试。
     in property <bool>    sftp-disabled: false;
+    // 文件页展示失败原因与重试入口。
+    in property <bool>    sftp-failed: false;
     in property <[SftpTreeNode]> tree-nodes: [];
     in property <string> current-tab-id;
     in property <[TabInfo]> transfer-targets: [];
@@ -87,14 +89,6 @@ export component OverviewPanel inherits Rectangle {
     property <int> selected-row: -1;       // clicked/highlighted file-list row (#70)
     in property <int> selected-count;      // number of checked entries (#100)
     in-out property <string> panel-mode: "overview";
-    // SFTP 不可用时不允许停在文件页，立刻退回概览；重试成功后回到文件页。
-    changed sftp-disabled => {
-        if (root.sftp-disabled) {
-            root.panel-mode = "overview";
-        } else {
-            root.panel-mode = "sftp";
-        }
-    }
     // The full toolbar needs roughly 480px once a useful path field is included.
     // Below that, switch deliberately to a two-row compact layout instead of
     // allowing fixed-size controls to squeeze the path and each other (#285).
@@ -190,6 +184,9 @@ export component OverviewPanel inherits Rectangle {
                 current-path: root.current-path;
                 entries: root.entries;
                 loading: root.loading;
+                failed: root.sftp-failed;
+                status: root.status;
+                retry() => { root.sftp-retry(); }
                 sort-key: root.sort-key;
                 sort-dir: root.sort-dir;
                 selected-count: root.selected-count;

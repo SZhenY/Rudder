@@ -215,6 +215,19 @@ pub struct RuntimeTunnelInfo {
     pub status: String,
 }
 
+/// SFTP 启动失败的类型。
+///
+/// 决定 UI 是显示可重试的错误态，还是把页签标记为「该主机没有 SFTP」。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SftpFailureKind {
+    /// 主机明确不提供 sftp 子系统（被拒 / 握手失败 / 无响应）。
+    Unsupported,
+    /// 网络、认证、跳板等可重试失败。
+    Temporary,
+    /// 用户关闭了凭据 / MFA 弹窗；不算失败。
+    Cancelled,
+}
+
 /// Events emitted back to the UI thread.
 #[derive(Debug, Clone)]
 pub enum SessionEvent {
@@ -316,9 +329,12 @@ pub enum SessionEvent {
     /// A directory listing failed (e.g. permission denied): show the message and
     /// stop the panel's loading spinner without disturbing the current view (#112).
     SftpError(String),
-    /// SFTP 启动阶段失败/超时（子系统未开放等）：面板切回概览并置灰页签，
-    /// 等用户手动重试或会话重连后再试。
-    SftpUnavailable(String),
+    /// SFTP 启动阶段失败/超时。`kind` 区分「主机未开放 SFTP」「可重试失败」
+    /// 与「用户取消」，UI 据此决定是否置灰页签、是否显示重试入口。
+    SftpUnavailable {
+        kind: SftpFailureKind,
+        message: String,
+    },
     /// Directory tree structure changed (full rebuild pushed on every toggle).
     SftpTreeUpdate(Vec<RemoteTreeNode>),
     /// File-transfer progress / completion (download or upload).

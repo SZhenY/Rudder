@@ -89,6 +89,11 @@ export component ProcWindow inherits Window {
     in-out property <color> wp-accent <=> Theme.wp-accent;
     in-out property <color> wp-tint <=> Theme.wp-tint;
     in-out property <color> wp-base <=> Theme.wp-base;
+    in-out property <bool> is-mac <=> Theme.is-mac;
+    in-out property <bool> accent-overridden <=> Theme.accent-overridden;
+    in-out property <color> accent-seed <=> Theme.accent-seed;
+    in-out property <bool> accent-custom <=> Theme.accent-custom;
+    in-out property <float> panel-alpha <=> Theme.panel-alpha;
     // CJK-capable default font so "进程"/host never render as tofu (the embedded
     // mono has no CJK glyphs); mirrors AppWindow.
     default-font-family: Theme.ui-font-family;

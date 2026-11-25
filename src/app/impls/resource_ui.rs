@@ -265,19 +265,44 @@ pub(super) fn proc_rows(procs: &[ProcInfo], current_user: &str, tab_id: &str) ->
         .collect()
 }
 
+/// 子窗口主题镜像：Theme 是 per-window global，独立窗口必须逐项接过来。
+///
+/// 少写一项就会出现「子窗主题色 / 透明度 / 圆角与主窗不一致」，所以这里保持
+/// 与 `sync_settings_theme` 相同的输入面（`term-font-*` 走 global 写）。
+macro_rules! sync_theme_base {
+    ($w:ident, $t:ident) => {{
+        $w.set_dark_mode($t.get_dark());
+        $w.set_ui_scale($t.get_ui_scale());
+        $w.set_ui_font_family($t.get_ui_font_family());
+        $w.set_is_mac($t.get_is_mac());
+        $w.set_accent_overridden($t.get_accent_overridden());
+        $w.set_accent_seed($t.get_accent_seed());
+        $w.set_accent_custom($t.get_accent_custom());
+        $w.set_panel_alpha($t.get_panel_alpha());
+        $w.set_wallpaper_img($t.get_wallpaper());
+        $w.set_wallpaper_active($t.get_wallpaper_active());
+        $w.set_wp_accent($t.get_wp_accent());
+        $w.set_wp_tint($t.get_wp_tint());
+        $w.set_wp_base($t.get_wp_base());
+        $w.global::<Theme>().set_ui_font_px($t.get_ui_font_px());
+        $w.global::<Theme>()
+            .set_term_font_family($t.get_term_font_family());
+        $w.global::<Theme>()
+            .set_term_font_size($t.get_term_font_size());
+        $w.global::<Theme>()
+            .set_term_font_bold($t.get_term_font_bold());
+    }};
+}
+
 pub(super) fn sync_proc_theme(main: &AppWindow, proc: &ProcWindow) {
     let t = main.global::<Theme>();
-    proc.set_dark_mode(t.get_dark());
-    proc.set_ui_scale(t.get_ui_scale());
-    proc.global::<Theme>().set_ui_font_px(t.get_ui_font_px());
-    proc.set_ui_font_family(t.get_ui_font_family());
-    // Mirror the immersive wallpaper so the detached window shares the frosted
-    // backdrop instead of a flat panel.
-    proc.set_wallpaper_img(t.get_wallpaper());
-    proc.set_wallpaper_active(t.get_wallpaper_active());
-    proc.set_wp_accent(t.get_wp_accent());
-    proc.set_wp_tint(t.get_wp_tint());
-    proc.set_wp_base(t.get_wp_base());
+    sync_theme_base!(proc, t);
+}
+
+/// 端口映射窗：跟随主窗口的主题 / 缩放 / 壁纸。
+pub(super) fn sync_port_theme(main: &AppWindow, port: &crate::ui::DockerPortWindow) {
+    let t = main.global::<Theme>();
+    sync_theme_base!(port, t);
 }
 
 /// 让子窗口真正画出第一帧。
@@ -293,88 +318,21 @@ pub(super) fn request_first_frame(w: &slint::Window) {
     w.request_redraw();
 }
 
+/// 子窗口统一居中：与主窗口外框同心。
 pub(super) fn place_child_window(main: &AppWindow, target: &slint::Window) {
-    use i_slint_backend_winit::winit::dpi::PhysicalPosition;
-
-    let monitor = main
-        .window()
-        .with_winit_window(|ww| ww.current_monitor().or_else(|| ww.primary_monitor()))
-        .flatten();
-    let Some(monitor) = monitor else { return };
-    let origin = monitor.position();
-    let monitor_size = monitor.size();
-
-    target.with_winit_window(|ww| {
-        let window_size = ww.outer_size();
-        let x = origin.x + monitor_size.width.saturating_sub(window_size.width) as i32 / 2;
-        let y = origin.y + monitor_size.height.saturating_sub(window_size.height) as i32 / 2;
-        ww.set_outer_position(PhysicalPosition::new(x, y));
-    });
+    super::place_window_centered(main, target);
 }
 
-/// 日志窗只同步尺寸与等宽字体，配色固定（黑底浅字）。
+/// 日志窗：跟随主窗口主题（配色 + 缩放 + 壁纸 + 等宽字体）。
 pub(super) fn sync_log_metrics(main: &AppWindow, log: &crate::ui::DockerLogWindow) {
     let t = main.global::<Theme>();
-    log.set_ui_scale(t.get_ui_scale());
+    sync_theme_base!(log, t);
     log.set_term_font(t.get_term_font_family());
 }
 
-/// 设置窗口居中：优先与主窗口同心，主窗口贴边放不下时退回屏幕正中。
-/// 按物理像素算（`outer_size` / `outer_position` 同一坐标系），跨 DPI 屏也成立。
+/// 设置窗口同样与主窗口同心。
 pub(super) fn place_settings_window(main: &AppWindow, sw: &SettingsWindow) {
-    use i_slint_backend_winit::winit::dpi::PhysicalPosition;
-
-    const EDGE: i32 = 8;
-
-    // 主窗口外框 + 所在屏幕；最小化后 `outer_position` 是哨兵值，跳过。
-    // 闭包不能把借用带出来 → 只取数字。
-    let Some((parent, monitor)) = main.window().with_winit_window(|ww| {
-        let parent = if ww.is_minimized().unwrap_or(false) {
-            None
-        } else {
-            ww.outer_position().ok().map(|p| {
-                let size = ww.outer_size();
-                (p.x, p.y, size.width as i32, size.height as i32)
-            })
-        };
-        let monitor = ww
-            .current_monitor()
-            .or_else(|| ww.primary_monitor())
-            .map(|m| {
-                let pos = m.position();
-                let size = m.size();
-                (pos.x, pos.y, size.width as i32, size.height as i32)
-            });
-        (parent, monitor)
-    }) else {
-        return;
-    };
-    let Some((mon_x, mon_y, mon_w, mon_h)) = monitor else {
-        return;
-    };
-
-    sw.window().with_winit_window(|ww| {
-        let size = ww.outer_size();
-        let (w, h) = (size.width as i32, size.height as i32);
-        // 屏幕正中；屏幕比窗口还小时贴左上角，不做负偏移。
-        let fallback = (
-            mon_x + (mon_w - w).max(0) / 2,
-            mon_y + (mon_h - h).max(0) / 2,
-        );
-        let (x, y) = match parent {
-            Some((px, py, pw, ph)) => {
-                let (cx, cy) = (px + (pw - w) / 2, py + (ph - h) / 2);
-                let inside = cx >= mon_x + EDGE
-                    && cy >= mon_y + EDGE
-                    && cx + w <= mon_x + mon_w - EDGE
-                    && cy + h <= mon_y + mon_h - EDGE;
-                if inside { (cx, cy) } else { fallback }
-            }
-            None => fallback,
-        };
-        // 位置只能走 winit（Slint 没有这个 API）。
-        ww.set_outer_position(PhysicalPosition::new(x, y));
-    });
+    super::place_window_centered(main, sw.window());
 }
 #[cfg(test)]
 #[path = "resource_ui_tests.rs"]

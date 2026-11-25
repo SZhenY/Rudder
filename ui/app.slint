@@ -21,7 +21,10 @@ import { ToolStrip } from "widgets.slint";
 import { TerminalView, TermSpan, TermMatch, QuickCmd, QuickDockPanel } from "terminal_view.slint";
 import { SftpEntry, SftpTreeNode, TunnelInfo } from "overview_panel.slint";
 import { ProcWindow, ProcRow } from "proc_window.slint";
-import { DockerPage, DockerContainer, DockerHostTab } from "docker_page.slint";
+import {
+    DockerPage, DockerContainer, DockerHostTab,
+    DockerImage, DockerComposeRow, DockerNetworkRow, RegistryRepoRow,
+} from "docker_page.slint";
 import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, McpConsentRow, McpCloseRow, McpGrantRow, AuditRow } from "settings/types.slint";
 // 设置窗口是**独立 root 窗口**，由 Rust 侧 `SettingsWindow::new()` 创建 —— 与
 // `ProcWindow` / `SystemInfoWindow` 同一套路：先 import，再从 app.slint **再导出**，
@@ -29,8 +32,9 @@ import { OutputRuleItem, WslProfileInfo, AccentPreset, McpIface, McpClientRow, M
 // 实测生成不出来 —— 上面的 export 行就是为这个存在的）。
 import { SettingsWindow } from "settings_window.slint";
 import { DockerLogWindow } from "log_window.slint";
+import { DockerPortWindow } from "port_map_window.slint";
 // Re-export so `slint::include_modules!` generates the detached Rust window types.
-export { ProcWindow, SettingsWindow, DockerLogWindow }
+export { ProcWindow, SettingsWindow, DockerLogWindow, DockerPortWindow }
 import { LineEdit, Button, Palette } from "std-widgets.slint";
 // 「自动更新」对话框：挂在文件末尾只是为了减少改动；设置页改成独立窗口后，"谁压谁"
 // 的层级顾虑已不成立（原文说的是"必须挂在设置遮罩之后"）。
@@ -94,6 +98,8 @@ export struct TerminalState {
     sftp-loading: bool,
     // SFTP 启动失败/超时后置灰页签，等手动重试或会话重连再恢复。
     sftp-disabled: bool,
+    // 当前展示的是失败态（文件页显示原因与重试）；成功拿到目录后清除。
+    sftp-failed: bool,
     sftp-tree-nodes: [SftpTreeNode],
     sftp-selected-count: int,   // checked entries in the SFTP panel (#100)
     sftp-sort-key: string,      // ""|"name"|"size"|"modified" (#248)
@@ -305,6 +311,23 @@ export component AppWindow inherits Window {
     in property <string> docker-blocker-detail;
     in property <string> docker-blocker-session;
     in property <string> docker-active-session;
+    // 四个功能页的只读列表（Rust 侧填充）。
+    in property <[DockerImage]> docker-image-list;
+    in property <string> docker-image-status: "idle";
+    in property <string> docker-image-error;
+    in property <[DockerComposeRow]> docker-compose-list;
+    in property <string> docker-compose-status: "idle";
+    in property <string> docker-compose-error;
+    in property <[DockerNetworkRow]> docker-network-list;
+    in property <string> docker-network-status: "idle";
+    in property <string> docker-network-error;
+    in property <[RegistryRepoRow]> docker-registry-list;
+    in property <string> docker-registry-status: "idle";
+    in property <string> docker-registry-error;
+    in property <string> docker-registry-page-label;
+    in property <bool> docker-registry-prev-enabled: false;
+    in property <bool> docker-registry-next-enabled: false;
+    in property <bool> docker-registry-searched: false;
     in property <string> docker-permission;
     in property <bool> docker-cred-open;
     in property <string> docker-cred-session;
@@ -343,8 +366,21 @@ export component AppWindow inherits Window {
     callback refresh-docker-now();
     callback docker-switch-host(string /* host key */);
     callback docker-filter-changed(string);
+    callback docker-section-changed(string);
+    callback docker-compose-filter-changed(string);
+    callback docker-image-filter-changed(string);
+    callback docker-refresh-images();
+    callback docker-refresh-compose();
+    callback docker-refresh-networks();
+    callback docker-refresh-registry();
+    callback docker-registry-search(string);
+    callback docker-registry-prev();
+    callback docker-registry-next();
     callback docker-action(string, int);
     callback docker-open-logs(string);
+    callback docker-copy-id(string);
+    callback docker-copy-name(string);
+    callback docker-open-ports(string);
     callback docker-open-terminal(string);
     callback docker-toggle-service(bool);
     callback docker-close-host(string);
@@ -1339,6 +1375,7 @@ export component AppWindow inherits Window {
                         sftp-status: term.sftp-status;
                         sftp-loading: term.sftp-loading;
                         sftp-disabled: term.sftp-disabled;
+                        sftp-failed: term.sftp-failed;
                         sftp-retry() => { root.sftp-retry(term.id); }
                         sftp-tree-nodes: term.sftp-tree-nodes;
                         sftp-transfer-targets: root.tabs;
@@ -1557,6 +1594,22 @@ export component AppWindow inherits Window {
                     filter-text: root.docker-filter;
                     sessions: root.docker-sessions;
                     search-query: "";
+                    image-list: root.docker-image-list;
+                    image-status: root.docker-image-status;
+                    image-error: root.docker-image-error;
+                    compose-list: root.docker-compose-list;
+                    compose-status: root.docker-compose-status;
+                    compose-error: root.docker-compose-error;
+                    network-list: root.docker-network-list;
+                    network-status: root.docker-network-status;
+                    network-error: root.docker-network-error;
+                    registry-list: root.docker-registry-list;
+                    registry-status: root.docker-registry-status;
+                    registry-error: root.docker-registry-error;
+                    registry-page-label: root.docker-registry-page-label;
+                    registry-prev-enabled: root.docker-registry-prev-enabled;
+                    registry-next-enabled: root.docker-registry-next-enabled;
+                    registry-searched: root.docker-registry-searched;
                     blocker-kind: root.docker-blocker-kind;
                     blocker-host: root.docker-blocker-host;
                     blocker-title: root.docker-blocker-title;
@@ -1614,8 +1667,21 @@ export component AppWindow inherits Window {
                     clear-credentials(session) => { root.docker-clear-credentials(session); }
                     dismiss-credentials() => { root.docker-dismiss-credentials(); }
                     filter-changed(text) => { root.docker-filter-changed(text); }
+                    section-changed(section) => { root.docker-section-changed(section); }
+                    compose-filter-changed(text) => { root.docker-compose-filter-changed(text); }
+                    image-filter-changed(text) => { root.docker-image-filter-changed(text); }
+                    refresh-images() => { root.docker-refresh-images(); }
+                    refresh-compose() => { root.docker-refresh-compose(); }
+                    refresh-networks() => { root.docker-refresh-networks(); }
+                    refresh-registry() => { root.docker-refresh-registry(); }
+                    registry-search(query) => { root.docker-registry-search(query); }
+                    registry-page-prev() => { root.docker-registry-prev(); }
+                    registry-page-next() => { root.docker-registry-next(); }
                     action(id, kind) => { root.docker-action(id, kind); }
                     open-logs(id) => { root.docker-open-logs(id); }
+                    copy-id(id) => { root.docker-copy-id(id); }
+                    copy-name(name) => { root.docker-copy-name(name); }
+                    open-ports(id) => { root.docker-open-ports(id); }
                     open-terminal(id) => { root.docker-open-terminal(id); }
                     toggle-service(on) => { root.docker-toggle-service(on); }
                     page-status: root.docker-status;

@@ -1,0 +1,89 @@
+//! 功能页列表行共用的小件：图标块、状态点、meta 槽位。
+//!
+//! 图标块与 meta 槽位都给固定尺寸，保证同一页各行的列起点一致。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+
+/// 36px 图标块，右下角可带一个 8px 状态点。
+export component DockerIconTile inherits Rectangle {
+    in property <string> glyph;
+    in property <length> box: 36px * Theme.ui-zoom;
+    in property <length> glyph-size: 18px * Theme.ui-zoom;
+    in property <bool> show-badge: false;
+    in property <brush> badge: Theme.success;
+
+    width: root.box;
+    height: root.box;
+    border-radius: Theme.radius-sm;
+    background: Theme.bg-panel;
+
+    IconText {
+        text: root.glyph;
+        font-size: root.glyph-size;
+        color: Theme.text-secondary;
+        centered: true;
+    }
+
+    if root.show-badge : Rectangle {
+        x: root.width - 12px * Theme.ui-zoom;
+        y: root.height - 12px * Theme.ui-zoom;
+        width: 8px * Theme.ui-zoom;
+        height: 8px * Theme.ui-zoom;
+        border-radius: 4px * Theme.ui-zoom;
+        background: root.badge;
+    }
+}
+
+/// 状态点 + 文案，固定槽宽，跨行对齐。
+export component DockerStatus inherits HorizontalLayout {
+    in property <bool> active: false;
+    in property <string> text;
+    in property <length> slot: 96px * Theme.ui-zoom;
+
+    width: root.slot;
+    spacing: 5px * Theme.ui-zoom;
+    // 固定 6px 的点默认会被交叉轴按 start 排到顶，必须显式居中。
+    cross-axis-alignment: center;
+
+    Rectangle {
+        width: 6px * Theme.ui-zoom;
+        height: 6px * Theme.ui-zoom;
+        border-radius: 3px * Theme.ui-zoom;
+        background: root.active ? Theme.success : Theme.text-muted;
+        opacity: root.active ? 1 : 0.45;
+    }
+    Text {
+        text: root.text;
+        font-size: Theme.fs-xs;
+        color: root.active ? Theme.success : Theme.text-muted;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}
+
+/// `标签: 3.22` 这类 meta 槽位；label 为空时只显示值。
+export component DockerMeta inherits HorizontalLayout {
+    in property <string> label;
+    in property <string> value;
+    in property <length> slot: 100px * Theme.ui-zoom;
+
+    width: root.slot;
+    spacing: 3px * Theme.ui-zoom;
+
+    if root.label != "" : Text {
+        text: root.label;
+        font-size: Theme.fs-xs;
+        color: Theme.text-muted;
+        vertical-alignment: center;
+    }
+    Text {
+        text: root.value;
+        font-size: Theme.fs-xs;
+        color: Theme.text-secondary;
+        vertical-alignment: center;
+        overflow: elide;
+        horizontal-stretch: 1;
+    }
+}

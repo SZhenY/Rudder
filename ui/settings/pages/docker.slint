@@ -1,6 +1,7 @@
 // 设置页：Docker
 //
-// 一个开关：连接 SSH 后自动拉取一次；Docker 页可见时每 10 秒刷新。
+// 一个开关：连接 SSH 后把容器 / 镜像 / Compose / 网络全量拉一次；Docker 页可见时
+// 每 10 秒全量刷新，容器有变化或执行了操作则立刻重算。
 // 关闭后不预取、不轮询，只在进入页面或切主机时惰性加载。
 
 import { SettingSwitch } from "../chrome.slint";

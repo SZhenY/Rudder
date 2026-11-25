@@ -93,6 +93,8 @@ export component TerminalView inherits Rectangle {
     in property <bool>    sftp-loading: false;
     // SFTP 启动失败后置灰页签；点击它触发 sftp-retry。
     in property <bool>    sftp-disabled: false;
+    // 文件页展示失败原因与重试入口（网络/认证失败时页签不置灰）。
+    in property <bool>    sftp-failed: false;
     in property <[SftpTreeNode]> sftp-tree-nodes: [];
     in property <[TabInfo]> sftp-transfer-targets: [];
     in property <string> sftp-sort-key: "";
@@ -1342,6 +1344,7 @@ export component TerminalView inherits Rectangle {
             status:        root.sftp-status;
             loading:       root.sftp-loading;
             sftp-disabled: root.sftp-disabled;
+            sftp-failed:   root.sftp-failed;
             sftp-retry() => { root.sftp-retry(); }
             tree-nodes:    root.sftp-tree-nodes;
             transfer-targets: root.sftp-transfer-targets;

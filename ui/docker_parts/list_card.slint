@@ -1,0 +1,47 @@
+//! 列表页共用的卡片外壳与底部统计条。
+//!
+//! 卡片本身**不产生首选高度**：`@children` 里的元素一律显式定位到卡片内边界，
+//! 高度只由父布局的 `vertical-stretch` 一次分配。这样页面骨架（页头 / 分隔线 /
+//! 卡片 / 分隔线 / 统计条）在任何状态下尺寸恒定。
+//!
+//! 注意：不要往卡片里直接放布局。布局会参与卡片的首选高度计算，而 `ListView`
+//! （= `ScrollView`）自带 `preferred-height: 100%`，会回指卡片高度形成自引用，
+//! 首帧把卡片按整页高度算、把底部统计条挤出裁剪区，下一帧再收敛回弹。
+
+import { Theme } from "../theme.slint";
+
+export component DockerListCard inherits Rectangle {
+    /// 是否画出卡片底色与描边。空 / 加载态用 false，视觉与改造前一致，
+    /// 但卡片仍占据同一个矩形，切到有数据时不会引起整页重排。
+    in property <bool> framed: true;
+
+    @children
+
+    vertical-stretch: 1;
+    min-height: 0px;
+    background: root.framed ? Theme.bg-elevated : transparent;
+    border-radius: Theme.radius-md;
+    border-width: root.framed ? 1px : 0px;
+    border-color: Theme.border-subtle;
+    clip: true;
+}
+
+/// 底部统计条：左侧一行文案，右侧由调用方通过 `@children` 追加（摘要 / 分页器）。
+export component DockerListFooter inherits Rectangle {
+    in property <string> label;
+
+    height: 28px * Theme.ui-zoom;
+
+    HorizontalLayout {
+        spacing: Theme.sp-8;
+
+        Text {
+            text: root.label;
+            font-size: Theme.fs-xs;
+            color: Theme.text-muted;
+            vertical-alignment: center;
+        }
+        Rectangle { horizontal-stretch: 1; }
+        @children
+    }
+}

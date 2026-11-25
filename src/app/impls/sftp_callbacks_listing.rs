@@ -30,6 +30,23 @@ pub(super) fn wire_sftp_listing(window: &AppWindow, ctx: &AppContext) {
             if duplicate {
                 return;
             }
+            // 上次启动失败后，刷新就是「再试一次」。不能只走 want_sftp：
+            // launcher 的 failed 闸门会把请求静默丢掉，界面看起来毫无反应。
+            let failed = weak
+                .upgrade()
+                .and_then(|w| {
+                    let terminals = w.get_terminals();
+                    let tm = terminals.as_any().downcast_ref::<VecModel<TerminalState>>()?;
+                    (0..tm.row_count()).find_map(|i| {
+                        let row = tm.row_data(i)?;
+                        (row.id.as_str() == tab_id).then_some(row.sftp_failed)
+                    })
+                })
+                .unwrap_or(false);
+            if failed {
+                crate::sftp::retry_sftp(&tab_id);
+                return;
+            }
             // 懒启动会话：展开面板/手动刷新是第一次真正需要 SFTP 的时机。
             crate::sftp::want_sftp(&tab_id, Some(path.clone()));
             if let Ok(handles) = sftp_handles.lock()
@@ -274,6 +291,7 @@ pub(super) fn wire_sftp_listing(window: &AppWindow, ctx: &AppContext) {
             {
                 update_terminal_row(tm, &tab_id, |row| {
                     row.sftp_disabled = false;
+                    row.sftp_failed = false;
                     row.sftp_loading = true;
                     row.sftp_status =
                         crate::i18n::t("SFTP 连接中...", "SFTP connecting...").into();

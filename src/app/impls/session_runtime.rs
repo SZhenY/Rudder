@@ -96,6 +96,13 @@ pub(crate) fn reconnect_tab(tab_id: &str, ctx: &ConnectCtx) -> bool {
     if let Some(w) = ctx.weak.upgrade() {
         set_terminal_row(&w, tab_id, |t| {
             t.status = crate::i18n::t("重连中...", "Reconnecting...").into();
+            // 新一轮会话会重新拉 SFTP：清掉上一轮的失败/置灰，否则可能出现
+            // SFTP 已连上、页签却仍然是灰的。
+            t.sftp_disabled = false;
+            t.sftp_failed = false;
+            t.sftp_loading = true;
+            t.sftp_status =
+                crate::i18n::t("SFTP 连接中...", "SFTP connecting...").into();
         });
     }
     start_session_in_tab(tab_id, session, ctx);

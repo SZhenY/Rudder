@@ -98,12 +98,15 @@ pub fn run() -> Result<()> {
 
     // 建窗（`window.run()` 内）之前先把配置里的尺寸与位置定下来：Slint 会把它们写进 winit
     // 的 WindowAttributes，窗口第一次出现就是最终几何，不再有"先大后小 + 位移"的跳变。
-    let pre_placed = {
+    {
         let s = store.borrow();
         let (w, h) = s.window_size();
         drop(s);
-        (w > 0.0 && h > 0.0).then(|| place_main_window_before_show(&window, (w, h)))
-    };
+        // 首次运行没有存过尺寸：用 preferred 1440×900 同样在建窗前定好，
+        // 避免窗口先出现在默认位置、30ms 后再跳回中心。
+        let (w, h) = if w > 0.0 && h > 0.0 { (w, h) } else { (1440.0, 900.0) };
+        place_main_window_before_show(&window, (w, h));
+    }
 
     // --- Build window + models ------------------------------------------
     // Set the Wayland app_id / X11 WM_CLASS *before* the window is created so
@@ -247,6 +250,28 @@ pub fn run() -> Result<()> {
             }
         });
 
+        let copy_id_weak = window.as_weak();
+        window.on_docker_copy_id(move |id| {
+            if let Some(w) = copy_id_weak.upgrade() {
+                super::docker::copy_container_id(&w, id.as_str());
+            }
+        });
+
+        let copy_name_weak = window.as_weak();
+        window.on_docker_copy_name(move |name| {
+            if let Some(w) = copy_name_weak.upgrade() {
+                super::docker::copy_container_name(&w, name.as_str());
+            }
+        });
+
+        let open_ports_weak = window.as_weak();
+        window.on_docker_open_ports(move |id| {
+            if let Some(w) = open_ports_weak.upgrade() {
+                let key = w.get_docker_active_host().to_string();
+                super::docker::open_port_map(&w, &key, id.as_str());
+            }
+        });
+
         let terminal_weak = window.as_weak();
         window.on_docker_open_terminal(move |id| {
             if let Some(w) = terminal_weak.upgrade() {
@@ -260,6 +285,76 @@ pub fn run() -> Result<()> {
             if let Some(w) = filter_weak.upgrade() {
                 w.set_docker_filter(text.clone());
                 super::docker::set_filter(&w, text.as_str());
+            }
+        });
+
+        let section_weak = window.as_weak();
+        window.on_docker_section_changed(move |section| {
+            if let Some(w) = section_weak.upgrade() {
+                super::docker::set_section(&w, section.as_str());
+            }
+        });
+
+        let section_filter_weak = window.as_weak();
+        window.on_docker_compose_filter_changed(move |text| {
+            if let Some(w) = section_filter_weak.upgrade() {
+                super::docker::set_section_filter(&w, "compose", text.as_str());
+            }
+        });
+
+        let image_filter_weak = window.as_weak();
+        window.on_docker_image_filter_changed(move |text| {
+            if let Some(w) = image_filter_weak.upgrade() {
+                super::docker::set_section_filter(&w, "images", text.as_str());
+            }
+        });
+
+        let refresh_images_weak = window.as_weak();
+        window.on_docker_refresh_images(move || {
+            if let Some(w) = refresh_images_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "images");
+            }
+        });
+
+        let refresh_compose_weak = window.as_weak();
+        window.on_docker_refresh_compose(move || {
+            if let Some(w) = refresh_compose_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "compose");
+            }
+        });
+
+        let refresh_networks_weak = window.as_weak();
+        window.on_docker_refresh_networks(move || {
+            if let Some(w) = refresh_networks_weak.upgrade() {
+                super::docker::refresh_section_now(&w, "networks");
+            }
+        });
+
+        let refresh_registry_weak = window.as_weak();
+        window.on_docker_refresh_registry(move || {
+            if let Some(w) = refresh_registry_weak.upgrade() {
+                super::docker::refresh_registry(&w);
+            }
+        });
+
+        let registry_search_weak = window.as_weak();
+        window.on_docker_registry_search(move |query| {
+            if let Some(w) = registry_search_weak.upgrade() {
+                super::docker::search_registry(&w, query.as_str());
+            }
+        });
+
+        let registry_prev_weak = window.as_weak();
+        window.on_docker_registry_prev(move || {
+            if let Some(w) = registry_prev_weak.upgrade() {
+                super::docker::registry_page(&w, -1);
+            }
+        });
+
+        let registry_next_weak = window.as_weak();
+        window.on_docker_registry_next(move || {
+            if let Some(w) = registry_next_weak.upgrade() {
+                super::docker::registry_page(&w, 1);
             }
         });
 
@@ -607,6 +702,7 @@ pub fn run() -> Result<()> {
                         super::docker::tick_monitor(&w);
                         if docker_last.get().elapsed() >= std::time::Duration::from_secs(10) {
                             docker_last.set(std::time::Instant::now());
+                            // refresh() 内部已经把容器与三个二级页一起拉一遍。
                             w.invoke_refresh_docker();
                         }
                     }
@@ -1182,12 +1278,10 @@ pub fn run() -> Result<()> {
 
     wire_window_chrome(&window, &handles, &store, &exit_confirmed, &sftp_handles);
 
-    // 尺寸已经在建窗前设好，事件驱动的恢复重试不必再跑：留着会在首帧再 request 一次同尺寸，
-    // 多出一次 Resized 与重绘。门在这里直接关掉；只有配置里没有尺寸（首次运行）才留给重试。
-    if pre_placed.is_some() {
-        pending_window_size_restore.set(None);
-        window_size_tracking_ready.set(true);
-    }
+    // 尺寸已经在建窗前设好（首次运行也有 1440×900 兜底），事件驱动的恢复重试不必再跑：
+    // 留着会在首帧再 request 一次同尺寸，多出一次 Resized 与重绘。
+    pending_window_size_restore.set(None);
+    window_size_tracking_ready.set(true);
 
     // 进程内 MCP server：配置里启用（或 debug 构建给了 RUDDER_MCP_DEV_TOKEN）就起监听。
     // UI 桥先注册 —— 工具调用随时可能进来；快照在启用但没令牌时会当场生成并落盘。

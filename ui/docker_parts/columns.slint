@@ -1,0 +1,38 @@
+//! Docker 容器表的列宽常量。
+//!
+//! 调布局只改这个文件：数值是 100% 缩放下的基准 px，使用时统一乘 `Theme.ui-zoom`。
+//!
+//! 注意：
+//! - 改任意列宽后，`col-flex`（容器 + 镜像分剩余宽度）会自动跟随，不需要手工改扣减。
+//! - 列数没变（5 列 4 个间隙），不要把 `n-gaps` 写死到别处。
+//! - `ports-tight` 太小会让两行映射过度省略；太大则挤掉容器 / 镜像列。
+//! - 行高与表头高已上收为 `Theme.row-h-card` / `Theme.table-head-h`（五个列表页共用）。
+
+export global DockerColumns {
+    // ---- 各列宽度 ------------------------------------------------------
+    /// 状态列（宽窗）。
+    out property <length> status: 104px;
+    /// 状态列（窄窗）。
+    out property <length> status-tight: 96px;
+    /// 端口列（宽窗）：要能放下两行映射。
+    out property <length> ports: 150px;
+    /// 端口列（窄窗）：仍保留双击入口。
+    out property <length> ports-tight: 110px;
+    /// 操作列：最多同时 5 个 28px 图标 + 4×2px 间距（148 ≤ 156，余 8px）。
+    out property <length> actions: 156px;
+    /// 容器列占「剩余宽度」的比例，其余给镜像列。
+    out property <float> name-ratio: 0.42;
+
+    // ---- 表头 / 行间距 ------------------------------------------------
+    out property <length> gap: 12px;
+    out property <length> gap-tight: 8px;
+    out property <length> cell-pad: 16px;
+
+    // ---- 响应式 --------------------------------------------------------
+    /// 页面宽度低于该值切到 tight 档（窄列宽 + 小间隙）。
+    out property <length> tight-threshold: 720px;
+    /// 容器 + 镜像的最小总宽（宽窗）。
+    out property <length> flex-min: 220px;
+    /// 容器 + 镜像的最小总宽（窄窗）。窄窗 5 列全显示，这里要放得下。
+    out property <length> flex-min-tight: 100px;
+}

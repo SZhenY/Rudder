@@ -1,5 +1,10 @@
 use super::*;
 
+/// 建连 / 认证 / 子系统三个阶段的超时。
+///
+/// keyboard-interactive 不在此列：它会等用户输入 MFA，由用户自己决定时长。
+const SFTP_STAGE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(30);
+
 pub(crate) async fn run_sftp(
     session: Session,
     jump: Option<Session>,
@@ -92,63 +97,85 @@ pub(crate) async fn run_sftp(
         None => return Err(anyhow!(t("已取消登录", "login cancelled"))),
     };
 
+    let _ = events.send(SessionEvent::SftpStatus(
+        t("正在认证…", "Authenticating…").into(),
+    ));
+
     // --- Authenticate (same method as the shell session) -------------------
     let authed = match session.auth {
         AuthMethod::Password => {
-            let mut ok = handle
-                .authenticate_password(&user, password.as_str())
-                .await
-                .context("sftp password auth failed")?
-                .success();
+            let mut ok = tokio::time::timeout(
+                SFTP_STAGE_TIMEOUT,
+                handle.authenticate_password(&user, password.as_str()),
+            )
+            .await
+            .map_err(|_| {
+                anyhow!(t(
+                    "SFTP 认证超时（30 秒）",
+                    "SFTP authentication timed out (30s)"
+                ))
+            })?
+            .context("sftp password auth failed")?
+            .success();
             if !ok {
                 // Match the shell session's fallback: russh can hang if a second
                 // auth method is attempted on the same failed handle, so reconnect
                 // before trying keyboard-interactive (#86, #186).
                 let _ = handle.disconnect(Disconnect::ByApplication, "", "").await;
-                handle = match &jump {
-                    Some(j) => {
-                        let (h, jh) = crate::ssh::connect_target_via_jump(
-                            j,
-                            &session.host,
-                            session.port,
-                            config.clone(),
-                            sftp_handler(&session, &events),
-                            &events,
-                            false,
-                        )
-                        .await
-                        .with_context(|| format!("sftp reconnect {} via jump failed", addr))?;
-                        _jump_keepalive = Some(jh);
-                        h
-                    }
-                    None => {
-                        _jump_keepalive = None;
-                        match crate::ssh::proxy::resolve_session(&session)? {
-                            Some(p) => {
-                                let stream =
-                                    crate::ssh::proxy::connect(&p, &session.host, session.port)
-                                        .await
-                                        .with_context(|| {
-                                            format!("sftp proxy reconnect {} failed", addr)
-                                        })?;
-                                client::connect_stream(
+                handle = tokio::time::timeout(SFTP_STAGE_TIMEOUT, async {
+                    let reconnected = match &jump {
+                        Some(j) => {
+                            let (h, jh) = crate::ssh::connect_target_via_jump(
+                                j,
+                                &session.host,
+                                session.port,
+                                config.clone(),
+                                sftp_handler(&session, &events),
+                                &events,
+                                false,
+                            )
+                            .await
+                            .with_context(|| format!("sftp reconnect {} via jump failed", addr))?;
+                            _jump_keepalive = Some(jh);
+                            h
+                        }
+                        None => {
+                            _jump_keepalive = None;
+                            match crate::ssh::proxy::resolve_session(&session)? {
+                                Some(p) => {
+                                    let stream =
+                                        crate::ssh::proxy::connect(&p, &session.host, session.port)
+                                            .await
+                                            .with_context(|| {
+                                                format!("sftp proxy reconnect {} failed", addr)
+                                            })?;
+                                    client::connect_stream(
+                                        config.clone(),
+                                        stream,
+                                        sftp_handler(&session, &events),
+                                    )
+                                    .await
+                                    .with_context(|| format!("sftp reconnect {} failed", addr))?
+                                }
+                                None => client::connect(
                                     config.clone(),
-                                    stream,
+                                    addr.as_str(),
                                     sftp_handler(&session, &events),
                                 )
                                 .await
-                                .with_context(|| format!("sftp reconnect {} failed", addr))?
+                                .with_context(|| format!("sftp reconnect {} failed", addr))?,
                             }
-                            None => client::connect(
-                                config.clone(),
-                                addr.as_str(),
-                                sftp_handler(&session, &events),
-                            )
-                            .await
-                            .with_context(|| format!("sftp reconnect {} failed", addr))?,
                         }
-                    }
-                };
+                    };
+                    Ok::<_, anyhow::Error>(reconnected)
+                })
+                .await
+                .map_err(|_| {
+                    anyhow!(t(
+                        "SFTP 重新连接超时（30 秒）",
+                        "SFTP reconnect timed out (30s)"
+                    ))
+                })??;
                 ok = crate::ssh::keyboard_interactive_auth(
                     &mut handle,
                     &user,
@@ -182,11 +209,19 @@ pub(crate) async fn run_sftp(
             // RSA keys need an explicit SHA-2 hash; other key types don't.
             let hash = keypair.algorithm().is_rsa().then_some(HashAlg::Sha256);
             let key_with_hash = PrivateKeyWithHashAlg::new(Arc::new(keypair), hash);
-            handle
-                .authenticate_publickey(&user, key_with_hash)
-                .await
-                .context("sftp publickey auth failed")?
-                .success()
+            tokio::time::timeout(
+                SFTP_STAGE_TIMEOUT,
+                handle.authenticate_publickey(&user, key_with_hash),
+            )
+            .await
+            .map_err(|_| {
+                anyhow!(t(
+                    "SFTP 认证超时（30 秒）",
+                    "SFTP authentication timed out (30s)"
+                ))
+            })?
+            .context("sftp publickey auth failed")?
+            .success()
         }
     };
 
@@ -194,9 +229,13 @@ pub(crate) async fn run_sftp(
         return Err(anyhow!(t("SFTP 认证失败", "SFTP authentication failed")));
     }
 
+    let _ = events.send(SessionEvent::SftpStatus(
+        t("正在打开文件服务…", "Opening the file service…").into(),
+    ));
+
     // --- Open the sftp subsystem channel -----------------------------------
     // subsystem 被禁用或对端不响应时这里会一直挂着；30 秒后明确失败并回退。
-    let sftp = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+    let sftp = tokio::time::timeout(SFTP_STAGE_TIMEOUT, async {
         let channel = handle
             .channel_open_session()
             .await

@@ -1,19 +1,38 @@
 //! 容器日志独立窗口。
 //!
-//! 固定黑底浅字，**不跟随主题与壁纸**（壁纸开启时应用主色只有 0.26 不透明度，
-//! 日志会看不清）。只从主窗口同步 `ui-scale` 与等宽字体，其余尺寸按比例算。
+//! 跟随主窗口主题（深浅色 / 主题色 / 壁纸磨砂）。日志是大段文字，
+//! 正文区用 `bg-reading`（不透明度下限 0.90），壁纸再透也不会压住内容。
+
+import { Theme } from "theme.slint";
+import { IconText } from "components/text.slint";
+import { Palette, ScrollView } from "std-widgets.slint";
 
 export component DockerLogWindow inherits Window {
-    /// 主窗口的界面缩放；只影响尺寸，不影响配色。
+    /// 主窗口的界面缩放；由 Rust 同步。
     in property <float> ui-scale: 1.0;
     in property <string> term-font: "JetBrains Mono";
-    in property <bool> custom-titlebar;
+    /// 界面字体：标题 / host / 状态文字用，避免非 ASCII 字符回退到 generic 后缺字形。
+    in property <string> ui-font-family: "";
+    // 主题镜像：Theme 是 per-window global，独立窗口要逐项接过来。
+    in-out property <bool> is-mac <=> Theme.is-mac;
+    in-out property <bool> accent-overridden <=> Theme.accent-overridden;
+    in-out property <color> accent-seed <=> Theme.accent-seed;
+    in-out property <bool> accent-custom <=> Theme.accent-custom;
+    in-out property <float> panel-alpha <=> Theme.panel-alpha;
+    in-out property <bool> dark-mode <=> Theme.dark;
+    in-out property <image> wallpaper-img <=> Theme.wallpaper;
+    in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
+    in-out property <color> wp-accent <=> Theme.wp-accent;
+    in-out property <color> wp-tint <=> Theme.wp-tint;
+    in-out property <color> wp-base <=> Theme.wp-base;
+    in-out property <bool> custom-titlebar;
     in property <string> window-title: "Docker logs";
     in property <string> container;
     in property <string> host;
     in property <bool> loading: false;
     in property <bool> truncated: false;
-    in property <[string]> lines;
+    /// 完整日志正文（Rust 侧拼好，尾部 200 行）。只读多行文本区直接绑定它。
+    in property <string> log-text;
     in-out property <string> status;
 
     callback request-close();
@@ -21,14 +40,36 @@ export component DockerLogWindow inherits Window {
     callback win-resize-se();
     callback copy-logs();
 
+    // 官方控件的滚动条跟随 Palette，和主窗一样按深浅色切换。
+    property <bool> dark-watch: root.dark-mode;
+    init => { Palette.color-scheme = dark-watch ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-watch => { Palette.color-scheme = dark-watch ? ColorScheme.dark : ColorScheme.light; }
+
     title: root.window-title;
     icon: @image-url("../assets/icon.png");
     no-frame: root.custom-titlebar;
+    // 无边框窗口没有系统缩放边缘；四边/四角靠 Slint 的隐形拖拽带。
+    resize-border-width: 6px * root.ui-scale;
+    default-font-family: root.ui-font-family;
     min-width: 460px * root.ui-scale;
     min-height: 280px * root.ui-scale;
     preferred-width: 760px * root.ui-scale;
     preferred-height: 520px * root.ui-scale;
-    background: #000000;
+    background: Theme.window-base;
+
+    // 沉浸壁纸：铺底层，内容面板在它上面磨砂。
+    if Theme.wallpaper-active : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.bg-panel;
+    }
 
     // macOS 原生标题栏：留出交通灯高度（子窗口里 Theme.is-mac 恒 false，
     // 只能用 custom-titlebar 判断，与 proc_window 同一约定）。
@@ -40,12 +81,12 @@ export component DockerLogWindow inherits Window {
     VerticalLayout {
         spacing: 0;
 
-        // --- 标题栏（固定深色，不随主题）--------------------------------
+        // --- 标题栏 -------------------------------------------------------
         // macOS 也渲染这条：窗口是「全尺寸内容 + 透明标题栏」，原生交通灯浮在上方，
         // 上面已留 25px；复制 / 关闭按钮不能依赖原生标题栏。
         Rectangle {
             height: 34px * root.ui-scale;
-            background: #0A0A0A;
+            background: Theme.bg-elevated;
 
             drag-ta := TouchArea {
                 mouse-cursor: pointer;
@@ -65,36 +106,35 @@ export component DockerLogWindow inherits Window {
                     width: 8px * root.ui-scale;
                     height: 8px * root.ui-scale;
                     border-radius: 2px * root.ui-scale;
-                    background: #E6E6E6;
+                    background: Theme.accent-solid;
                     y: (parent.height - self.height) / 2;
                 }
                 Text {
                     text: root.container != "" ? @tr("Logs") + " · " + root.container : @tr("Logs");
-                    color: #E6E6E6;
-                    font-size: 13px * root.ui-scale;
+                    color: Theme.text-primary;
+                    font-size: Theme.fs-md;
                     vertical-alignment: center;
                     overflow: elide;
                     horizontal-stretch: 1;
                 }
                 if root.host != "" : Text {
                     text: root.host;
-                    color: #8A8A8A;
-                    font-size: 11px * root.ui-scale;
+                    color: Theme.text-muted;
+                    font-size: Theme.fs-xs;
                     vertical-alignment: center;
                     overflow: elide;
                 }
                 Rectangle {
                     width: 26px * root.ui-scale;
                     height: 24px * root.ui-scale;
-                    border-radius: 4px * root.ui-scale;
-                    background: copy-ta.has-hover ? #1F1F1F : transparent;
+                    border-radius: Theme.radius-sm;
+                    background: copy-ta.has-hover ? Theme.state-hover : transparent;
                     y: (parent.height - self.height) / 2;
-                    Text {
-                        text: "\u{29C9}";
-                        color: copy-ta.has-hover ? #E6E6E6 : #8A8A8A;
-                        font-size: 14px * root.ui-scale;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    IconText {
+                        centered: true;
+                        text: "\u{E14D}";   // content_copy
+                        color: copy-ta.has-hover ? Theme.text-primary : Theme.text-muted;
+                        font-size: 16px * root.ui-scale;
                     }
                     copy-ta := TouchArea {
                         mouse-cursor: pointer;
@@ -104,15 +144,14 @@ export component DockerLogWindow inherits Window {
                 Rectangle {
                     width: 26px * root.ui-scale;
                     height: 24px * root.ui-scale;
-                    border-radius: 4px * root.ui-scale;
-                    background: close-ta.has-hover ? #3A1F1F : transparent;
+                    border-radius: Theme.radius-sm;
+                    background: close-ta.has-hover ? Theme.danger.with-alpha(0.18) : transparent;
                     y: (parent.height - self.height) / 2;
-                    Text {
-                        text: "✕";
-                        color: close-ta.has-hover ? #FF8A8A : #8A8A8A;
-                        font-size: 13px * root.ui-scale;
-                        horizontal-alignment: center;
-                        vertical-alignment: center;
+                    IconText {
+                        centered: true;
+                        text: "\u{E5CD}";   // close
+                        color: close-ta.has-hover ? Theme.danger : Theme.text-muted;
+                        font-size: 16px * root.ui-scale;
                     }
                     close-ta := TouchArea {
                         mouse-cursor: pointer;
@@ -122,47 +161,61 @@ export component DockerLogWindow inherits Window {
             }
         }
 
-        Rectangle { height: 1px; background: #1F1F1F; }
+        Rectangle { height: 1px; background: Theme.border-subtle; }
 
         // --- 日志正文 ---------------------------------------------------
-        Flickable {
+        // 只读多行 TextInput：支持左键框选、Ctrl+C；拖选停下后自动复制。
+        // 正文底用 bg-reading（不透明度下限 0.90），壁纸再透也不影响阅读。
+        Rectangle {
             vertical-stretch: 1;
             min-height: 0px;
-            content-width: self.width;
-            // Slint #407：`for` 生成的布局必须显式给 content-height，否则不滚动。
-            content-height: max(self.height, log-col.preferred-height);
+            background: Theme.bg-reading;
 
-            log-col := VerticalLayout {
-                alignment: start;
-                padding-left: 12px * root.ui-scale;
-                padding-right: 12px * root.ui-scale;
-                padding-top: 8px * root.ui-scale;
-                padding-bottom: 8px * root.ui-scale;
+            log-scroll := ScrollView {
+                width: parent.width;
+                height: parent.height;
+                content-width: max(self.visible-width, log-input.preferred-width + 16px * root.ui-scale);
+                content-height: max(self.visible-height, log-input.preferred-height + 16px * root.ui-scale);
 
-                for line in root.lines : Text {
-                    text: line;
-                    font-family: root.term-font;
-                    font-size: 12px * root.ui-scale;
-                    color: #E6E6E6;
+                log-input := TextInput {
+                    x: 8px * root.ui-scale;
+                    y: 4px * root.ui-scale;
+                    width: max(parent.visible-width - 16px * root.ui-scale, self.preferred-width);
+                    height: self.preferred-height;
+                    text: root.log-text;
+                    read-only: true;
+                    single-line: false;
                     wrap: no-wrap;
+                    color: Theme.text-primary;
+                    font-family: root.term-font;
+                    font-size: Theme.fs-sm;
+                    selection-background-color: Theme.accent-solid.with-alpha(0.45);
+                    selection-foreground-color: Theme.text-primary;
+                    changed anchor-position-byte-offset => { select-copy.running = true; }
+                    changed cursor-position-byte-offset => { select-copy.running = true; }
                 }
-                if root.lines.length == 0 && !root.loading : Text {
-                    text: @tr("No log output");
-                    color: #8A8A8A;
-                    font-size: 12px * root.ui-scale;
-                }
+            }
+
+            if root.log-text == "" && !root.loading : Text {
+                width: parent.width;
+                height: parent.height;
+                text: @tr("No log output");
+                color: Theme.text-muted;
+                font-size: Theme.fs-sm;
+                horizontal-alignment: center;
+                vertical-alignment: center;
             }
         }
 
         // --- 底栏：加载中 / 截断提示 / 复制反馈 -------------------------
         if root.loading || root.truncated || root.status != "" : Rectangle {
             height: 24px * root.ui-scale;
-            background: #0A0A0A;
+            background: Theme.bg-elevated;
             Rectangle {
                 y: 0px;
                 width: parent.width;
                 height: 1px;
-                background: #1F1F1F;
+                background: Theme.border-subtle;
             }
             HorizontalLayout {
                 padding-left: 12px * root.ui-scale;
@@ -172,8 +225,8 @@ export component DockerLogWindow inherits Window {
                     text: root.status != "" ? root.status
                         : root.loading ? @tr("Loading…")
                         : @tr("Only the last 200 lines are shown");
-                    color: root.status != "" ? #7FD1A8 : #8A8A8A;
-                    font-size: 11px * root.ui-scale;
+                    color: root.status != "" ? Theme.success : Theme.text-muted;
+                    font-size: Theme.fs-xs;
                     vertical-alignment: center;
                     horizontal-stretch: 1;
                 }
@@ -186,5 +239,47 @@ export component DockerLogWindow inherits Window {
         interval: 2s;
         running: root.status != "";
         triggered => { root.status = ""; }
+    }
+
+    // 选中即复制：拖选时不断重置，停下 200ms 后把选区写入剪贴板。
+    select-copy := Timer {
+        interval: 200ms;
+        running: false;
+        triggered => {
+            select-copy.running = false;
+            if (log-input.anchor-position-byte-offset != log-input.cursor-position-byte-offset) {
+                log-input.copy();
+            }
+        }
+    }
+
+    // 新日志到达后滚到最底（等一帧让布局先算出 content-height）。
+    scroll-end := Timer {
+        interval: 16ms;
+        running: false;
+        triggered => {
+            scroll-end.running = false;
+            log-scroll.content-y = max(0px, log-scroll.content-height - log-scroll.visible-height);
+        }
+    }
+    changed log-text => { scroll-end.running = true; }
+
+    // 右下角抓手：无边框窗口的可见缩放入口，走 win-resize-se。
+    if root.custom-titlebar : Rectangle {
+        width: 16px * Theme.ui-zoom;
+        height: 16px * Theme.ui-zoom;
+        x: root.width - self.width;
+        y: root.height - self.height;
+        TouchArea {
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                    root.win-resize-se();
+                }
+            }
+        }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 9px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
     }
 }

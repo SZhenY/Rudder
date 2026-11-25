@@ -1,0 +1,173 @@
+//! 端口映射窗口：双击容器表的端口列打开，每行显示一条已发布映射。
+//!
+//! 跟随应用主题（深浅色 / 主题色 / 壁纸磨砂），与进程窗同款；
+//! 正文是只读多行 TextInput，可直接框选复制。
+
+import { Theme } from "theme.slint";
+import { Palette, ScrollView } from "std-widgets.slint";
+import { WindowTitleBar } from "components/window_shell.slint";
+
+export component DockerPortWindow inherits Window {
+    in property <bool> custom-titlebar;
+    in property <string> container;
+    in property <string> host;
+    /// Rust 侧拼好的多行文本，每行一条映射。
+    in property <string> mappings-text;
+
+    // Theme 是 per-window global：独立窗口要逐项镜像，否则拿到的全是编译期默认值。
+    in-out property <bool> dark-mode <=> Theme.dark;
+    in-out property <float> ui-scale <=> Theme.ui-scale;
+    in-out property <string> ui-font-family <=> Theme.ui-font-family;
+    in-out property <image> wallpaper-img <=> Theme.wallpaper;
+    in-out property <bool> wallpaper-active <=> Theme.wallpaper-active;
+    in-out property <color> wp-accent <=> Theme.wp-accent;
+    in-out property <color> wp-tint <=> Theme.wp-tint;
+    in-out property <color> wp-base <=> Theme.wp-base;
+    in-out property <bool> is-mac <=> Theme.is-mac;
+    in-out property <bool> accent-overridden <=> Theme.accent-overridden;
+    in-out property <color> accent-seed <=> Theme.accent-seed;
+    in-out property <bool> accent-custom <=> Theme.accent-custom;
+    in-out property <float> panel-alpha <=> Theme.panel-alpha;
+
+    callback request-close();
+    callback win-drag();
+    callback win-resize-se();
+
+    title: "Rudder — " + @tr("Port mappings");
+    icon: @image-url("../assets/icon.png");
+    no-frame: root.custom-titlebar;
+    default-font-family: Theme.ui-font-family;
+    min-width: 420px * Theme.ui-scale;
+    min-height: 260px * Theme.ui-scale;
+    preferred-width: 560px * Theme.ui-scale;
+    preferred-height: 380px * Theme.ui-scale;
+    background: Theme.window-base;
+
+    // 官方控件（滚动条）的配色跟随 Palette；用本地镜像触发 changed。
+    property <bool> dark-watch: root.dark-mode;
+    init => { Palette.color-scheme = dark-watch ? ColorScheme.dark : ColorScheme.light; }
+    changed dark-watch => { Palette.color-scheme = dark-watch ? ColorScheme.dark : ColorScheme.light; }
+
+    // 沉浸壁纸：铺在底层，面板在它上面磨砂。
+    if Theme.wallpaper-active : Image {
+        x: 0; y: 0;
+        width: parent.width;
+        height: parent.height;
+        source: Theme.wallpaper;
+        image-fit: cover;
+    }
+    Rectangle {
+        width: parent.width;
+        height: parent.height;
+        background: Theme.bg-panel;
+    }
+
+    VerticalLayout {
+        spacing: 0;
+
+        if root.custom-titlebar : WindowTitleBar {
+            title: @tr("Port mappings") + (root.container != "" ? "  ·  " + root.container : "");
+            bg: Theme.bg-elevated;
+            icon-size: 16px * Theme.ui-scale;
+            armed-drag: false;
+            show-min-max: false;
+            close() => { root.request-close(); }
+            drag() => { root.win-drag(); }
+        }
+
+        // macOS：全尺寸内容 + 透明标题栏，顶部给交通灯留 25px（判据同进程窗）。
+        if !root.custom-titlebar : Rectangle {
+            height: 25px * Theme.ui-scale;
+            background: Theme.bg-panel;
+        }
+
+        // 标题行：容器名 + 主机
+        HorizontalLayout {
+            padding-left: Theme.sp-16;
+            padding-right: Theme.sp-16;
+            padding-top: Theme.sp-10;
+            padding-bottom: Theme.sp-6;
+            spacing: Theme.sp-8;
+            Text {
+                text: root.container;
+                color: Theme.text-primary;
+                font-size: Theme.fs-md;
+                font-weight: 600;
+                vertical-alignment: center;
+                overflow: elide;
+                horizontal-stretch: 1;
+            }
+            Text {
+                text: root.host;
+                color: Theme.text-muted;
+                font-size: Theme.fs-xs;
+                vertical-alignment: center;
+                overflow: elide;
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        // 映射列表：阅读区用 bg-reading（不透明度下限 0.90），
+        // 壁纸磨砂再透也不会影响映射文本。
+        Rectangle {
+            vertical-stretch: 1;
+            min-height: 0px;
+            background: Theme.bg-reading;
+
+            port-scroll := ScrollView {
+                x: Theme.sp-8;
+                y: Theme.sp-6;
+                width: parent.width - 2 * Theme.sp-8;
+                height: parent.height - 2 * Theme.sp-6;
+                content-width: max(self.visible-width, port-input.preferred-width + 16px * Theme.ui-scale);
+                content-height: max(self.visible-height, port-input.preferred-height + 16px * Theme.ui-scale);
+
+                port-input := TextInput {
+                    x: 8px * Theme.ui-scale;
+                    y: 4px * Theme.ui-scale;
+                    width: max(parent.visible-width - 16px * Theme.ui-scale, self.preferred-width);
+                    height: self.preferred-height;
+                    text: root.mappings-text;
+                    read-only: true;
+                    single-line: false;
+                    wrap: no-wrap;
+                    font-family: Theme.term-font-family;
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-primary;
+                    selection-background-color: Theme.accent-solid.with-alpha(0.45);
+                    selection-foreground-color: Theme.text-primary;
+                }
+            }
+
+            if root.mappings-text == "" : Text {
+                width: parent.width;
+                height: parent.height;
+                text: @tr("No published port mappings");
+                color: Theme.text-muted;
+                font-size: Theme.fs-sm;
+                horizontal-alignment: center;
+                vertical-alignment: center;
+            }
+        }
+    }
+
+    // 右下缩放手柄（无边框平台）。
+    if root.custom-titlebar : Rectangle {
+        width: 16px * Theme.ui-zoom;
+        height: 16px * Theme.ui-zoom;
+        x: root.width - self.width;
+        y: root.height - self.height;
+        TouchArea {
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                    root.win-resize-se();
+                }
+            }
+        }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 9px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+    }
+}

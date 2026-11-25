@@ -15,13 +15,20 @@ use tokio::runtime::Runtime;
 use crate::config::{ConfigStore, Secret, SessionKind};
 use crate::docker::classify::classify as classify_docker;
 use crate::docker::{
-    command, parse, ContainerState, DockerContainerInfo, DockerFailure, DockerHostKey, HostStatus,
+    command, parse, ComposeProjectInfo, ContainerState, DockerContainerInfo, DockerFailure,
+    DockerHostKey, DockerImageInfo, DockerNetworkInfo, HostStatus, RegistryRepo,
 };
+
+#[path = "registry.rs"]
+mod registry;
 use crate::i18n::t;
 use crate::resource::system::format_bytes_per_sec;
 use crate::resource::TabStatuses;
 use crate::ssh::{ExecResult, SessionHandle};
-use crate::ui::{AppWindow, DockerContainer, DockerHostTab, SessionInfo, TabInfo};
+use crate::ui::{
+    AppWindow, DockerComposeRow, DockerContainer, DockerHostTab, DockerImage, DockerNetworkRow,
+    RegistryRepoRow, SessionInfo, TabInfo,
+};
 
 const PS_TIMEOUT: Duration = Duration::from_secs(10);
 const PS_MAX_OUTPUT: usize = 512 * 1024;
@@ -36,8 +43,8 @@ thread_local! {
     static LAST_STATUSES: RefCell<Option<TabStatuses>> = const { RefCell::new(None) };
     /// 概览曲线已应用的 `stats_seq`（按 tab_id）：只有快照变了才重建路径。
     static APPLIED_MONITOR: RefCell<HashMap<String, u64>> = RefCell::new(HashMap::new());
-    /// 日志行模型：窗口可先开、结果后回填；窗口销毁后模型仍在。
-    static LOG_LINES: RefCell<Option<Rc<VecModel<slint::SharedString>>>> = const { RefCell::new(None) };
+    /// 日志正文：窗口可先开、结果后回填；窗口销毁后文本仍在。
+    static LOG_TEXT: RefCell<Option<Rc<RefCell<String>>>> = const { RefCell::new(None) };
     /// 每次请求 +1，丢弃「切到别的容器之后才回来」的旧结果。
     static LOG_SEQ: Cell<u64> = const { Cell::new(0) };
     /// 新开标签在 Connected 之前要注入的命令：tab_id -> 命令。
@@ -48,9 +55,15 @@ thread_local! {
     static ACTION_SEQ: Cell<u64> = const { Cell::new(0) };
 }
 
+#[derive(Clone)]
 struct RefreshCtx {
     runtime: Arc<Runtime>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
+}
+
+/// UI 线程上的刷新上下文；派生数据的异步任务也用它。
+fn refresh_ctx() -> Option<RefreshCtx> {
+    REFRESH_CTX.with(|ctx| ctx.borrow().clone())
 }
 
 #[derive(Clone)]
@@ -102,6 +115,38 @@ struct HostRuntime {
     blocker_kind: Option<DockerFailure>,
     /// 用户主动关掉过的弹窗原因，重试或成功后才清。
     blocker_dismissed: Option<DockerFailure>,
+
+    // ---- 第一批只读页的缓存（每类独立节流与代次，互不阻塞）------------
+    images: Vec<DockerImageInfo>,
+    images_status: HostStatus,
+    images_failure: Option<DockerFailure>,
+    images_last_ok: Option<Instant>,
+    images_busy: bool,
+    images_generation: u64,
+
+    compose_projects: Vec<ComposeProjectInfo>,
+    compose_status: HostStatus,
+    compose_failure: Option<DockerFailure>,
+    compose_last_ok: Option<Instant>,
+    compose_busy: bool,
+    compose_generation: u64,
+
+    networks: Vec<DockerNetworkInfo>,
+    networks_status: HostStatus,
+    networks_failure: Option<DockerFailure>,
+    networks_last_ok: Option<Instant>,
+    networks_busy: bool,
+    networks_generation: u64,
+
+    // ---- 由容器快照派生的数据（ps 成功且快照有变化时重算，与二级页无关）----
+    /// 容器快照代次：首次 ps 成功、以及之后每次行内容变化时 +1。
+    snapshot_epoch: u64,
+    /// 镜像短 ID → 引用它的运行中容器数；None = 从没算成功过。
+    image_usage: Option<HashMap<String, u32>>,
+    image_usage_epoch: u64,
+    /// 网络名 → 关联容器名（含已停止）。
+    network_members: Option<HashMap<String, Vec<String>>>,
+    network_members_epoch: u64,
 }
 
 struct DockerHub {
@@ -119,6 +164,19 @@ struct DockerHub {
     hosts_model: Rc<VecModel<DockerHostTab>>,
     containers_model: Rc<VecModel<DockerContainer>>,
     welcome_model: Rc<VecModel<SessionInfo>>,
+    /// 当前二级页，用于定时刷新只拉当前页的数据。
+    section: String,
+    images_model: Rc<VecModel<DockerImage>>,
+    compose_model: Rc<VecModel<DockerComposeRow>>,
+    networks_model: Rc<VecModel<DockerNetworkRow>>,
+    registry_model: Rc<VecModel<RegistryRepoRow>>,
+    registry_rows: Vec<RegistryRepo>,
+    registry_query: String,
+    registry_page: u32,
+    registry_status: HostStatus,
+    registry_error: String,
+    image_filter: String,
+    compose_filter: String,
 }
 
 impl DockerHub {
@@ -134,6 +192,18 @@ impl DockerHub {
             hosts_model: Rc::new(VecModel::default()),
             containers_model: Rc::new(VecModel::default()),
             welcome_model: Rc::new(VecModel::default()),
+            section: "overview".to_string(),
+            images_model: Rc::new(VecModel::default()),
+            compose_model: Rc::new(VecModel::default()),
+            networks_model: Rc::new(VecModel::default()),
+            registry_model: Rc::new(VecModel::default()),
+            registry_rows: Vec::new(),
+            registry_query: String::new(),
+            registry_page: 1,
+            registry_status: HostStatus::Idle,
+            registry_error: String::new(),
+            image_filter: String::new(),
+            compose_filter: String::new(),
         }
     }
 }
@@ -166,6 +236,11 @@ pub(crate) fn refresh(
     });
     if let Some(key) = key {
         probe_service(window, runtime, handles, &key, false);
+        // 连接建立 / 10s 拍：三类二级页一起拉，别等用户点进去。
+        HUB.with(|hub| {
+            let mut hub = hub.borrow_mut();
+            refresh_all_sections(window, runtime, handles, &mut hub, &key, false);
+        });
     }
 }
 
@@ -200,6 +275,11 @@ pub(crate) fn refresh_forced(
     });
     if let Some(key) = key {
         probe_service(window, runtime, handles, &key, true);
+        // 操作完成 / 手动刷新：跳过 10s 节流，三类二级页一起重拉。
+        HUB.with(|hub| {
+            let mut hub = hub.borrow_mut();
+            refresh_all_sections(window, runtime, handles, &mut hub, &key, true);
+        });
     }
 }
 
@@ -235,6 +315,8 @@ pub(crate) fn select_host(
         if stale {
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
+        // 切到这台主机：三类二级页也补一次（各自的 10s 节流兜底）。
+        refresh_all_sections(window, runtime, handles, &mut hub, key, false);
     });
     probe_service(window, runtime, handles, key, false);
 }
@@ -281,6 +363,7 @@ pub(crate) fn open_host(
         if stale {
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
+        refresh_all_sections(window, runtime, handles, &mut hub, key, false);
     });
     probe_service(window, runtime, handles, key, true);
 }
@@ -1069,9 +1152,15 @@ pub(crate) fn fetch_logs(
         s.set(next);
         next
     });
-    let model = log_lines_model();
-    model.set_vec(Vec::new());
-    super::sub_windows::show_docker_log(window, &model, &host_label, &container_label, true);
+    let text_cell = log_text_cell();
+    *text_cell.borrow_mut() = String::new();
+    super::sub_windows::show_docker_log(
+        window,
+        &text_cell,
+        &host_label,
+        &container_label,
+        true,
+    );
 
     let rx = {
         let hs = handles.borrow();
@@ -1087,7 +1176,7 @@ pub(crate) fn fetch_logs(
             log.set_loading(false);
         }
         set_log_error(
-            &model,
+            &text_cell,
             t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
         );
         return;
@@ -1099,14 +1188,14 @@ pub(crate) fn fetch_logs(
             if LOG_SEQ.with(|s| s.get()) != seq {
                 return;
             }
-            let model = log_lines_model();
+            let text_cell = log_text_cell();
             let log = super::sub_windows::docker_log_weak().upgrade();
             if let Some(log) = log.as_ref() {
                 log.set_loading(false);
             }
             let Ok(res) = result else {
                 set_log_error(
-                    &model,
+                    &text_cell,
                     t("会话已关闭，无法读取日志", "The session closed; cannot read logs"),
                 );
                 return;
@@ -1116,33 +1205,68 @@ pub(crate) fn fetch_logs(
                     Some(classify_docker(&res.stderr, res.exit_code, res.timed_out)),
                     mode,
                 );
-                set_log_error(&model, why);
+                set_log_error(&text_cell, why);
                 return;
             }
             let (lines, truncated) = parse::parse_logs(&res.stdout, &res.stderr, 200);
-            model.set_vec(
-                lines
-                    .into_iter()
-                    .map(slint::SharedString::from)
-                    .collect::<Vec<_>>(),
-            );
+            let joined = lines.join("\n");
+            *text_cell.borrow_mut() = joined.clone();
             if let Some(log) = log.as_ref() {
+                log.set_log_text(joined.into());
                 log.set_truncated(truncated);
             }
         });
     });
 }
 
-fn log_lines_model() -> Rc<VecModel<slint::SharedString>> {
-    LOG_LINES.with(|slot| {
+/// 复制容器的 12 位短 ID，并在 Docker 页右下角给出提示。
+pub(crate) fn copy_container_id(window: &AppWindow, id: &str) {
+    copy_container_text(window, id, t("已复制容器 ID", "Container ID copied"));
+}
+
+/// 复制容器名，并在 Docker 页右下角给出提示。
+pub(crate) fn copy_container_name(window: &AppWindow, name: &str) {
+    copy_container_text(window, name, t("已复制容器名", "Container name copied"));
+}
+
+fn copy_container_text(window: &AppWindow, text: &str, message: &'static str) {
+    let text = text.to_string();
+    // arboard 在 Windows 会泵消息循环，必须离开 UI 线程。
+    std::thread::spawn(move || super::clipboard_set_text(text));
+    show_action(window, message, false);
+}
+
+/// 双击端口列：按容器 id 取出映射，交给独立窗口显示。
+pub(crate) fn open_port_map(window: &AppWindow, key: &str, container_id: &str) {
+    let found = HUB.with(|hub| -> Option<(String, String, Vec<String>)> {
+        let hub = hub.borrow();
+        let rt = hub.hosts.get(key)?;
+        let container = rt.containers.iter().find(|c| c.id == container_id)?;
+        Some((
+            container.name.clone(),
+            rt.title.clone(),
+            parse::split_ports(&container.ports),
+        ))
+    });
+    let Some((name, host, lines)) = found else {
+        return;
+    };
+    super::sub_windows::show_port_map(window, &name, &host, &lines);
+}
+
+fn log_text_cell() -> Rc<RefCell<String>> {
+    LOG_TEXT.with(|slot| {
         slot.borrow_mut()
-            .get_or_insert_with(|| Rc::new(VecModel::default()))
+            .get_or_insert_with(|| Rc::new(RefCell::new(String::new())))
             .clone()
     })
 }
 
-fn set_log_error(model: &Rc<VecModel<slint::SharedString>>, message: &str) {
-    model.set_vec(vec![slint::SharedString::from(message)]);
+fn set_log_error(text_cell: &Rc<RefCell<String>>, message: &str) {
+    *text_cell.borrow_mut() = message.to_string();
+    if let Some(log) = super::sub_windows::docker_log_weak().upgrade() {
+        log.set_log_text(message.into());
+    }
 }
 
 /// 操作结果条：4 秒后自动清空，序号防止旧定时器清掉新消息。
@@ -1297,9 +1421,9 @@ pub(crate) fn open_terminal(window: &AppWindow, key: &str, container_id: &str) {
         }
         None => {
             // 兜底：把命令放进日志窗，用户可复制后自己粘贴。
-            let model = log_lines_model();
-            model.set_vec(vec![slint::SharedString::from(cmd.as_str())]);
-            super::sub_windows::show_docker_log(window, &model, "", "docker exec", false);
+            let text_cell = log_text_cell();
+            *text_cell.borrow_mut() = cmd.clone();
+            super::sub_windows::show_docker_log(window, &text_cell, "", "docker exec", false);
             show_action(
                 window,
                 t(
@@ -1365,6 +1489,29 @@ fn new_host_runtime(tab_id: &str) -> HostRuntime {
         service_pending: false,
         blocker_kind: None,
         blocker_dismissed: None,
+        images: Vec::new(),
+        images_status: HostStatus::Idle,
+        images_failure: None,
+        images_last_ok: None,
+        images_busy: false,
+        images_generation: 0,
+        compose_projects: Vec::new(),
+        compose_status: HostStatus::Idle,
+        compose_failure: None,
+        compose_last_ok: None,
+        compose_busy: false,
+        compose_generation: 0,
+        networks: Vec::new(),
+        networks_status: HostStatus::Idle,
+        networks_failure: None,
+        networks_last_ok: None,
+        networks_busy: false,
+        networks_generation: 0,
+        snapshot_epoch: 0,
+        image_usage: None,
+        image_usage_epoch: 0,
+        network_members: None,
+        network_members_epoch: 0,
     }
 }
 
@@ -1758,6 +1905,434 @@ fn refresh_key(
     });
 }
 
+/// 统一选择普通 / 带密码的执行通道。
+fn exec_on(
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    tab_id: &str,
+    cmd: String,
+    password: Option<Secret>,
+    timeout: Duration,
+    max_output: usize,
+) -> Option<tokio::sync::oneshot::Receiver<ExecResult>> {
+    let hs = handles.borrow();
+    hs.get(tab_id).map(|handle| match password {
+        Some(password) => handle.exec_privileged(cmd, password, timeout, max_output),
+        None => handle.exec(cmd, timeout, max_output),
+    })
+}
+
+/// 失败时把 stderr 头部写进 debug 日志，便于定位远端命令的真实报错。
+fn debug_failure(what: &str, res: &ExecResult) {
+    let stderr = res.stderr.trim();
+    if stderr.is_empty() {
+        return;
+    }
+    let head: String = stderr.chars().take(400).collect();
+    tracing::debug!(target: "rudder::docker", "{what} failed: {head}");
+}
+
+fn refresh_images(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    let request = {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.images_busy {
+            return;
+        }
+        if !force && rt.images_last_ok.is_some_and(|t| t.elapsed() < FRESH_FOR) {
+            return;
+        }
+        let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+        let password = password_for(rt, &elev);
+        match exec_on(
+            handles,
+            &rt.tab_id,
+            command::images(&elev),
+            password,
+            PS_TIMEOUT,
+            PS_MAX_OUTPUT,
+        ) {
+            Some(images) => {
+                rt.images_busy = true;
+                rt.images_generation += 1;
+                rt.images_status = HostStatus::Loading;
+                rt.images_failure = None;
+                Some((images, rt.images_generation))
+            }
+            None => {
+                rt.images_status = HostStatus::Offline;
+                rt.images_failure = Some(DockerFailure::SessionLost);
+                None
+            }
+        }
+    };
+    apply_section_lists(window, hub);
+    let Some((images, generation)) = request else {
+        return;
+    };
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    runtime.spawn(async move {
+        let result = images.await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                apply_images_result(&window, &mut hub, &key_owned, generation, result);
+            });
+        });
+    });
+}
+
+fn apply_images_result(
+    window: &AppWindow,
+    hub: &mut DockerHub,
+    key: &str,
+    generation: u64,
+    result: Result<ExecResult, tokio::sync::oneshot::error::RecvError>,
+) {
+    {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.images_generation != generation {
+            return;
+        }
+        rt.images_busy = false;
+        match result {
+            Err(_) => {
+                rt.images_status = HostStatus::Error;
+                rt.images_failure = Some(DockerFailure::SessionLost);
+            }
+            Ok(res) => {
+                let lost = res.exit_code.is_none() && !res.timed_out && res.error.is_none();
+                if res.timed_out || res.error.is_some() || lost || res.exit_code.unwrap_or(1) != 0 {
+                    debug_failure("docker images", &res);
+                    rt.images_status = HostStatus::Error;
+                    rt.images_failure = Some(if lost {
+                        DockerFailure::SessionLost
+                    } else {
+                        classify_docker(&res.stderr, res.exit_code, res.timed_out)
+                    });
+                } else {
+                    let parsed = parse::parse_images(&res.stdout);
+                    tracing::debug!(
+                        target: "rudder::docker",
+                        "docker images: {} rows",
+                        parsed.rows.len()
+                    );
+                    rt.images = parsed.rows;
+                    rt.images_status = if rt.images.is_empty() {
+                        HostStatus::Empty
+                    } else {
+                        HostStatus::Ok
+                    };
+                    rt.images_failure = None;
+                    rt.images_last_ok = Some(Instant::now());
+                }
+            }
+        }
+    }
+    if hub.active.as_deref() == Some(key) {
+        apply_section_lists(window, hub);
+    }
+}
+
+fn refresh_compose(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    let request = {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.compose_busy {
+            return;
+        }
+        if !force && rt.compose_last_ok.is_some_and(|t| t.elapsed() < FRESH_FOR) {
+            return;
+        }
+        let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+        let password = password_for(rt, &elev);
+        let cmd = command::compose_ls(true, &elev);
+        match exec_on(handles, &rt.tab_id, cmd, password, PS_TIMEOUT, PS_MAX_OUTPUT) {
+            Some(rx) => {
+                rt.compose_busy = true;
+                rt.compose_generation += 1;
+                rt.compose_status = HostStatus::Loading;
+                rt.compose_failure = None;
+                Some((rx, rt.compose_generation))
+            }
+            None => {
+                rt.compose_status = HostStatus::Offline;
+                rt.compose_failure = Some(DockerFailure::SessionLost);
+                None
+            }
+        }
+    };
+    apply_section_lists(window, hub);
+    let Some((rx, generation)) = request else { return };
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    runtime.spawn(async move {
+        let result = rx.await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                apply_compose_result(&window, &mut hub, &key_owned, generation, result);
+            });
+        });
+    });
+}
+
+fn apply_compose_result(
+    window: &AppWindow,
+    hub: &mut DockerHub,
+    key: &str,
+    generation: u64,
+    result: Result<ExecResult, tokio::sync::oneshot::error::RecvError>,
+) {
+    {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.compose_generation != generation {
+            return;
+        }
+        rt.compose_busy = false;
+        match result {
+            Err(_) => {
+                rt.compose_status = HostStatus::Error;
+                rt.compose_failure = Some(DockerFailure::SessionLost);
+            }
+            Ok(res) => {
+                let lost = res.exit_code.is_none() && !res.timed_out && res.error.is_none();
+                if res.timed_out || res.error.is_some() || lost || res.exit_code.unwrap_or(1) != 0 {
+                    debug_failure("docker compose ls", &res);
+                    rt.compose_status = HostStatus::Error;
+                    rt.compose_failure = Some(if lost {
+                        DockerFailure::SessionLost
+                    } else {
+                        classify_docker(&res.stderr, res.exit_code, res.timed_out)
+                    });
+                } else {
+                    let parsed = parse::parse_compose_ls(&res.stdout);
+                    rt.compose_projects = parsed.rows;
+                    rt.compose_status = if rt.compose_projects.is_empty() {
+                        HostStatus::Empty
+                    } else {
+                        HostStatus::Ok
+                    };
+                    rt.compose_failure = None;
+                    rt.compose_last_ok = Some(Instant::now());
+                }
+            }
+        }
+    }
+    if hub.active.as_deref() == Some(key) {
+        apply_section_lists(window, hub);
+    }
+}
+
+fn refresh_networks(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    let request = {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.networks_busy {
+            return;
+        }
+        if !force && rt.networks_last_ok.is_some_and(|t| t.elapsed() < FRESH_FOR) {
+            return;
+        }
+        let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
+        let password = password_for(rt, &elev);
+        match exec_on(
+            handles,
+            &rt.tab_id,
+            command::network_ls(&elev),
+            password,
+            PS_TIMEOUT,
+            PS_MAX_OUTPUT,
+        ) {
+            Some(ls) => {
+                rt.networks_busy = true;
+                rt.networks_generation += 1;
+                rt.networks_status = HostStatus::Loading;
+                rt.networks_failure = None;
+                Some((ls, rt.networks_generation))
+            }
+            None => {
+                rt.networks_status = HostStatus::Offline;
+                rt.networks_failure = Some(DockerFailure::SessionLost);
+                None
+            }
+        }
+    };
+    apply_section_lists(window, hub);
+    let Some((ls, generation)) = request else {
+        return;
+    };
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    runtime.spawn(async move {
+        let ls_result = ls.await;
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                apply_networks_result(&window, &mut hub, &key_owned, generation, ls_result);
+            });
+        });
+    });
+}
+
+fn apply_networks_result(
+    window: &AppWindow,
+    hub: &mut DockerHub,
+    key: &str,
+    generation: u64,
+    ls_result: Result<ExecResult, tokio::sync::oneshot::error::RecvError>,
+) {
+    {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.networks_generation != generation {
+            return;
+        }
+        rt.networks_busy = false;
+        match ls_result {
+            Err(_) => {
+                rt.networks_status = HostStatus::Error;
+                rt.networks_failure = Some(DockerFailure::SessionLost);
+            }
+            Ok(res) => {
+                let lost = res.exit_code.is_none() && !res.timed_out && res.error.is_none();
+                if res.timed_out || res.error.is_some() || lost || res.exit_code.unwrap_or(1) != 0 {
+                    debug_failure("docker network ls", &res);
+                    rt.networks_status = HostStatus::Error;
+                    rt.networks_failure = Some(if lost {
+                        DockerFailure::SessionLost
+                    } else {
+                        classify_docker(&res.stderr, res.exit_code, res.timed_out)
+                    });
+                } else {
+                    let parsed = parse::parse_network_ls(&res.stdout);
+                    rt.networks = parsed.rows;
+                    rt.networks_status = if rt.networks.is_empty() {
+                        HostStatus::Empty
+                    } else {
+                        HostStatus::Ok
+                    };
+                    rt.networks_failure = None;
+                    rt.networks_last_ok = Some(Instant::now());
+                }
+            }
+        }
+    }
+    if hub.active.as_deref() == Some(key) {
+        apply_section_lists(window, hub);
+    }
+}
+
+pub(crate) fn set_section_filter(window: &AppWindow, section: &str, text: &str) {
+    let needle = text.trim().to_ascii_lowercase();
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        match section {
+            "images" => hub.image_filter = needle,
+            "compose" => hub.compose_filter = needle,
+            _ => return,
+        }
+        apply_section_lists(window, &mut hub);
+    });
+}
+
+/// Docker Hub 搜索：输入去抖后请求（本机 HTTP）。
+pub(crate) fn search_registry(window: &AppWindow, query: &str) {
+    registry::search(window, query);
+}
+
+/// 镜像仓库刷新按钮。
+pub(crate) fn refresh_registry(window: &AppWindow) {
+    registry::refresh(window);
+}
+
+/// 镜像仓库上一页 / 下一页。
+pub(crate) fn registry_page(window: &AppWindow, delta: i32) {
+    registry::page(window, delta);
+}
+
+/// 二级页切换：只记录当前页；三页数据在连上/每拍已拉过，切过去直接读缓存。
+pub(crate) fn set_section(window: &AppWindow, section: &str) {
+    HUB.with(|hub| hub.borrow_mut().section = section.to_string());
+    refresh_active_section(window, false);
+}
+
+/// 页面刷新按钮：强制重拉容器 + 该页列表（派生数据随容器快照重算）。
+pub(crate) fn refresh_section_now(window: &AppWindow, section: &str) {
+    let Some(ctx) = refresh_ctx() else { return };
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        hub.section = section.to_string();
+        let Some(key) = hub.active.clone() else { return };
+        if let Some(rt) = hub.hosts.get_mut(&key) {
+            rt.backoff_until = None;
+        }
+        refresh_key(window, &ctx.runtime, &ctx.handles, &mut hub, &key, true);
+        refresh_section_lists(window, &ctx.runtime, &ctx.handles, &mut hub, &key, true);
+    });
+}
+
+/// 定时器 / 进入 Docker 页时按当前二级页刷新。
+pub(crate) fn refresh_active_section(window: &AppWindow, force: bool) {
+    let Some(ctx) = refresh_ctx() else { return };
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        let Some(key) = hub.active.clone() else { return };
+        refresh_section_lists(window, &ctx.runtime, &ctx.handles, &mut hub, &key, force);
+    });
+}
+
+/// 按 `hub.section` 拉当前二级页的列表。调用方已持有 `hub` 的借用。
+fn refresh_section_lists(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    match hub.section.as_str() {
+        "images" => refresh_images(window, runtime, handles, hub, key, force),
+        "compose" => refresh_compose(window, runtime, handles, hub, key, force),
+        "networks" => refresh_networks(window, runtime, handles, hub, key, force),
+        _ => {}
+    }
+}
+
+/// 三类二级页一起刷：连上、10s 拍、操作完成都走它。
+fn refresh_all_sections(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    refresh_images(window, runtime, handles, hub, key, force);
+    refresh_compose(window, runtime, handles, hub, key, force);
+    refresh_networks(window, runtime, handles, hub, key, force);
+}
+
 fn apply_result(
     window: &AppWindow,
     hub: &mut DockerHub,
@@ -1795,6 +2370,7 @@ fn apply_result(
                     rt.status = HostStatus::Error;
                     rt.failure = Some(DockerFailure::Parse);
                 } else {
+                    let changed = rt.containers != parsed.rows;
                     rt.containers = parsed.rows;
                     rt.failure = None;
                     rt.last_ok = Some(Instant::now());
@@ -1804,6 +2380,10 @@ fn apply_result(
                         HostStatus::Ok
                     };
                     rt.backoff_until = None;
+                    // 首次成功、或容器集合有变化才换代：没变化时派生数据无需重算。
+                    if changed || rt.snapshot_epoch == 0 {
+                        rt.snapshot_epoch += 1;
+                    }
                 }
             }
         }
@@ -1845,6 +2425,10 @@ fn apply_result(
     } else {
         sync_host_count(hub, key);
     }
+
+    // `docker ps` 刚成功：用这份快照重算「使用中」与「网络成员」。
+    // 快照没换代时内部直接跳过，不会重复下发命令。
+    spawn_derived_refresh(window, hub, key);
 
     // 不可用弹窗：只在该主机是当前标签、且这一轮确实失败时弹一次。
     let blocker = hub
@@ -1901,6 +2485,263 @@ fn sync_host_count(hub: &mut DockerHub, key: &str) {
     }
 }
 
+/// 把当前主机的三份只读列表写进 Slint 模型，并更新概览计数。
+/// ps 成功后：用这份快照重算「使用中」与「网络成员」。
+///
+/// 调用时已持有 `HUB` 的借用，函数内部不得再 `HUB.with`；异步回写时才借。
+fn spawn_derived_refresh(window: &AppWindow, hub: &mut DockerHub, key: &str) {
+    let Some(ctx) = refresh_ctx() else { return };
+    let use_sudo = window.get_docker_use_sudo();
+    let mut redraw = false;
+    let (epoch, image_req, network_req) = {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.snapshot_epoch == 0 || !matches!(rt.status, HostStatus::Ok | HostStatus::Empty) {
+            return;
+        }
+        let epoch = rt.snapshot_epoch;
+        let elev = elevation_for(rt, use_sudo, false);
+        let password = password_for(rt, &elev);
+        let tab_id = rt.tab_id.clone();
+
+        // 镜像：只算运行中的容器；没有运行中的容器就是已知的 0，不必下发命令。
+        let image_req = if rt.image_usage_epoch == epoch && rt.image_usage.is_some() {
+            None
+        } else {
+            let running = parse::running_container_ids(&rt.containers);
+            if running.is_empty() {
+                rt.image_usage = Some(HashMap::new());
+                rt.image_usage_epoch = epoch;
+                redraw = true;
+                None
+            } else {
+                command::image_usage(&running, &elev).and_then(|cmd| {
+                    exec_on(
+                        &ctx.handles,
+                        &tab_id,
+                        cmd,
+                        password.clone(),
+                        PS_TIMEOUT,
+                        PS_MAX_OUTPUT,
+                    )
+                })
+            }
+        };
+
+        // 网络：全部容器（含已停止）。`docker network connect` 不改容器 id，
+        // 所以每个新代次都重算，不能按 id 集合复用。
+        let network_req = if rt.network_members_epoch == epoch && rt.network_members.is_some() {
+            None
+        } else {
+            let all: Vec<String> = rt.containers.iter().map(|item| item.id.clone()).collect();
+            if all.is_empty() {
+                rt.network_members = Some(HashMap::new());
+                rt.network_members_epoch = epoch;
+                redraw = true;
+                None
+            } else {
+                command::container_networks(&all, &elev).and_then(|cmd| {
+                    exec_on(&ctx.handles, &tab_id, cmd, password, PS_TIMEOUT, PS_MAX_OUTPUT)
+                })
+            }
+        };
+        (epoch, image_req, network_req)
+    };
+
+    if image_req.is_none() && network_req.is_none() {
+        if redraw && hub.active.as_deref() == Some(key) {
+            apply_section_lists(window, hub);
+        }
+        return;
+    }
+
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    ctx.runtime.spawn(async move {
+        let image_result = match image_req {
+            Some(rx) => Some(rx.await),
+            None => None,
+        };
+        let network_result = match network_req {
+            Some(rx) => Some(rx.await),
+            None => None,
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                apply_derived_result(
+                    &window,
+                    &mut hub,
+                    &key_owned,
+                    epoch,
+                    image_result,
+                    network_result,
+                );
+            });
+        });
+    });
+}
+
+fn apply_derived_result(
+    window: &AppWindow,
+    hub: &mut DockerHub,
+    key: &str,
+    epoch: u64,
+    image_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
+    network_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
+) {
+    {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        // 快照已换代：这批结果作废，等新快照重算。
+        if rt.snapshot_epoch != epoch {
+            return;
+        }
+        if let Some(result) = image_result
+            && let Ok(res) = &result
+        {
+            if inspect_usable(res) {
+                rt.image_usage = Some(parse::parse_image_usage(&res.stdout));
+                rt.image_usage_epoch = epoch;
+            } else {
+                debug_failure("docker inspect (image usage)", res);
+            }
+        }
+        if let Some(result) = network_result
+            && let Ok(res) = &result
+        {
+            if inspect_usable(res) {
+                rt.network_members = Some(parse::network_members_by_network(&res.stdout));
+                rt.network_members_epoch = epoch;
+            } else {
+                debug_failure("docker inspect (network membership)", res);
+            }
+        }
+    }
+    if hub.active.as_deref() == Some(key) {
+        apply_section_lists(window, hub);
+    }
+}
+
+/// inspect 结果能否用于派生：没超时/本地错误，且要么退出码 0，要么有部分输出
+/// （容器刚被删会让 inspect 非 0 退出，其余容器仍然有效）。
+fn inspect_usable(res: &ExecResult) -> bool {
+    !res.timed_out
+        && res.error.is_none()
+        && (res.exit_code == Some(0) || !res.stdout.trim().is_empty())
+}
+
+fn apply_section_lists(window: &AppWindow, hub: &mut DockerHub) {
+    let Some(key) = hub.active.clone() else { return };
+    let Some(rt) = hub.hosts.get(&key) else { return };
+
+    let image_needle = hub.image_filter.clone();
+    // 「使用中」来自容器快照派生的 map：查得到就是已知值，map 本身缺失才是未知。
+    let usage = rt.image_usage.as_ref();
+    hub.images_model.set_vec(
+        rt.images
+            .iter()
+            .filter(|image| {
+                image_needle.is_empty()
+                    || image.display_name.to_ascii_lowercase().contains(&image_needle)
+                    || image.repository.to_ascii_lowercase().contains(&image_needle)
+            })
+            .map(|image| {
+                let count = usage.and_then(|map| {
+                    map.get(&parse::normalize_image_id(&image.id)).copied()
+                });
+                DockerImage {
+                    id: image.id.as_str().into(),
+                    name: if image.dangling {
+                        "<none>".into()
+                    } else {
+                        image.repository.as_str().into()
+                    },
+                    tag: image.tag.as_str().into(),
+                    size: image.size.as_str().into(),
+                    created: image.created.as_str().into(),
+                    in_use: count.is_some_and(|count| count > 0),
+                    use_known: usage.is_some(),
+                    use_count: count.unwrap_or(0).to_string().into(),
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
+    window.set_docker_image_list(ModelRc::from(hub.images_model.clone()));
+    window.set_docker_image_status(rt.images_status.key().into());
+    window.set_docker_image_error(error_text(rt.images_failure, rt.last_mode).into());
+
+    // 容器数按 compose 项目标签统计（含已停止），`Status` 里的 running(N) 只算主状态。
+    let mut compose_counts: HashMap<&str, usize> = HashMap::new();
+    for container in &rt.containers {
+        if let Some(project) = container.compose_project.as_deref() {
+            *compose_counts.entry(project).or_insert(0) += 1;
+        }
+    }
+    let compose_needle = hub.compose_filter.clone();
+    hub.compose_model.set_vec(
+        rt.compose_projects
+            .iter()
+            .filter(|project| {
+                compose_needle.is_empty()
+                    || project.name.to_ascii_lowercase().contains(&compose_needle)
+                    || project.config_files.to_ascii_lowercase().contains(&compose_needle)
+            })
+            .map(|project| DockerComposeRow {
+                name: project.name.as_str().into(),
+                running: project.running,
+                containers_text: compose_counts
+                    .get(project.name.as_str())
+                    .copied()
+                    .unwrap_or(project.containers.max(0) as usize)
+                    .to_string()
+                    .into(),
+                config: project.config_files.as_str().into(),
+            })
+            .collect::<Vec<_>>(),
+    );
+    window.set_docker_compose_list(ModelRc::from(hub.compose_model.clone()));
+    window.set_docker_compose_status(rt.compose_status.key().into());
+    window.set_docker_compose_error(error_text(rt.compose_failure, rt.last_mode).into());
+
+    let members = rt.network_members.as_ref();
+    hub.networks_model.set_vec(
+        rt.networks
+            .iter()
+            .map(|network| {
+                let names: &[String] = members
+                    .and_then(|map| map.get(&network.name))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                DockerNetworkRow {
+                    name: network.name.as_str().into(),
+                    driver: network.driver.as_str().into(),
+                    count_text: names.len().to_string().into(),
+                    containers: names.join(", ").into(),
+                }
+            })
+            .collect::<Vec<_>>(),
+    );
+    window.set_docker_network_list(ModelRc::from(hub.networks_model.clone()));
+    window.set_docker_network_status(rt.networks_status.key().into());
+    window.set_docker_network_error(error_text(rt.networks_failure, rt.last_mode).into());
+
+    window.set_docker_images(if rt.images_last_ok.is_some() {
+        rt.images.len() as i32
+    } else {
+        -1
+    });
+    window.set_docker_networks(if rt.networks_last_ok.is_some() {
+        rt.networks.len() as i32
+    } else {
+        -1
+    });
+    window.set_docker_compose_projects(if rt.compose_last_ok.is_some() {
+        rt.compose_projects.len() as i32
+    } else {
+        -1
+    });
+}
+
 fn clear_view(window: &AppWindow, hub: &mut DockerHub) {
     hub.containers_model.set_vec(Vec::<DockerContainer>::new());
     window.set_docker_containers(ModelRc::from(hub.containers_model.clone()));
@@ -1912,6 +2753,21 @@ fn clear_view(window: &AppWindow, hub: &mut DockerHub) {
     window.set_docker_permission("".into());
     window.set_docker_running(-1);
     window.set_docker_stopped(-1);
+    hub.images_model.set_vec(Vec::<DockerImage>::new());
+    window.set_docker_image_list(ModelRc::from(hub.images_model.clone()));
+    window.set_docker_image_status("idle".into());
+    window.set_docker_image_error("".into());
+    hub.compose_model.set_vec(Vec::<DockerComposeRow>::new());
+    window.set_docker_compose_list(ModelRc::from(hub.compose_model.clone()));
+    window.set_docker_compose_status("idle".into());
+    window.set_docker_compose_error("".into());
+    hub.networks_model.set_vec(Vec::<DockerNetworkRow>::new());
+    window.set_docker_network_list(ModelRc::from(hub.networks_model.clone()));
+    window.set_docker_network_status("idle".into());
+    window.set_docker_network_error("".into());
+    window.set_docker_images(-1);
+    window.set_docker_networks(-1);
+    window.set_docker_compose_projects(-1);
     window.set_docker_service_state("unknown".into());
     window.set_docker_version("".into());
     window.set_docker_service_pending(false);
@@ -1996,6 +2852,7 @@ fn apply_active(window: &AppWindow, hub: &mut DockerHub) {
             .collect::<Vec<_>>(),
     );
     window.set_docker_containers(ModelRc::from(hub.containers_model.clone()));
+    apply_section_lists(window, hub);
 }
 
 /// Rust 侧 500ms 驱动：按当前选中 Docker 主机的 tab_id 刷新概览曲线。
@@ -2113,6 +2970,14 @@ fn error_text(failure: Option<DockerFailure>, mode: command::Mode) -> &'static s
             "远端未安装 docker CLI",
             "docker CLI is not installed on the remote host",
         ),
+        Some(DockerFailure::NoCompose) => t(
+            "远端未安装 Docker Compose v2 插件",
+            "Docker Compose v2 plugin is not installed on the remote host",
+        ),
+        Some(DockerFailure::RegistryAuth) => t(
+            "镜像仓库需要登录：请先执行 docker login，或检查凭据",
+            "Registry authentication required — run docker login or check credentials",
+        ),
         Some(DockerFailure::DaemonDown) => t(
             "远端 Docker daemon 未运行或 socket 不可访问",
             "Remote Docker daemon is down or the socket is unreachable",
@@ -2122,7 +2987,10 @@ fn error_text(failure: Option<DockerFailure>, mode: command::Mode) -> &'static s
             "会话已关闭，无法读取容器列表",
             "Session closed — cannot list containers",
         ),
-        Some(DockerFailure::NotFound) => t("容器不存在", "Container not found"),
+        Some(DockerFailure::NotFound) => t(
+            "目标不存在，可能已被删除",
+            "Target not found — it may have been removed",
+        ),
         Some(DockerFailure::Conflict) => t("容器状态冲突", "Container state conflict"),
         Some(DockerFailure::Parse) => t("无法解析 docker 输出", "Cannot parse docker output"),
         Some(DockerFailure::Other) => t("docker 命令执行失败，请查看远端日志", "docker command failed — check the remote logs"),

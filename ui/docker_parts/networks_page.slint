@@ -1,0 +1,236 @@
+//! 网络列表：三列表格，行可展开看关联容器（第一批只读，新增 / 删除置灰）。
+//!
+//! 关联容器由 Rust 从容器侧汇总（`docker ps -a` + inspect），停止的容器也算。
+//! 展开高度直接进 `Flickable.content-height` 的算式：`for` 循环下 Slint #407 不会
+//! 自动按子项算内容高度，只靠 `preferred-height` 会让最后一行展开后被底边裁掉。
+//!
+//! 卡片内的表头与列表均为显式定位，卡片本身不参与首选高度计算（见 list_card.slint），
+//! 因此切页时页头 / 卡片 / 统计条的位置恒定，不会整页从底边弹入。
+
+import { Theme } from "../theme.slint";
+import { IconText } from "../components/text.slint";
+import { StateSurface } from "../components/interactive.slint";
+import { DockerTip } from "common.slint";
+import { DockerPageHead } from "page_head.slint";
+import { DockerListCard, DockerListFooter } from "list_card.slint";
+import { DockerNetworkRow } from "types.slint";
+
+component NetHeader inherits Rectangle {
+    height: Theme.table-head-h;
+    background: transparent;
+
+    HorizontalLayout {
+        padding-left: Theme.sp-10;
+        padding-right: Theme.sp-12;
+        spacing: Theme.sp-10;
+
+        // 与行的展开箭头同宽，让「网络名称」对齐名称文字。
+        Rectangle { width: 18px * Theme.ui-zoom; height: 1px; background: transparent; }
+        Text { text: @tr("Network"); font-size: Theme.fs-xs; color: Theme.text-muted; vertical-alignment: center; horizontal-stretch: 1; }
+        Text { text: @tr("Driver"); width: 140px * Theme.ui-zoom; font-size: Theme.fs-xs; color: Theme.text-muted; vertical-alignment: center; horizontal-alignment: left; }
+        Text { text: @tr("Containers"); width: 96px * Theme.ui-zoom; font-size: Theme.fs-xs; color: Theme.text-muted; vertical-alignment: center; horizontal-alignment: right; }
+    }
+}
+
+export component DockerNetworksPage inherits Rectangle {
+    in property <[DockerNetworkRow]> rows;
+    in property <string> status: "idle";
+    in property <string> error-text;
+    /// 当前展开的网络行；-1 = 全部收起。
+    in-out property <int> expanded-index: -1;
+
+    callback refresh();
+    callback add();
+    callback action(string);
+    callback toggle(string);
+
+    background: transparent;
+
+    VerticalLayout {
+        padding-left: Theme.sp-20;
+        padding-right: Theme.sp-20;
+        padding-top: Theme.sp-16;
+        padding-bottom: Theme.sp-12;
+        spacing: Theme.sp-10;
+
+        DockerPageHead {
+            title: @tr("Networks");
+            show-search: false;
+            action-label: @tr("New network");
+            action-enabled: false;
+            refresh() => { root.refresh(); }
+            action() => { root.add(); }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        DockerListCard {
+            framed: root.rows.length > 0 && root.status != "error";
+
+            // 加载 / 空 / 错误态：包一层显式尺寸的 Rectangle，居中显示提示。
+            if root.rows.length == 0 || root.status == "error" : Rectangle {
+                width: parent.width;
+                height: parent.height;
+
+                if root.status == "loading" || root.status == "idle" : Text {
+                    text: @tr("Loading networks…");
+                    font-size: Theme.fs-sm;
+                    color: Theme.text-muted;
+                    width: parent.width;
+                    height: parent.height;
+                    horizontal-alignment: center;
+                    vertical-alignment: center;
+                }
+
+                if root.status == "error" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-10;
+                    IconText { text: "\u{E002}"; font-size: 28px * Theme.ui-zoom; color: Theme.danger; centered: true; horizontal-stretch: 1; }
+                    Text { text: root.error-text; font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; wrap: word-wrap; max-width: 420px * Theme.ui-zoom; }
+                    HorizontalLayout {
+                        alignment: center;
+                        StateSurface {
+                            width: 88px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; radius: Theme.radius-sm; outlined: true;
+                            clicked => { root.refresh(); }
+                            Text { text: @tr("Retry"); font-size: Theme.fs-sm; color: Theme.text-secondary; horizontal-alignment: center; vertical-alignment: center; }
+                        }
+                    }
+                }
+
+                if root.status == "empty" : VerticalLayout {
+                    alignment: center;
+                    spacing: Theme.sp-8;
+                    IconText { text: "\u{E80B}"; font-size: 28px * Theme.ui-zoom; color: Theme.text-muted; centered: true; horizontal-stretch: 1; }
+                    Text { text: @tr("No networks"); font-size: Theme.fs-md; color: Theme.text-secondary; horizontal-alignment: center; }
+                }
+            }
+
+            if root.rows.length > 0 && root.status != "error" : NetHeader {
+                x: 0px;
+                y: 0px;
+                width: parent.width;
+            }
+            if root.rows.length > 0 && root.status != "error" : Rectangle {
+                y: Theme.table-head-h;
+                width: parent.width;
+                height: 1px;
+                background: Theme.border-subtle;
+            }
+
+            if root.rows.length > 0 && root.status != "error" : Flickable {
+                y: Theme.table-head-h + 1px;
+                width: parent.width;
+                height: max(0px, parent.height - Theme.table-head-h - 1px);
+                content-width: parent.width;
+                content-height: max(self.height,
+                    root.rows.length * Theme.row-h-card
+                    + (root.expanded-index >= 0 ? 32px * Theme.ui-zoom : 0px)
+                    + 8px * Theme.ui-zoom);
+
+                net-col := VerticalLayout {
+                    spacing: 0px;
+                    for row[i] in root.rows : Rectangle {
+                        height: Theme.row-h-card + (root.expanded-index == i ? 32px * Theme.ui-zoom : 0px);
+                        width: parent.width;
+                        background: row-ta.has-hover ? Theme.state-hover : transparent;
+
+                        row-ta := TouchArea {
+                            mouse-cursor: pointer;
+                            clicked => {
+                                root.expanded-index = root.expanded-index == i ? -1 : i;
+                                root.toggle(row.name);
+                            }
+                        }
+
+                        HorizontalLayout {
+                            height: Theme.row-h-card;
+                            padding-left: Theme.sp-10;
+                            padding-right: Theme.sp-12;
+                            spacing: Theme.sp-10;
+
+                            IconText {
+                                text: root.expanded-index == i ? "\u{E5CE}" : "\u{E5CF}";
+                                font-size: 16px * Theme.ui-zoom;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                            }
+                            Text {
+                                text: row.name;
+                                font-size: Theme.fs-md;
+                                color: Theme.text-primary;
+                                vertical-alignment: center;
+                                horizontal-stretch: 1;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: row.driver;
+                                width: 140px * Theme.ui-zoom;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                            Text {
+                                text: row.count_text;
+                                width: 96px * Theme.ui-zoom;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-secondary;
+                                vertical-alignment: center;
+                                horizontal-alignment: right;
+                            }
+                        }
+
+                        if root.expanded-index == i : Rectangle {
+                            y: Theme.row-h-card;
+                            width: parent.width;
+                            height: 32px * Theme.ui-zoom;
+                            background: Theme.bg-panel;
+                            // 挡住展开区的点击，避免又折叠回去。
+                            TouchArea { }
+                            Text {
+                                x: Theme.sp-10 + 18px * Theme.ui-zoom + Theme.sp-10;
+                                width: parent.width - self.x - Theme.sp-12;
+                                text: row.containers == "" ? @tr("No containers attached") : @tr("Containers") + ": " + row.containers;
+                                font-size: Theme.fs-xs;
+                                color: Theme.text-muted;
+                                vertical-alignment: center;
+                                overflow: elide;
+                            }
+                        }
+
+                        Rectangle {
+                            y: parent.height - 1px;
+                            width: parent.width;
+                            height: 1px;
+                            background: Theme.border-subtle;
+                        }
+                    }
+                }
+            }
+        }
+
+        Rectangle { height: 1px; background: Theme.border-subtle; }
+
+        DockerListFooter {
+            label: @tr("Total") + " " + root.rows.length + " " + @tr("items");
+        }
+    }
+
+    if DockerTip.text != "" : Rectangle {
+        x: max(Theme.sp-4, min(DockerTip.x - root.absolute-position.x - self.width / 2, root.width - self.width - Theme.sp-4));
+        y: DockerTip.y - root.absolute-position.y - self.height - 8px * Theme.ui-scale;
+        width: tip-label.preferred-width + 16px * Theme.ui-scale;
+        height: 22px * Theme.ui-scale;
+        border-radius: Theme.radius-sm;
+        background: Theme.bg-elevated;
+        border-width: 1px;
+        border-color: Theme.border-strong;
+        tip-label := Text {
+            x: 8px * Theme.ui-scale;
+            text: DockerTip.text;
+            font-size: Theme.fs-xs;
+            color: Theme.text-primary;
+            vertical-alignment: center;
+        }
+    }
+}

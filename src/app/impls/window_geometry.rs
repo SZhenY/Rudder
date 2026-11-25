@@ -10,7 +10,6 @@ use slint::{ComponentHandle as _, Model as _, VecModel};
 
 use crate::ui::Theme;
 
-#[cfg(windows)]
 use i_slint_backend_winit::WinitWindowAccessor;
 
 use crate::layout::{LogicalRect, TerminalWheelHit};
@@ -81,6 +80,71 @@ pub(crate) fn center_window(win: &AppWindow) {
 
 #[cfg(not(windows))]
 pub(crate) fn center_window(_win: &AppWindow) {}
+
+/// 主窗外框几何（物理像素）。主窗最小化时 `outer_position` 是哨兵值，返回 `None`。
+fn parent_outer(main: &AppWindow) -> Option<(i32, i32, i32, i32)> {
+    main.window()
+        .with_winit_window(|ww| {
+            if ww.is_minimized().unwrap_or(false) {
+                return None;
+            }
+            let pos = ww.outer_position().ok()?;
+            let size = ww.outer_size();
+            Some((
+                pos.x,
+                pos.y,
+                size.width as i32,
+                size.height as i32,
+            ))
+        })
+        .flatten()
+}
+
+/// 把子窗口放到主窗口外框正中（与主窗同心）。
+///
+/// 主窗最小化或拿不到几何时，退回主显示器工作区中心（Windows）/
+/// 当前显示器几何中心（其它平台）。
+pub(crate) fn place_window_centered(main: &AppWindow, target: &slint::Window) {
+    use i_slint_backend_winit::winit::dpi::PhysicalPosition;
+
+    if let Some((px, py, pw, ph)) = parent_outer(main) {
+        target.with_winit_window(|ww| {
+            let size = ww.outer_size();
+            let x = px + (pw - size.width as i32) / 2;
+            let y = py + (ph - size.height as i32) / 2;
+            ww.set_outer_position(PhysicalPosition::new(x, y));
+        });
+        return;
+    }
+
+    #[cfg(windows)]
+    {
+        let Some((wa_x, wa_y, area_w, area_h)) = primary_work_area() else {
+            return;
+        };
+        target.with_winit_window(|ww| {
+            let size = ww.outer_size();
+            let x = wa_x + (area_w.saturating_sub(size.width) as i32) / 2;
+            let y = wa_y + (area_h.saturating_sub(size.height) as i32) / 2;
+            ww.set_outer_position(PhysicalPosition::new(x, y));
+        });
+    }
+
+    #[cfg(not(windows))]
+    {
+        target.with_winit_window(|ww| {
+            let Some(monitor) = ww.current_monitor().or_else(|| ww.primary_monitor()) else {
+                return;
+            };
+            let pos = monitor.position();
+            let size = monitor.size();
+            let win = ww.outer_size();
+            let x = pos.x + (size.width.saturating_sub(win.width) as i32) / 2;
+            let y = pos.y + (size.height.saturating_sub(win.height) as i32) / 2;
+            ww.set_outer_position(PhysicalPosition::new(x, y));
+        });
+    }
+}
 
 /// 建窗之前把主窗口定到配置里的尺寸与位置。
 ///

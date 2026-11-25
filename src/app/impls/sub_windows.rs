@@ -8,24 +8,28 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 
-use slint::{ComponentHandle, Model, ModelRc, VecModel};
+use slint::{ComponentHandle, ModelRc, VecModel};
 
 use i_slint_backend_winit::WinitWindowAccessor as _;
 
 use super::resource_ui::{
     place_child_window, process_needs_root, request_first_frame, set_process_action_error,
-    sync_log_metrics, sync_proc_theme,
+    sync_log_metrics, sync_port_theme, sync_proc_theme,
 };
 use super::settings_window;
 use super::window::schedule_slint_pointer_ungrab;
 use super::AppContext;
-use crate::ui::{AppWindow, DockerLogWindow, ProcRow, ProcWindow, SettingsWindow};
+use crate::ui::{
+    AppWindow, DockerLogWindow, DockerPortWindow, ProcRow, ProcWindow, SettingsWindow,
+};
 
 thread_local! {
     static PROC: RefCell<Option<Rc<ProcWindow>>> = const { RefCell::new(None) };
     static SETTINGS: RefCell<Option<Rc<SettingsWindow>>> = const { RefCell::new(None) };
     /// 容器日志窗：独立系统窗口，固定黑底浅字。
     static LOG: RefCell<Option<Rc<DockerLogWindow>>> = const { RefCell::new(None) };
+    /// 端口映射窗：跟随主题，双击端口列打开。
+    static PORTS: RefCell<Option<Rc<DockerPortWindow>>> = const { RefCell::new(None) };
     /// 已 hide、等下一轮事件循环 drop 的窗口，按类型一个槽。
     static PENDING: RefCell<HashMap<&'static str, PendingSlot>> = RefCell::new(HashMap::new());
     /// 主窗口弱引用，供关闭子窗口后归还键盘焦点。
@@ -48,12 +52,14 @@ fn refocus_main_window() {
 const KIND_PROC: &str = "proc";
 const KIND_SETTINGS: &str = "settings";
 const KIND_LOG: &str = "docker-log";
+const KIND_PORTS: &str = "docker-ports";
 
-/// 延迟销毁中的窗口。三种窗口不同型，用枚举装进同一张表。
+/// 延迟销毁中的窗口。不同型窗口用枚举装进同一张表。
 enum PendingWindow {
     Proc(Rc<ProcWindow>),
     Settings(Rc<SettingsWindow>),
     Log(Rc<DockerLogWindow>),
+    Ports(Rc<DockerPortWindow>),
 }
 
 type PendingSlot = Rc<RefCell<Option<PendingWindow>>>;
@@ -91,6 +97,10 @@ pub(super) fn any_visible() -> bool {
             .as_ref()
             .is_some_and(|w| w.window().is_visible())
     }) || LOG.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .is_some_and(|w| w.window().is_visible())
+    }) || PORTS.with(|slot| {
         slot.borrow()
             .as_ref()
             .is_some_and(|w| w.window().is_visible())
@@ -271,6 +281,29 @@ pub(super) fn ensure_process(
 }
 
 /// 打开进程窗：创建（首次）→ 同步主题 → 显示 → 位置与首帧补救。
+/// show() 之后把子窗摆到主窗正中。
+///
+/// 首次 `show()` 时 winit 原生窗口还没创建，`with_winit_window` 不会执行，
+/// 定位会落空；设置窗也是靠 50ms 后再摆一次才准。这里统一补 50ms / 200ms
+/// 两次（同一公式、同一像素，幂等不跳动）。
+fn place_child_deferred<T>(main: &AppWindow, target: &T)
+where
+    T: ComponentHandle + 'static,
+{
+    place_child_window(main, target.window());
+    let main_weak = main.as_weak();
+    let target_weak = target.as_weak();
+    for delay in [50u64, 200] {
+        let m = main_weak.clone();
+        let w = target_weak.clone();
+        slint::Timer::single_shot(std::time::Duration::from_millis(delay), move || {
+            if let (Some(m), Some(w)) = (m.upgrade(), w.upgrade()) {
+                place_child_window(&m, w.window());
+            }
+        });
+    }
+}
+
 pub(super) fn show_process(main: &AppWindow, rows: &Rc<VecModel<ProcRow>>, ctx: &AppContext) {
     let Some(proc) = ensure_process(main, rows, ctx) else {
         return;
@@ -279,7 +312,7 @@ pub(super) fn show_process(main: &AppWindow, rows: &Rc<VecModel<ProcRow>>, ctx: 
     sync_proc_theme(main, &proc);
     settings_window::resync_if_open(main);
     let _ = proc.show();
-    place_child_window(main, proc.window());
+    place_child_deferred(main, proc.as_ref());
     // 首帧：macOS 上新映射的第二个窗口不会自动产生首次渲染事件，布局是渲染时
     // 惰性计算的 —— 0 / 50 / 200ms 各请求一次。
     request_first_frame(proc.window());
@@ -409,10 +442,7 @@ pub(super) fn docker_log_weak() -> slint::Weak<DockerLogWindow> {
 }
 
 /// 首次打开日志窗时创建并接好回调；之后（含关闭后一帧内重开）直接复用。
-fn ensure_log(
-    main: &AppWindow,
-    lines: &Rc<VecModel<slint::SharedString>>,
-) -> Option<Rc<DockerLogWindow>> {
+fn ensure_log(main: &AppWindow, text: &Rc<RefCell<String>>) -> Option<Rc<DockerLogWindow>> {
     if let Some(log) = LOG.with(|slot| slot.borrow().clone()) {
         return Some(log);
     }
@@ -429,7 +459,7 @@ fn ensure_log(
     };
     log.set_custom_titlebar(cfg!(not(target_os = "macos")));
     super::apply_chrome_on_first_frame(log.as_ref());
-    log.set_lines(ModelRc::from(lines.clone()));
+    log.set_log_text(text.borrow().clone().into());
     log.on_request_close(release_docker_log);
     log.window().on_close_requested(|| {
         release_docker_log();
@@ -460,25 +490,13 @@ fn ensure_log(
     }
     {
         let weak = log.as_weak();
-        let lines = lines.clone();
+        let text_cell = text.clone();
         log.on_copy_logs(move || {
-            let text = {
-                let mut out = String::new();
-                for i in 0..lines.row_count() {
-                    if let Some(row) = lines.row_data(i) {
-                        if !out.is_empty() {
-                            out.push('\n');
-                        }
-                        out.push_str(row.as_str());
-                    }
-                }
-                out
-            };
-            let message = if text.is_empty() {
+            let out = text_cell.borrow().clone();
+            let message = if out.is_empty() {
                 crate::i18n::t("日志为空", "No log output")
             } else {
-                let copy = text;
-                std::thread::spawn(move || super::clipboard_set_text(copy));
+                std::thread::spawn(move || super::clipboard_set_text(out));
                 crate::i18n::t("已复制", "Copied")
             };
             if let Some(w) = weak.upgrade() {
@@ -494,17 +512,19 @@ fn ensure_log(
 /// 打开（或更新）日志窗。已可见时只换内容，不重新居中、不抢焦点。
 pub(super) fn show_docker_log(
     main: &AppWindow,
-    lines: &Rc<VecModel<slint::SharedString>>,
+    text: &Rc<RefCell<String>>,
     host: &str,
     container: &str,
     loading: bool,
 ) {
-    let Some(log) = ensure_log(main, lines) else {
+    let Some(log) = ensure_log(main, text) else {
         return;
     };
     log.set_host(host.into());
     log.set_container(container.into());
     log.set_loading(loading);
+    // 窗口复用时要跟着换内容；新建时 ensure_log 已经设过同值。
+    log.set_log_text(text.borrow().clone().into());
     if loading {
         log.set_status("".into());
     }
@@ -513,7 +533,7 @@ pub(super) fn show_docker_log(
         return;
     }
     let _ = log.show();
-    place_child_window(main, log.window());
+    place_child_deferred(main, log.as_ref());
     request_first_frame(log.window());
     let f1 = log.as_weak();
     slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
@@ -528,6 +548,108 @@ pub(super) fn show_docker_log(
         }
     });
     log.window().with_winit_window(|ww| ww.focus_window());
+}
+
+/// 首次打开端口窗时创建并接好回调；之后直接复用。
+fn ensure_port_map(main: &AppWindow) -> Option<Rc<DockerPortWindow>> {
+    if let Some(port) = PORTS.with(|slot| slot.borrow().clone()) {
+        return Some(port);
+    }
+    if let Some(PendingWindow::Ports(port)) = take_pending(KIND_PORTS) {
+        PORTS.with(|slot| *slot.borrow_mut() = Some(port.clone()));
+        return Some(port);
+    }
+    let port = match DockerPortWindow::new() {
+        Ok(port) => Rc::new(port),
+        Err(err) => {
+            tracing::error!("failed to build docker port window: {err}");
+            return None;
+        }
+    };
+    port.set_custom_titlebar(cfg!(not(target_os = "macos")));
+    super::apply_chrome_on_first_frame(port.as_ref());
+    port.on_request_close(release_port_map);
+    port.window().on_close_requested(|| {
+        release_port_map();
+        slint::CloseRequestResponse::HideWindow
+    });
+    {
+        let weak = port.as_weak();
+        port.on_win_drag(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_window();
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    {
+        use i_slint_backend_winit::winit::window::ResizeDirection;
+        let weak = port.as_weak();
+        port.on_win_resize_se(move || {
+            if let Some(w) = weak.upgrade() {
+                w.window().with_winit_window(|ww| {
+                    let _ = ww.drag_resize_window(ResizeDirection::SouthEast);
+                });
+                schedule_slint_pointer_ungrab(weak.clone());
+            }
+        });
+    }
+    sync_port_theme(main, &port);
+    PORTS.with(|slot| *slot.borrow_mut() = Some(port.clone()));
+    Some(port)
+}
+
+/// 打开（或更新）端口映射窗。已可见时只换内容，不重新居中、不抢焦点。
+pub(super) fn show_port_map(main: &AppWindow, container: &str, host: &str, mappings: &[String]) {
+    let Some(port) = ensure_port_map(main) else {
+        return;
+    };
+    port.set_container(container.into());
+    port.set_host(host.into());
+    port.set_mappings_text(mappings.join("\n").into());
+    sync_port_theme(main, &port);
+    if port.window().is_visible() {
+        return;
+    }
+    let _ = port.show();
+    place_child_deferred(main, port.as_ref());
+    request_first_frame(port.window());
+    let f1 = port.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(50), move || {
+        if let Some(w) = f1.upgrade() {
+            request_first_frame(w.window());
+        }
+    });
+    let f2 = port.as_weak();
+    slint::Timer::single_shot(std::time::Duration::from_millis(200), move || {
+        if let Some(w) = f2.upgrade() {
+            request_first_frame(w.window());
+        }
+    });
+    port.window().with_winit_window(|ww| ww.focus_window());
+}
+
+/// 已创建的端口窗弱引用；未创建时返回默认（不可升级）的 `Weak`。
+pub(super) fn port_map_weak() -> slint::Weak<DockerPortWindow> {
+    PORTS.with(|slot| {
+        slot.borrow()
+            .as_ref()
+            .map(|w| w.as_weak())
+            .unwrap_or_default()
+    })
+}
+
+/// 关闭端口窗并归还 wgpu 设备；重复调用由 `take()` 幂等吸收。
+pub(super) fn release_port_map() {
+    let port = PORTS.with(|slot| slot.borrow_mut().take());
+    if let Some(port) = port {
+        let _ = port.hide();
+        drop_after_tick(KIND_PORTS, PendingWindow::Ports(port));
+        super::mem::reclaim_after_release(super::mem::ReclaimReason::SubWindowClosed);
+        refocus_main_window();
+    }
 }
 
 /// 关闭日志窗并归还 wgpu 设备；重复调用由 `take()` 幂等吸收。

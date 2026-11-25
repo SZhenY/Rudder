@@ -37,6 +37,7 @@ pub(crate) fn begin_shutdown(
     super::settings_window::close_if_open();
     super::sub_windows::release_process();
     super::sub_windows::release_docker_log();
+    super::sub_windows::release_port_map();
     {
         let mut sessions = handles.borrow_mut();
         for handle in sessions.values() {

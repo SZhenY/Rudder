@@ -997,3 +997,122 @@ msgstr "Docker 权限"
 
 msgid "Configure"
 msgstr "配置"
+
+msgid "Compose projects"
+msgstr "Compose 项目"
+
+msgid "Search projects"
+msgstr "搜索项目"
+
+msgid "New project"
+msgstr "新增项目"
+
+msgid "New container"
+msgstr "新建容器"
+
+msgid "Loading projects…"
+msgstr "正在加载项目…"
+
+msgid "No Compose projects"
+msgstr "暂无 Compose 项目"
+
+msgid "Projects from docker compose ls will appear here"
+msgstr "docker compose ls 的项目会显示在这里"
+
+msgid "containers"
+msgstr "容器"
+
+msgid "items"
+msgstr "项"
+
+msgid "Start / stop (later release)"
+msgstr "启动 / 停止（后续版本）"
+
+msgid "More actions (later release)"
+msgstr "更多操作（后续版本）"
+
+msgid "Search images"
+msgstr "搜索镜像"
+
+msgid "Add image"
+msgstr "添加镜像"
+
+msgid "Loading images…"
+msgstr "正在加载镜像…"
+
+msgid "No local images"
+msgstr "暂无本地镜像"
+
+msgid "Images on the remote host will appear here"
+msgstr "远端主机上的镜像会显示在这里"
+
+msgid "In use"
+msgstr "使用中"
+
+msgid "Not in use"
+msgstr "未使用"
+
+msgid "Push (later release)"
+msgstr "推送（后续版本）"
+
+msgid "Run (later release)"
+msgstr "运行（后续版本）"
+
+msgid "images"
+msgstr "个镜像"
+
+msgid "New network"
+msgstr "新增网络"
+
+msgid "Loading networks…"
+msgstr "正在加载网络…"
+
+msgid "No networks"
+msgstr "暂无网络"
+
+msgid "No containers attached"
+msgstr "无关联容器"
+
+msgid "Search Docker Hub"
+msgstr "搜索 Docker Hub"
+
+msgid "Searching Docker Hub…"
+msgstr "正在搜索 Docker Hub…"
+
+msgid "No matching images"
+msgstr "未找到匹配的镜像"
+
+msgid "pulls"
+msgstr "次下载"
+
+msgid "Page"
+msgstr "第"
+
+msgid "Pull (later release)"
+msgstr "拉取（后续版本）"
+
+msgid "Open on Docker Hub (later release)"
+msgstr "在 Docker Hub 打开（后续版本）"
+
+msgid "Select a Docker host first"
+msgstr "请先选择 Docker 主机"
+
+msgid "No SSH session for this host"
+msgstr "当前主机没有可用的 SSH 会话"
+
+msgid "Invalid search term"
+msgstr "搜索词包含非法字符"
+
+msgid "Session closed before the search finished"
+msgstr "会话已关闭，搜索未完成"
+
+msgid "Official"
+msgstr "官方"
+
+
+msgid "Created"
+msgstr "创建时间"
+
+msgid "Tag"
+msgstr "标签"
+

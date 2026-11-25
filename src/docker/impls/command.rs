@@ -130,6 +130,71 @@ pub(crate) fn ps(all: bool, elev: &Elevation) -> String {
     wrap(elev, &format!("docker ps{all} --format '{{{{json .}}}}'"))
 }
 
+/// Docker Compose 项目列表（compose v2 插件）。
+///
+/// `ls` 的 `--format` 只接受 `table | json`，不认 Go 模板：传 `{{json .}}` 会落进
+/// legacy 分支，把多个项目拼成一行且不带换行，逐行解析永远拿到 0 条。
+pub(crate) fn compose_ls(all: bool, elev: &Elevation) -> String {
+    let all = if all { " --all" } else { "" };
+    wrap(elev, &format!("docker compose ls{all} --format json"))
+}
+
+/// 本地镜像列表。
+pub(crate) fn images(elev: &Elevation) -> String {
+    wrap(elev, "docker images --format '{{json .}}'")
+}
+
+/// 网络列表。
+pub(crate) fn network_ls(elev: &Elevation) -> String {
+    wrap(elev, "docker network ls --format '{{json .}}'")
+}
+
+/// 镜像使用情况：运行中容器引用的镜像 ID，每行一个。
+///
+/// 只传入 `docker ps` 里 state 为 running 的容器（调用方过滤），stop 掉的容器不再
+/// 算「使用中」。显式 id 列表，不依赖远端 shell 的变量展开，也没有 `$(...)` / `;`，
+/// 四档提权都直接可用。
+pub(crate) fn image_usage(ids: &[String], elev: &Elevation) -> Option<String> {
+    let ids = checked_ids(ids)?;
+    Some(wrap(
+        elev,
+        &format!("docker inspect --format '{{{{.Image}}}}' {ids}"),
+    ))
+}
+
+/// 容器所属网络：`name|network-mode|net1,net2,`，每行一个容器。
+///
+/// 显式传入容器 id 列表（来自 `docker ps --all`），不依赖远端 shell 的变量展开；
+/// 从容器侧汇总，停掉的容器也算在内（停止后 `network inspect` 里没有 endpoint）。
+pub(crate) fn container_networks(ids: &[String], elev: &Elevation) -> Option<String> {
+    let ids = checked_ids(ids)?;
+    Some(wrap(
+        elev,
+        &format!(
+            "docker inspect --format '{{{{.Name}}}}|{{{{.HostConfig.NetworkMode}}}}|{{{{range $k,$v := .NetworkSettings.Networks}}}}{{{{$k}}}},{{{{end}}}}' {ids}"
+        ),
+    ))
+}
+
+/// 逐条校验容器 id 并拼成一行参数；空列表、任一非法或超过上限都整条放弃。
+///
+/// 上限按命令行长度兜底：2000 个 12 位 id 约 26KB，远低于 `ARG_MAX`。
+fn checked_ids(ids: &[String]) -> Option<String> {
+    const MAX_IDS: usize = 2000;
+    if ids.is_empty() || ids.len() > MAX_IDS {
+        return None;
+    }
+    let mut out = String::new();
+    for id in ids {
+        let id = checked_id(id).ok()?;
+        if !out.is_empty() {
+            out.push(' ');
+        }
+        out.push_str(id);
+    }
+    Some(out)
+}
+
 pub(crate) fn start(id: &str, elev: &Elevation) -> Result<String, ()> {
     with_id("start", id, "", elev)
 }
@@ -171,6 +236,30 @@ pub(crate) fn logs(id: &str, tail: u32, timestamps: bool, elev: &Elevation) -> R
 pub(crate) fn exec_shell(id: &str, elev: &Elevation) -> Result<String, ()> {
     let id = checked_id(id)?;
     Ok(wrap(elev, &format!("docker exec -it -- {id} sh")))
+}
+
+/// 远端 Docker Hub 搜索：走 daemon 的 registry 配置 / 加速源。
+pub(crate) fn search_images(term: &str, limit: u32, elev: &Elevation) -> Result<String, ()> {
+    let term = checked_search(term)?;
+    let limit = limit.clamp(1, 100);
+    Ok(wrap(
+        elev,
+        &format!("docker search --limit {limit} --format '{{{{json .}}}}' {term}"),
+    ))
+}
+
+fn checked_search(term: &str) -> Result<&str, ()> {
+    let term = term.trim();
+    if term.is_empty() || term.len() > 100 {
+        return Err(());
+    }
+    if !term
+        .bytes()
+        .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'.' | b'-' | b'/' | b':'))
+    {
+        return Err(());
+    }
+    Ok(term)
 }
 
 /// Docker 服务端版本；daemon 未启动 / 无权限时输出为空，调用方按「未知」处理。
@@ -291,6 +380,50 @@ mod tests {
         assert!(cmd.starts_with(PATH_PREFIX));
         assert!(cmd.contains("docker ps --all --format '{{json .}}'"));
         assert!(ps(false, &direct()).contains("docker ps --format"));
+    }
+
+    #[test]
+    fn list_commands_keep_json_format_and_elevation() {
+        let elev = direct();
+        assert!(compose_ls(true, &elev).contains("docker compose ls --all --format json"));
+        assert!(compose_ls(false, &elev).contains("docker compose ls --format json"));
+        assert!(!compose_ls(true, &elev).contains("{{json"));
+        assert!(images(&elev).contains("docker images --format '{{json .}}'"));
+        assert!(network_ls(&elev).contains("docker network ls --format '{{json .}}'"));
+        let ids = vec!["web".to_string(), "9f2c".to_string()];
+        let usage = image_usage(&ids, &elev).unwrap();
+        assert!(usage.contains("docker inspect --format '{{.Image}}'"));
+        assert!(usage.ends_with(" web 9f2c"));
+        let nets = container_networks(&ids, &elev).unwrap();
+        assert!(nets.contains("docker inspect --format '{{.Name}}|{{.HostConfig.NetworkMode}}"));
+        assert!(nets.contains(".NetworkSettings.Networks}}"));
+        assert!(nets.ends_with(" web 9f2c"));
+        // 显式 id 列表：提权前缀之后是一条完整的 docker 命令，没有命令替换 / 条件。
+        for cmd in [&usage, &nets] {
+            let argv = cmd.trim_start_matches(PATH_PREFIX);
+            assert!(argv.starts_with("docker inspect"));
+            assert!(!argv.contains("$("));
+            assert!(!argv.contains(';'));
+            assert!(!argv.contains(" if "));
+        }
+        assert!(image_usage(&[], &elev).is_none());
+        assert!(container_networks(&[], &elev).is_none());
+        assert!(image_usage(&["bad id".to_string()], &elev).is_none());
+        assert!(container_networks(&["bad id".to_string()], &elev).is_none());
+
+        let sudo = Elevation::sudo_nopass("");
+        assert!(images(&sudo).starts_with("PATH="));
+        assert!(images(&sudo).contains("sudo -n env PATH=\"$PATH\" docker images"));
+
+        // 单条命令，提权前缀直接接 docker；容器 inspect 也一样。
+        assert!(image_usage(&ids, &sudo).unwrap().contains(" env PATH=\"$PATH\" docker inspect"));
+        assert!(container_networks(&ids, &sudo).unwrap().contains(" env PATH=\"$PATH\" docker inspect"));
+
+        // su 模式整段进 `su -c`，内层仍是单条 docker 命令。
+        let su = Elevation::su("");
+        assert!(image_usage(&ids, &su).unwrap().contains("su - root -c"));
+        assert!(image_usage(&ids, &su).unwrap().contains("docker inspect --format"));
+        assert!(!image_usage(&ids, &su).unwrap().contains("sh -c"));
     }
 
     #[test]
