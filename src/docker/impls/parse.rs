@@ -110,7 +110,6 @@ pub(crate) fn parse_images(stdout: &str) -> Parsed<DockerImageInfo> {
                     size: row.size,
                     created: short_created(&row.created),
                     dangling,
-                    used_by: 0,
                 });
             }
             Err(_) => bad_lines += 1,
@@ -216,7 +215,6 @@ pub(crate) fn parse_network_ls(stdout: &str) -> Parsed<DockerNetworkInfo> {
                 name: row.name,
                 driver: row.driver,
                 scope: row.scope,
-                containers: Vec::new(),
             }),
             Err(_) => bad_lines += 1,
         }
@@ -269,26 +267,57 @@ pub(crate) fn parse_container_networks(stdout: &str) -> Vec<ContainerNetworks> {
     out
 }
 
-/// `docker inspect --format '{{.Image}}'`：容器引用的镜像 ID，每行一个。
-///
-/// 返回「短 ID → 引用该镜像的容器数」，停止的容器计入。
-pub(crate) fn parse_image_usage(stdout: &str) -> HashMap<String, u32> {
-    let mut out: HashMap<String, u32> = HashMap::new();
-    for line in stdout.lines() {
-        let id = normalize_image_id(line);
-        if id.is_empty() {
-            continue;
-        }
-        *out.entry(id).or_insert(0) += 1;
-    }
-    out
-}
-
 /// 镜像 ID 归一化：去掉 `sha256:`，取前 12 位小写十六进制。
 pub(crate) fn normalize_image_id(raw: &str) -> String {
     let raw = raw.trim();
     let hex = raw.strip_prefix("sha256:").unwrap_or(raw);
     hex.chars().take(12).collect::<String>().to_ascii_lowercase()
+}
+
+/// `docker inspect --format '{{.Image}}'`：运行中容器引用的镜像 ID，每行一个。
+///
+/// 调用方只传运行中容器的 id，所以计数就是「被多少运行中容器使用」。非十六进制的
+/// 行（例如混进来的报错）直接跳过，避免生成假 key。
+pub(crate) fn parse_image_usage(stdout: &str) -> HashMap<String, u32> {
+    let mut out: HashMap<String, u32> = HashMap::new();
+    for line in stdout.lines() {
+        let raw = line.trim();
+        let hex = raw.strip_prefix("sha256:").unwrap_or(raw);
+        if hex.len() < 12 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            continue;
+        }
+        *out.entry(normalize_image_id(raw)).or_insert(0) += 1;
+    }
+    out
+}
+
+/// `docker ps` 快照里 state == Running 的容器 id，保持 ps 顺序。
+///
+/// 「使用中」只算运行中的容器；与概览的「N 运行」同一判据。
+pub(crate) fn running_container_ids(containers: &[DockerContainerInfo]) -> Vec<String> {
+    containers
+        .iter()
+        .filter(|item| item.state == ContainerState::Running)
+        .map(|item| item.id.clone())
+        .collect()
+}
+
+/// 容器 inspect 输出 → 网络名 → 容器名（排序、去重）。
+///
+/// 含已停止容器：`docker network inspect` 的成员只含运行中的，停止后 endpooint
+/// 消失，所以统一从容器侧汇总。空输入返回空 map（=「确实没有容器」）。
+pub(crate) fn network_members_by_network(stdout: &str) -> HashMap<String, Vec<String>> {
+    let mut map: HashMap<String, Vec<String>> = HashMap::new();
+    for container in parse_container_networks(stdout) {
+        for network in container.networks {
+            map.entry(network).or_default().push(container.name.clone());
+        }
+    }
+    for names in map.values_mut() {
+        names.sort();
+        names.dedup();
+    }
+    map
 }
 
 #[derive(Deserialize)]
@@ -495,16 +524,62 @@ mod tests {
     }
 
     #[test]
-    fn counts_image_references_by_id() {
+    fn counts_running_container_images() {
+        // 用户三台运行中容器引用的镜像；已停止的 easytier（452191afc864）不在这里。
         let usage = parse_image_usage(concat!(
-            "sha256:aaaaaaaaaaaaaaaa\n",
-            "sha256:aaaaaaaaaaaaaaaa\n",
-            "sha256:bbbbbbbbbbbbbbbb\n"
+            "sha256:062964a69725aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n",
+            "sha256:d0aa3e6f1600bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n",
+            "sha256:75dcd3f28c57cccccccccccccccccccccccccccccccccccccccccccccccc\n"
         ));
-        assert_eq!(usage.get("aaaaaaaaaaaa").copied(), Some(2));
-        assert_eq!(usage.get("bbbbbbbbbbbb").copied(), Some(1));
-        assert_eq!(normalize_image_id("sha256:aaaaaaaaaaaaaaaa"), "aaaaaaaaaaaa");
-        assert_eq!(normalize_image_id(" aaaaaaaa "), "aaaaaaaa");
+        assert_eq!(usage.len(), 3);
+        assert_eq!(usage.get("062964a69725").copied(), Some(1));
+        assert_eq!(usage.get("d0aa3e6f1600").copied(), Some(1));
+        assert_eq!(usage.get("75dcd3f28c57").copied(), Some(1));
+        assert!(!usage.contains_key("452191afc864"));
+
+        // 同一个镜像跑了两个运行中容器。
+        let twice = parse_image_usage("sha256:062964a69725\n062964a69725\n");
+        assert_eq!(twice.get("062964a69725").copied(), Some(2));
+
+        // 混进来的报错行不能变成假 key。
+        assert!(parse_image_usage("Error: No such object: abc\n").is_empty());
+        assert!(parse_image_usage("").is_empty());
+    }
+
+    #[test]
+    fn running_ids_skip_stopped_and_paused() {
+        let ps = concat!(
+            r#"{"ID":"c1","Names":"web","Image":"nginx","State":"running","Status":"Up"}"#,
+            "\n",
+            r#"{"ID":"c2","Names":"old","Image":"alpine","State":"exited","Status":"Exited"}"#,
+            "\n",
+            r#"{"ID":"c3","Names":"paused","Image":"redis","State":"paused","Status":"Up (Paused)"}"#,
+            "\n",
+            r#"{"ID":"c4","Names":"db","Image":"postgres","State":"running","Status":"Up"}"#
+        );
+        let ids = running_container_ids(&parse_ps(ps).rows);
+        assert_eq!(ids, vec!["c1".to_string(), "c4".to_string()]);
+        assert!(running_container_ids(&[]).is_empty());
+    }
+
+    #[test]
+    fn network_members_group_sort_and_dedup() {
+        let map = network_members_by_network(concat!(
+            "/web|bridge|backend,bridge,\n",
+            "/web2|bridge|bridge,backend,\n",
+            "/old|default|bridge,\n",
+            "/agent|container:abc||\n"
+        ));
+        assert_eq!(map["backend"], vec!["web", "web2"]);
+        assert_eq!(map["bridge"], vec!["old", "web", "web2"]);
+        assert!(!map.contains_key("container:abc"));
+        assert!(network_members_by_network("").is_empty());
+    }
+
+    #[test]
+    fn normalizes_image_ids_for_matching() {
+        assert_eq!(normalize_image_id("sha256:452191afc8641111"), "452191afc864");
+        assert_eq!(normalize_image_id(" 062964A69725 "), "062964a69725");
     }
 
     #[test]

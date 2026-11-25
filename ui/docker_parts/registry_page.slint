@@ -119,6 +119,7 @@ export component DockerRegistryPage inherits Rectangle {
                         padding-left: Theme.sp-16;
                         padding-right: Theme.sp-12;
                         spacing: Theme.sp-12;
+                        cross-axis-alignment: center;
 
                         DockerIconTile {
                             glyph: "\u{E1DB}";
@@ -181,6 +182,7 @@ export component DockerRegistryPage inherits Rectangle {
 
                         HorizontalLayout {
                             width: 60px * Theme.ui-zoom;
+                            height: 28px * Theme.ui-zoom;
                             spacing: 4px * Theme.ui-zoom;
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E2C4}"; tip: @tr("Pull (later release)"); enabled: false; }
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E8A7}"; tip: @tr("Open on Docker Hub (later release)"); enabled: false; }

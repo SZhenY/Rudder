@@ -106,6 +106,8 @@ export component DockerComposePage inherits Rectangle {
                         padding-left: Theme.sp-16;
                         padding-right: Theme.sp-12;
                         spacing: Theme.sp-12;
+                        // 图标 36、操作区 28 都是固定高；交叉轴默认 start，会贴在行顶。
+                        cross-axis-alignment: center;
 
                         DockerIconTile {
                             glyph: "\u{E53B}";
@@ -128,7 +130,7 @@ export component DockerComposePage inherits Rectangle {
                                 DockerStatus {
                                     active: row.running;
                                     text: row.running ? @tr("Running") : @tr("Stopped");
-                                    slot: 64px * Theme.ui-zoom;
+                                    slot: 72px * Theme.ui-zoom;
                                 }
                                 DockerMeta {
                                     label: @tr("containers") + ":";
@@ -148,6 +150,7 @@ export component DockerComposePage inherits Rectangle {
 
                         HorizontalLayout {
                             width: 60px * Theme.ui-zoom;
+                            height: 28px * Theme.ui-zoom;
                             spacing: 4px * Theme.ui-zoom;
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E8AC}"; tip: @tr("Start / stop (later release)"); enabled: false; }
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E5D4}"; tip: @tr("More actions (later release)"); enabled: false; }

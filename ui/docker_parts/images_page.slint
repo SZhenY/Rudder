@@ -27,7 +27,7 @@ export component DockerImagesPage inherits Rectangle {
     callback add();
     callback action(string);
 
-    private property <bool> tight: root.width < 720px * Theme.ui-zoom;
+    private property <bool> tight: root.width < 740px * Theme.ui-zoom;
 
     background: transparent;
 
@@ -108,10 +108,12 @@ export component DockerImagesPage inherits Rectangle {
                         padding-left: Theme.sp-16;
                         padding-right: Theme.sp-12;
                         spacing: Theme.sp-12;
+                        // 图标 36、操作区 28 都是固定高；交叉轴默认 start，会贴在行顶。
+                        cross-axis-alignment: center;
 
                         DockerIconTile {
                             glyph: "\u{E3F4}";
-                            show-badge: row.in_use;
+                            show-badge: row.use_known && row.in_use;
                             badge: Theme.success;
                         }
 
@@ -128,23 +130,24 @@ export component DockerImagesPage inherits Rectangle {
                             HorizontalLayout {
                                 spacing: Theme.sp-10;
                                 DockerStatus {
-                                    active: row.in_use;
-                                    text: row.in_use ? @tr("In use") + " · " + row.use_count : @tr("Not in use");
+                                    active: row.use_known && row.in_use;
+                                    text: !row.use_known ? "—" : (row.in_use ? @tr("In use") + " · " + row.use_count : @tr("Not in use"));
+                                    slot: (root.tight ? 88px : 96px) * Theme.ui-zoom;
                                 }
                                 if !root.tight : DockerMeta {
                                     label: @tr("Created") + ":";
                                     value: row.created;
-                                    slot: 178px * Theme.ui-zoom;
+                                    slot: 196px * Theme.ui-zoom;
                                 }
                                 DockerMeta {
                                     label: @tr("Tag") + ":";
                                     value: row.tag;
-                                    slot: 96px * Theme.ui-zoom;
+                                    slot: (root.tight ? 84px : 96px) * Theme.ui-zoom;
                                 }
                                 DockerMeta {
                                     label: @tr("Size") + ":";
                                     value: row.size;
-                                    slot: (root.tight ? 80px : 90px) * Theme.ui-zoom;
+                                    slot: (root.tight ? 72px : 90px) * Theme.ui-zoom;
                                 }
                                 Rectangle { horizontal-stretch: 1; }
                             }
@@ -152,6 +155,7 @@ export component DockerImagesPage inherits Rectangle {
 
                         HorizontalLayout {
                             width: 92px * Theme.ui-zoom;
+                            height: 28px * Theme.ui-zoom;
                             spacing: 4px * Theme.ui-zoom;
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E5D5}"; tip: @tr("Push (later release)"); enabled: false; }
                             ActionIcon { width: 28px * Theme.ui-zoom; height: 28px * Theme.ui-zoom; glyph-size: 16px * Theme.ui-zoom; glyph: "\u{E037}"; tip: @tr("Run (later release)"); enabled: false; }

@@ -702,9 +702,8 @@ pub fn run() -> Result<()> {
                         super::docker::tick_monitor(&w);
                         if docker_last.get().elapsed() >= std::time::Duration::from_secs(10) {
                             docker_last.set(std::time::Instant::now());
+                            // refresh() 内部已经把容器与三个二级页一起拉一遍。
                             w.invoke_refresh_docker();
-                            // 二级页的数据各自 10s 节流，只拉当前可见页。
-                            super::docker::refresh_active_section(&w, false);
                         }
                     }
                 }

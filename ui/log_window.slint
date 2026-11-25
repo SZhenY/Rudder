@@ -48,6 +48,8 @@ export component DockerLogWindow inherits Window {
     title: root.window-title;
     icon: @image-url("../assets/icon.png");
     no-frame: root.custom-titlebar;
+    // 无边框窗口没有系统缩放边缘；四边/四角靠 Slint 的隐形拖拽带。
+    resize-border-width: 6px * root.ui-scale;
     default-font-family: root.ui-font-family;
     min-width: 460px * root.ui-scale;
     min-height: 280px * root.ui-scale;
@@ -261,4 +263,23 @@ export component DockerLogWindow inherits Window {
         }
     }
     changed log-text => { scroll-end.running = true; }
+
+    // 右下角抓手：无边框窗口的可见缩放入口，走 win-resize-se。
+    if root.custom-titlebar : Rectangle {
+        width: 16px * Theme.ui-zoom;
+        height: 16px * Theme.ui-zoom;
+        x: root.width - self.width;
+        y: root.height - self.height;
+        TouchArea {
+            mouse-cursor: nwse-resize;
+            pointer-event(e) => {
+                if (e.kind == PointerEventKind.down && e.button == PointerEventButton.left) {
+                    root.win-resize-se();
+                }
+            }
+        }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 9px * Theme.ui-scale; y: parent.height - 5px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+        Rectangle { x: parent.width - 5px * Theme.ui-scale; y: parent.height - 9px * Theme.ui-scale; width: 2px * Theme.ui-scale; height: 2px * Theme.ui-scale; background: Theme.text-muted; }
+    }
 }

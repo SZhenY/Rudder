@@ -22,11 +22,13 @@ export component DockerPageHead inherits Rectangle {
     callback refresh();
     callback action();
 
-    private property <bool> tight: root.width < 620px * Theme.ui-zoom;
+    private property <bool> tight: root.width < 640px * Theme.ui-zoom;
     height: 32px * Theme.ui-zoom;
 
     HorizontalLayout {
         spacing: Theme.sp-8;
+        // 标题 / 搜索 / 按钮统一按 32px 高对齐。
+        cross-axis-alignment: center;
 
         Text {
             text: root.title;
@@ -39,18 +41,28 @@ export component DockerPageHead inherits Rectangle {
         Rectangle { horizontal-stretch: 1; }
 
         // 窄窗也保留搜索：镜像仓库页的搜索是主入口，只收窄不隐藏。
-        if root.show-search : LineEdit {
+        //
+        // ⚠️ 必须包一层固定宽度：std 的 LineEdit 自带 `horizontal-stretch: 1`
+        // 和 `min-width: 160px`，直接放进布局会抢走 spacer 分到的空间，
+        // 把后面的刷新 / 主按钮挤出可视区。
+        if root.show-search : Rectangle {
             width: (root.tight ? 160px : 240px) * Theme.ui-zoom;
-            height: 28px * Theme.ui-zoom;
-            text: root.search-text;
-            font-family: Theme.ui-font-family;
-            placeholder-text: root.search-placeholder;
-            edited => { root.search-edited(self.text); }
+            height: 32px * Theme.ui-zoom;
+            clip: true;
+
+            LineEdit {
+                width: parent.width;
+                height: parent.height;
+                text: root.search-text;
+                font-family: Theme.ui-font-family;
+                placeholder-text: root.search-placeholder;
+                edited => { root.search-edited(self.text); }
+            }
         }
 
         StateSurface {
             width: (root.tight ? 30px : 66px) * Theme.ui-zoom;
-            height: 28px * Theme.ui-zoom;
+            height: 32px * Theme.ui-zoom;
             radius: Theme.radius-sm;
             outlined: true;
             clicked => { root.refresh(); }
@@ -74,7 +86,7 @@ export component DockerPageHead inherits Rectangle {
 
         if root.action-label != "" && root.primary-action : Rectangle {
             width: max(88px * Theme.ui-zoom, action-text.preferred-width + 52px * Theme.ui-zoom);
-            height: 28px * Theme.ui-zoom;
+            height: 32px * Theme.ui-zoom;
             border-radius: Theme.radius-sm;
             background: action-hit.has-hover && root.action-enabled ? Theme.accent-hover : Theme.accent;
             opacity: root.action-enabled ? 1 : 0.45;
@@ -105,7 +117,7 @@ export component DockerPageHead inherits Rectangle {
 
         if root.action-label != "" && !root.primary-action : StateSurface {
             width: max(76px * Theme.ui-zoom, action-label-text.preferred-width + 28px * Theme.ui-zoom);
-            height: 28px * Theme.ui-zoom;
+            height: 32px * Theme.ui-zoom;
             radius: Theme.radius-sm;
             outlined: true;
             interactive: root.action-enabled;

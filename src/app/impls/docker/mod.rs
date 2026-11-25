@@ -55,9 +55,15 @@ thread_local! {
     static ACTION_SEQ: Cell<u64> = const { Cell::new(0) };
 }
 
+#[derive(Clone)]
 struct RefreshCtx {
     runtime: Arc<Runtime>,
     handles: Rc<RefCell<HashMap<String, SessionHandle>>>,
+}
+
+/// UI 线程上的刷新上下文；派生数据的异步任务也用它。
+fn refresh_ctx() -> Option<RefreshCtx> {
+    REFRESH_CTX.with(|ctx| ctx.borrow().clone())
 }
 
 #[derive(Clone)]
@@ -131,6 +137,16 @@ struct HostRuntime {
     networks_last_ok: Option<Instant>,
     networks_busy: bool,
     networks_generation: u64,
+
+    // ---- 由容器快照派生的数据（ps 成功且快照有变化时重算，与二级页无关）----
+    /// 容器快照代次：首次 ps 成功、以及之后每次行内容变化时 +1。
+    snapshot_epoch: u64,
+    /// 镜像短 ID → 引用它的运行中容器数；None = 从没算成功过。
+    image_usage: Option<HashMap<String, u32>>,
+    image_usage_epoch: u64,
+    /// 网络名 → 关联容器名（含已停止）。
+    network_members: Option<HashMap<String, Vec<String>>>,
+    network_members_epoch: u64,
 }
 
 struct DockerHub {
@@ -220,8 +236,12 @@ pub(crate) fn refresh(
     });
     if let Some(key) = key {
         probe_service(window, runtime, handles, &key, false);
+        // 连接建立 / 10s 拍：三类二级页一起拉，别等用户点进去。
+        HUB.with(|hub| {
+            let mut hub = hub.borrow_mut();
+            refresh_all_sections(window, runtime, handles, &mut hub, &key, false);
+        });
     }
-    refresh_active_section(window, false);
 }
 
 /// 强制刷新当前主机：跳过失败退避，供刷新按钮 / 重试 / 操作完成使用。
@@ -255,8 +275,12 @@ pub(crate) fn refresh_forced(
     });
     if let Some(key) = key {
         probe_service(window, runtime, handles, &key, true);
+        // 操作完成 / 手动刷新：跳过 10s 节流，三类二级页一起重拉。
+        HUB.with(|hub| {
+            let mut hub = hub.borrow_mut();
+            refresh_all_sections(window, runtime, handles, &mut hub, &key, true);
+        });
     }
-    refresh_active_section(window, true);
 }
 
 /// 切换主机标签：只切缓存；缓存缺失或过期才请求。
@@ -291,6 +315,8 @@ pub(crate) fn select_host(
         if stale {
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
+        // 切到这台主机：三类二级页也补一次（各自的 10s 节流兜底）。
+        refresh_all_sections(window, runtime, handles, &mut hub, key, false);
     });
     probe_service(window, runtime, handles, key, false);
 }
@@ -337,6 +363,7 @@ pub(crate) fn open_host(
         if stale {
             refresh_key(window, runtime, handles, &mut hub, key, false);
         }
+        refresh_all_sections(window, runtime, handles, &mut hub, key, false);
     });
     probe_service(window, runtime, handles, key, true);
 }
@@ -1480,6 +1507,11 @@ fn new_host_runtime(tab_id: &str) -> HostRuntime {
         networks_last_ok: None,
         networks_busy: false,
         networks_generation: 0,
+        snapshot_epoch: 0,
+        image_usage: None,
+        image_usage_epoch: 0,
+        network_members: None,
+        network_members_epoch: 0,
     }
 }
 
@@ -1917,30 +1949,20 @@ fn refresh_images(
         }
         let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
         let password = password_for(rt, &elev);
-        let images = exec_on(
+        match exec_on(
             handles,
             &rt.tab_id,
             command::images(&elev),
-            password.clone(),
-            PS_TIMEOUT,
-            PS_MAX_OUTPUT,
-        );
-        // 使用情况走容器侧 inspect：`docker ps` 里的镜像名与 `repo:tag` 对不上。
-        let usage = exec_on(
-            handles,
-            &rt.tab_id,
-            command::image_usage(&elev),
             password,
             PS_TIMEOUT,
             PS_MAX_OUTPUT,
-        );
-        match images {
+        ) {
             Some(images) => {
                 rt.images_busy = true;
                 rt.images_generation += 1;
                 rt.images_status = HostStatus::Loading;
                 rt.images_failure = None;
-                Some((images, usage, rt.images_generation))
+                Some((images, rt.images_generation))
             }
             None => {
                 rt.images_status = HostStatus::Offline;
@@ -1950,29 +1972,18 @@ fn refresh_images(
         }
     };
     apply_section_lists(window, hub);
-    let Some((images, usage, generation)) = request else {
+    let Some((images, generation)) = request else {
         return;
     };
     let weak = window.as_weak();
     let key_owned = key.to_string();
     runtime.spawn(async move {
         let result = images.await;
-        let usage_result = match usage {
-            Some(rx) => Some(rx.await),
-            None => None,
-        };
         let _ = slint::invoke_from_event_loop(move || {
             let Some(window) = weak.upgrade() else { return };
             HUB.with(|hub| {
                 let mut hub = hub.borrow_mut();
-                apply_images_result(
-                    &window,
-                    &mut hub,
-                    &key_owned,
-                    generation,
-                    result,
-                    usage_result,
-                );
+                apply_images_result(&window, &mut hub, &key_owned, generation, result);
             });
         });
     });
@@ -1984,7 +1995,6 @@ fn apply_images_result(
     key: &str,
     generation: u64,
     result: Result<ExecResult, tokio::sync::oneshot::error::RecvError>,
-    usage_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
 ) {
     {
         let Some(rt) = hub.hosts.get_mut(key) else { return };
@@ -2008,24 +2018,12 @@ fn apply_images_result(
                         classify_docker(&res.stderr, res.exit_code, res.timed_out)
                     });
                 } else {
-                    let mut parsed = parse::parse_images(&res.stdout);
-                    // 使用情况查询失败不影响镜像列表：按 0 处理，下个周期重试。
-                    let usage = usage_result
-                        .and_then(|item| item.ok())
-                        .filter(|item| {
-                            !item.timed_out && item.error.is_none() && item.exit_code == Some(0)
-                        })
-                        .map(|item| parse::parse_image_usage(&item.stdout))
-                        .unwrap_or_default();
-                    if usage.is_empty() && !parsed.rows.is_empty() {
-                        tracing::debug!(target: "rudder::docker", "image usage unavailable");
-                    }
-                    for image in &mut parsed.rows {
-                        image.used_by = usage
-                            .get(&parse::normalize_image_id(&image.id))
-                            .copied()
-                            .unwrap_or(0);
-                    }
+                    let parsed = parse::parse_images(&res.stdout);
+                    tracing::debug!(
+                        target: "rudder::docker",
+                        "docker images: {} rows",
+                        parsed.rows.len()
+                    );
                     rt.images = parsed.rows;
                     rt.images_status = if rt.images.is_empty() {
                         HostStatus::Empty
@@ -2158,30 +2156,20 @@ fn refresh_networks(
         }
         let elev = elevation_for(rt, window.get_docker_use_sudo(), false);
         let password = password_for(rt, &elev);
-        let ls = exec_on(
+        match exec_on(
             handles,
             &rt.tab_id,
             command::network_ls(&elev),
-            password.clone(),
-            PS_TIMEOUT,
-            PS_MAX_OUTPUT,
-        );
-        // 成员关系从容器侧汇总：`network inspect` 的 `.Containers` 不含已停止容器。
-        let members = exec_on(
-            handles,
-            &rt.tab_id,
-            command::container_networks(&elev),
             password,
             PS_TIMEOUT,
             PS_MAX_OUTPUT,
-        );
-        match ls {
+        ) {
             Some(ls) => {
                 rt.networks_busy = true;
                 rt.networks_generation += 1;
                 rt.networks_status = HostStatus::Loading;
                 rt.networks_failure = None;
-                Some((ls, members, rt.networks_generation))
+                Some((ls, rt.networks_generation))
             }
             None => {
                 rt.networks_status = HostStatus::Offline;
@@ -2191,29 +2179,18 @@ fn refresh_networks(
         }
     };
     apply_section_lists(window, hub);
-    let Some((ls, members, generation)) = request else {
+    let Some((ls, generation)) = request else {
         return;
     };
     let weak = window.as_weak();
     let key_owned = key.to_string();
     runtime.spawn(async move {
         let ls_result = ls.await;
-        let members_result = match members {
-            Some(rx) => Some(rx.await),
-            None => None,
-        };
         let _ = slint::invoke_from_event_loop(move || {
             let Some(window) = weak.upgrade() else { return };
             HUB.with(|hub| {
                 let mut hub = hub.borrow_mut();
-                apply_networks_result(
-                    &window,
-                    &mut hub,
-                    &key_owned,
-                    generation,
-                    ls_result,
-                    members_result,
-                );
+                apply_networks_result(&window, &mut hub, &key_owned, generation, ls_result);
             });
         });
     });
@@ -2225,7 +2202,6 @@ fn apply_networks_result(
     key: &str,
     generation: u64,
     ls_result: Result<ExecResult, tokio::sync::oneshot::error::RecvError>,
-    members_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
 ) {
     {
         let Some(rt) = hub.hosts.get_mut(key) else { return };
@@ -2249,28 +2225,7 @@ fn apply_networks_result(
                         classify_docker(&res.stderr, res.exit_code, res.timed_out)
                     });
                 } else {
-                    let mut parsed = parse::parse_network_ls(&res.stdout);
-                    let membership = members_result
-                        .and_then(|item| item.ok())
-                        .filter(|item| {
-                            !item.timed_out && item.error.is_none() && item.exit_code == Some(0)
-                        });
-                    if let Some(members) = membership {
-                        let mut map: HashMap<String, Vec<String>> = HashMap::new();
-                        for container in parse::parse_container_networks(&members.stdout) {
-                            for network in container.networks {
-                                map.entry(network).or_default().push(container.name.clone());
-                            }
-                        }
-                        for network in &mut parsed.rows {
-                            let mut names = map.remove(&network.name).unwrap_or_default();
-                            names.sort();
-                            names.dedup();
-                            network.containers = names;
-                        }
-                    } else {
-                        tracing::debug!(target: "rudder::docker", "network membership unavailable");
-                    }
+                    let parsed = parse::parse_network_ls(&res.stdout);
                     rt.networks = parsed.rows;
                     rt.networks_status = if rt.networks.is_empty() {
                         HostStatus::Empty
@@ -2288,7 +2243,6 @@ fn apply_networks_result(
     }
 }
 
-/// 功能页的本地搜索过滤（镜像 / Compose）。
 pub(crate) fn set_section_filter(window: &AppWindow, section: &str, text: &str) {
     let needle = text.trim().to_ascii_lowercase();
     HUB.with(|hub| {
@@ -2317,37 +2271,66 @@ pub(crate) fn registry_page(window: &AppWindow, delta: i32) {
     registry::page(window, delta);
 }
 
-/// 二级页切换：记录当前页并按需拉取该页数据（10s 内不重复）。
+/// 二级页切换：只记录当前页；三页数据在连上/每拍已拉过，切过去直接读缓存。
 pub(crate) fn set_section(window: &AppWindow, section: &str) {
     HUB.with(|hub| hub.borrow_mut().section = section.to_string());
     refresh_active_section(window, false);
 }
 
-/// 页面刷新按钮：强制拉取指定页。
+/// 页面刷新按钮：强制重拉容器 + 该页列表（派生数据随容器快照重算）。
 pub(crate) fn refresh_section_now(window: &AppWindow, section: &str) {
-    HUB.with(|hub| hub.borrow_mut().section = section.to_string());
-    refresh_active_section(window, true);
+    let Some(ctx) = refresh_ctx() else { return };
+    HUB.with(|hub| {
+        let mut hub = hub.borrow_mut();
+        hub.section = section.to_string();
+        let Some(key) = hub.active.clone() else { return };
+        if let Some(rt) = hub.hosts.get_mut(&key) {
+            rt.backoff_until = None;
+        }
+        refresh_key(window, &ctx.runtime, &ctx.handles, &mut hub, &key, true);
+        refresh_section_lists(window, &ctx.runtime, &ctx.handles, &mut hub, &key, true);
+    });
 }
 
 /// 定时器 / 进入 Docker 页时按当前二级页刷新。
 pub(crate) fn refresh_active_section(window: &AppWindow, force: bool) {
-    let Some((runtime, handles)) = REFRESH_CTX.with(|ctx| {
-        ctx.borrow()
-            .as_ref()
-            .map(|c| (c.runtime.clone(), c.handles.clone()))
-    }) else {
-        return;
-    };
+    let Some(ctx) = refresh_ctx() else { return };
     HUB.with(|hub| {
         let mut hub = hub.borrow_mut();
         let Some(key) = hub.active.clone() else { return };
-        match hub.section.as_str() {
-            "images" => refresh_images(window, &runtime, &handles, &mut hub, &key, force),
-            "compose" => refresh_compose(window, &runtime, &handles, &mut hub, &key, force),
-            "networks" => refresh_networks(window, &runtime, &handles, &mut hub, &key, force),
-            _ => {}
-        }
+        refresh_section_lists(window, &ctx.runtime, &ctx.handles, &mut hub, &key, force);
     });
+}
+
+/// 按 `hub.section` 拉当前二级页的列表。调用方已持有 `hub` 的借用。
+fn refresh_section_lists(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    match hub.section.as_str() {
+        "images" => refresh_images(window, runtime, handles, hub, key, force),
+        "compose" => refresh_compose(window, runtime, handles, hub, key, force),
+        "networks" => refresh_networks(window, runtime, handles, hub, key, force),
+        _ => {}
+    }
+}
+
+/// 三类二级页一起刷：连上、10s 拍、操作完成都走它。
+fn refresh_all_sections(
+    window: &AppWindow,
+    runtime: &Arc<Runtime>,
+    handles: &Rc<RefCell<HashMap<String, SessionHandle>>>,
+    hub: &mut DockerHub,
+    key: &str,
+    force: bool,
+) {
+    refresh_images(window, runtime, handles, hub, key, force);
+    refresh_compose(window, runtime, handles, hub, key, force);
+    refresh_networks(window, runtime, handles, hub, key, force);
 }
 
 fn apply_result(
@@ -2387,6 +2370,7 @@ fn apply_result(
                     rt.status = HostStatus::Error;
                     rt.failure = Some(DockerFailure::Parse);
                 } else {
+                    let changed = rt.containers != parsed.rows;
                     rt.containers = parsed.rows;
                     rt.failure = None;
                     rt.last_ok = Some(Instant::now());
@@ -2396,6 +2380,10 @@ fn apply_result(
                         HostStatus::Ok
                     };
                     rt.backoff_until = None;
+                    // 首次成功、或容器集合有变化才换代：没变化时派生数据无需重算。
+                    if changed || rt.snapshot_epoch == 0 {
+                        rt.snapshot_epoch += 1;
+                    }
                 }
             }
         }
@@ -2437,6 +2425,10 @@ fn apply_result(
     } else {
         sync_host_count(hub, key);
     }
+
+    // `docker ps` 刚成功：用这份快照重算「使用中」与「网络成员」。
+    // 快照没换代时内部直接跳过，不会重复下发命令。
+    spawn_derived_refresh(window, hub, key);
 
     // 不可用弹窗：只在该主机是当前标签、且这一轮确实失败时弹一次。
     let blocker = hub
@@ -2494,11 +2486,157 @@ fn sync_host_count(hub: &mut DockerHub, key: &str) {
 }
 
 /// 把当前主机的三份只读列表写进 Slint 模型，并更新概览计数。
+/// ps 成功后：用这份快照重算「使用中」与「网络成员」。
+///
+/// 调用时已持有 `HUB` 的借用，函数内部不得再 `HUB.with`；异步回写时才借。
+fn spawn_derived_refresh(window: &AppWindow, hub: &mut DockerHub, key: &str) {
+    let Some(ctx) = refresh_ctx() else { return };
+    let use_sudo = window.get_docker_use_sudo();
+    let mut redraw = false;
+    let (epoch, image_req, network_req) = {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        if rt.snapshot_epoch == 0 || !matches!(rt.status, HostStatus::Ok | HostStatus::Empty) {
+            return;
+        }
+        let epoch = rt.snapshot_epoch;
+        let elev = elevation_for(rt, use_sudo, false);
+        let password = password_for(rt, &elev);
+        let tab_id = rt.tab_id.clone();
+
+        // 镜像：只算运行中的容器；没有运行中的容器就是已知的 0，不必下发命令。
+        let image_req = if rt.image_usage_epoch == epoch && rt.image_usage.is_some() {
+            None
+        } else {
+            let running = parse::running_container_ids(&rt.containers);
+            if running.is_empty() {
+                rt.image_usage = Some(HashMap::new());
+                rt.image_usage_epoch = epoch;
+                redraw = true;
+                None
+            } else {
+                command::image_usage(&running, &elev).and_then(|cmd| {
+                    exec_on(
+                        &ctx.handles,
+                        &tab_id,
+                        cmd,
+                        password.clone(),
+                        PS_TIMEOUT,
+                        PS_MAX_OUTPUT,
+                    )
+                })
+            }
+        };
+
+        // 网络：全部容器（含已停止）。`docker network connect` 不改容器 id，
+        // 所以每个新代次都重算，不能按 id 集合复用。
+        let network_req = if rt.network_members_epoch == epoch && rt.network_members.is_some() {
+            None
+        } else {
+            let all: Vec<String> = rt.containers.iter().map(|item| item.id.clone()).collect();
+            if all.is_empty() {
+                rt.network_members = Some(HashMap::new());
+                rt.network_members_epoch = epoch;
+                redraw = true;
+                None
+            } else {
+                command::container_networks(&all, &elev).and_then(|cmd| {
+                    exec_on(&ctx.handles, &tab_id, cmd, password, PS_TIMEOUT, PS_MAX_OUTPUT)
+                })
+            }
+        };
+        (epoch, image_req, network_req)
+    };
+
+    if image_req.is_none() && network_req.is_none() {
+        if redraw && hub.active.as_deref() == Some(key) {
+            apply_section_lists(window, hub);
+        }
+        return;
+    }
+
+    let weak = window.as_weak();
+    let key_owned = key.to_string();
+    ctx.runtime.spawn(async move {
+        let image_result = match image_req {
+            Some(rx) => Some(rx.await),
+            None => None,
+        };
+        let network_result = match network_req {
+            Some(rx) => Some(rx.await),
+            None => None,
+        };
+        let _ = slint::invoke_from_event_loop(move || {
+            let Some(window) = weak.upgrade() else { return };
+            HUB.with(|hub| {
+                let mut hub = hub.borrow_mut();
+                apply_derived_result(
+                    &window,
+                    &mut hub,
+                    &key_owned,
+                    epoch,
+                    image_result,
+                    network_result,
+                );
+            });
+        });
+    });
+}
+
+fn apply_derived_result(
+    window: &AppWindow,
+    hub: &mut DockerHub,
+    key: &str,
+    epoch: u64,
+    image_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
+    network_result: Option<Result<ExecResult, tokio::sync::oneshot::error::RecvError>>,
+) {
+    {
+        let Some(rt) = hub.hosts.get_mut(key) else { return };
+        // 快照已换代：这批结果作废，等新快照重算。
+        if rt.snapshot_epoch != epoch {
+            return;
+        }
+        if let Some(result) = image_result
+            && let Ok(res) = &result
+        {
+            if inspect_usable(res) {
+                rt.image_usage = Some(parse::parse_image_usage(&res.stdout));
+                rt.image_usage_epoch = epoch;
+            } else {
+                debug_failure("docker inspect (image usage)", res);
+            }
+        }
+        if let Some(result) = network_result
+            && let Ok(res) = &result
+        {
+            if inspect_usable(res) {
+                rt.network_members = Some(parse::network_members_by_network(&res.stdout));
+                rt.network_members_epoch = epoch;
+            } else {
+                debug_failure("docker inspect (network membership)", res);
+            }
+        }
+    }
+    if hub.active.as_deref() == Some(key) {
+        apply_section_lists(window, hub);
+    }
+}
+
+/// inspect 结果能否用于派生：没超时/本地错误，且要么退出码 0，要么有部分输出
+/// （容器刚被删会让 inspect 非 0 退出，其余容器仍然有效）。
+fn inspect_usable(res: &ExecResult) -> bool {
+    !res.timed_out
+        && res.error.is_none()
+        && (res.exit_code == Some(0) || !res.stdout.trim().is_empty())
+}
+
 fn apply_section_lists(window: &AppWindow, hub: &mut DockerHub) {
     let Some(key) = hub.active.clone() else { return };
     let Some(rt) = hub.hosts.get(&key) else { return };
 
     let image_needle = hub.image_filter.clone();
+    // 「使用中」来自容器快照派生的 map：查得到就是已知值，map 本身缺失才是未知。
+    let usage = rt.image_usage.as_ref();
     hub.images_model.set_vec(
         rt.images
             .iter()
@@ -2507,18 +2645,24 @@ fn apply_section_lists(window: &AppWindow, hub: &mut DockerHub) {
                     || image.display_name.to_ascii_lowercase().contains(&image_needle)
                     || image.repository.to_ascii_lowercase().contains(&image_needle)
             })
-            .map(|image| DockerImage {
-                id: image.id.as_str().into(),
-                name: if image.dangling {
-                    "<none>".into()
-                } else {
-                    image.repository.as_str().into()
-                },
-                tag: image.tag.as_str().into(),
-                size: image.size.as_str().into(),
-                created: image.created.as_str().into(),
-                in_use: image.used_by > 0,
-                use_count: image.used_by.to_string().into(),
+            .map(|image| {
+                let count = usage.and_then(|map| {
+                    map.get(&parse::normalize_image_id(&image.id)).copied()
+                });
+                DockerImage {
+                    id: image.id.as_str().into(),
+                    name: if image.dangling {
+                        "<none>".into()
+                    } else {
+                        image.repository.as_str().into()
+                    },
+                    tag: image.tag.as_str().into(),
+                    size: image.size.as_str().into(),
+                    created: image.created.as_str().into(),
+                    in_use: count.is_some_and(|count| count > 0),
+                    use_known: usage.is_some(),
+                    use_count: count.unwrap_or(0).to_string().into(),
+                }
             })
             .collect::<Vec<_>>(),
     );
@@ -2559,14 +2703,21 @@ fn apply_section_lists(window: &AppWindow, hub: &mut DockerHub) {
     window.set_docker_compose_status(rt.compose_status.key().into());
     window.set_docker_compose_error(error_text(rt.compose_failure, rt.last_mode).into());
 
+    let members = rt.network_members.as_ref();
     hub.networks_model.set_vec(
         rt.networks
             .iter()
-            .map(|network| DockerNetworkRow {
-                name: network.name.as_str().into(),
-                driver: network.driver.as_str().into(),
-                count_text: network.containers.len().to_string().into(),
-                containers: network.containers.join(", ").into(),
+            .map(|network| {
+                let names: &[String] = members
+                    .and_then(|map| map.get(&network.name))
+                    .map(Vec::as_slice)
+                    .unwrap_or(&[]);
+                DockerNetworkRow {
+                    name: network.name.as_str().into(),
+                    driver: network.driver.as_str().into(),
+                    count_text: names.len().to_string().into(),
+                    containers: names.join(", ").into(),
+                }
             })
             .collect::<Vec<_>>(),
     );

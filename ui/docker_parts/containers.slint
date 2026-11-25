@@ -29,8 +29,19 @@ export component DockerContainersPage inherits Rectangle {
     in property <string> summary;
     in property <string> pending-id;
     in-out property <string> filter-text;
+
+    /// 行 / 名称 / ID / 端口 共用：同一行同一时刻只有一块选中底色。
+    /// 该行已有选中项时，其它格子返回透明，既不叠 hover 也不再额外高亮。
+    pure function cell-bg(id: string, part: string, hovered: bool) -> brush {
+        if (id == root.selected-id) {
+            return root.selected-part == part ? Theme.state-selected : transparent;
+        }
+        return hovered ? Theme.state-hover : transparent;
+    }
     /// 当前选中的容器（按 id，10s 刷新重建列表后仍保持）。
     in-out property <string> selected-id: "";
+    /// 选中粒度：row / name / id / ports。点整行只亮整行，点子格只亮该格。
+    in-out property <string> selected-part: "row";
 
     callback refresh-now();
     callback filter-changed(string);
@@ -201,15 +212,14 @@ export component DockerContainersPage inherits Rectangle {
                     width: 100%;
                     // 两行（名称 / 短 ID），行高与其余四个列表页一致。
                     height: Theme.row-h-card;
-                    background: c.id == root.selected-id
-                        ? Theme.state-selected
-                        : (row-ta.has-hover ? Theme.state-hover : transparent);
+                    background: root.cell-bg(c.id, "row", row-ta.has-hover);
                     animate background { duration: AnimationSettings.enter-state(); }
                     opacity: root.pending-id == c.id ? 0.55 : 1;
                     row-ta := TouchArea {
                         mouse-cursor: pointer;
                         clicked => {
                             root.selected-id = c.id;
+                            root.selected-part = "row";
                             root.blur-search();
                         }
                     }
@@ -232,7 +242,8 @@ export component DockerContainersPage inherits Rectangle {
                                 width: min(name-text.preferred-width + 8px * Theme.ui-scale, parent.width);
                                 height: 18px * Theme.ui-zoom;
                                 border-radius: Theme.radius-sm;
-                                background: name-ta.has-hover ? Theme.state-hover : transparent;
+                                background: root.cell-bg(c.id, "name", name-ta.has-hover);
+                                animate background { duration: AnimationSettings.enter-state(); }
                                 name-text := Text {
                                     x: 4px * Theme.ui-scale;
                                     width: parent.width - 8px * Theme.ui-scale;
@@ -247,6 +258,7 @@ export component DockerContainersPage inherits Rectangle {
                                     mouse-cursor: pointer;
                                     clicked => {
                                         root.selected-id = c.id;
+                                        root.selected-part = "name";
                                         root.blur-search();
                                     }
                                     double-clicked => { root.copy-name(c.name); }
@@ -257,13 +269,14 @@ export component DockerContainersPage inherits Rectangle {
                                 width: min(id-text.preferred-width + 8px * Theme.ui-scale, parent.width);
                                 height: 15px * Theme.ui-zoom;
                                 border-radius: Theme.radius-sm;
-                                background: id-ta.has-hover ? Theme.state-hover : transparent;
+                                background: root.cell-bg(c.id, "id", id-ta.has-hover);
+                                animate background { duration: AnimationSettings.enter-state(); }
                                 id-text := Text {
                                     x: 4px * Theme.ui-scale;
                                     width: parent.width - 8px * Theme.ui-scale;
                                     text: c.id;
                                     font-size: Theme.fs-xs;
-                                    color: id-ta.has-hover ? Theme.accent : Theme.text-muted;
+                                    color: id-ta.has-hover || (c.id == root.selected-id && root.selected-part == "id") ? Theme.accent : Theme.text-muted;
                                     horizontal-alignment: left;
                                     vertical-alignment: center;
                                     overflow: elide;
@@ -273,6 +286,7 @@ export component DockerContainersPage inherits Rectangle {
                                     mouse-cursor: pointer;
                                     clicked => {
                                         root.selected-id = c.id;
+                                        root.selected-part = "id";
                                         root.blur-search();
                                     }
                                     double-clicked => { root.copy-id(c.id); }
@@ -324,14 +338,15 @@ export component DockerContainersPage inherits Rectangle {
                         Rectangle {
                             width: root.col-ports;
                             border-radius: Theme.radius-sm;
-                            background: ports-ta.has-hover ? Theme.state-hover : transparent;
+                            background: root.cell-bg(c.id, "ports", ports-ta.has-hover);
+                            animate background { duration: AnimationSettings.enter-state(); }
                             Text {
                                 x: 2px * Theme.ui-scale;
                                 width: parent.width - 4px * Theme.ui-scale;
                                 height: parent.height;
                                 text: c.ports != "" ? c.ports : "—";
                                 font-size: Theme.fs-xs;
-                                color: ports-ta.has-hover ? Theme.text-primary : Theme.text-muted;
+                                color: ports-ta.has-hover || (c.id == root.selected-id && root.selected-part == "ports") ? Theme.text-primary : Theme.text-muted;
                                 vertical-alignment: center;
                                 horizontal-alignment: left;
                                 wrap: word-wrap;
@@ -342,6 +357,7 @@ export component DockerContainersPage inherits Rectangle {
                                 mouse-cursor: pointer;
                                 clicked => {
                                     root.selected-id = c.id;
+                                    root.selected-part = "ports";
                                     root.blur-search();
                                 }
                                 double-clicked => { root.open-ports(c.id); }

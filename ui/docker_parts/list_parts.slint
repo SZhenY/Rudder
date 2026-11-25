@@ -43,6 +43,8 @@ export component DockerStatus inherits HorizontalLayout {
 
     width: root.slot;
     spacing: 5px * Theme.ui-zoom;
+    // 固定 6px 的点默认会被交叉轴按 start 排到顶，必须显式居中。
+    cross-axis-alignment: center;
 
     Rectangle {
         width: 6px * Theme.ui-zoom;

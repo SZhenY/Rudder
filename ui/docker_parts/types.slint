@@ -44,6 +44,8 @@ export struct DockerImage {
     created: string,
     /// 是否有容器（含已停止）引用该镜像，Rust 侧按镜像 ID 比对。
     in_use: bool,
+    /// 使用情况是否查得到；false 时显示「—」，不要冒充「未使用」。
+    use_known: bool,
     /// 引用该镜像的容器数，Rust 侧预格式化。
     use_count: string,
 }

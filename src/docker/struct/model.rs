@@ -57,8 +57,6 @@ pub(crate) struct DockerImageInfo {
     pub(crate) size: String,
     pub(crate) created: String,
     pub(crate) dangling: bool,
-    /// 引用该镜像的容器数（含已停止）；由容器侧 inspect 汇总。
-    pub(crate) used_by: u32,
 }
 
 /// `docker compose ls --format '{{json .}}'` 的一行。
@@ -93,7 +91,6 @@ pub(crate) struct DockerNetworkInfo {
     pub(crate) name: String,
     pub(crate) driver: String,
     pub(crate) scope: String,
-    pub(crate) containers: Vec<String>,
 }
 
 /// Docker Hub 搜索结果。
